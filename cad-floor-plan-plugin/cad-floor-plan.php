@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.2.0
+ * Version: 2.3.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.2.0');
+define('CFP_VERSION', '2.3.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -239,26 +239,56 @@ final class CAD_Floor_Plan_Plugin {
     }
 
     /**
-     * Puts assets/badges/seiden.* and bouen.* into the template. A missing image is removed
-     * so that no broken-image icon is shown.
+     * Fills the 制電マーク / 防炎マーク images. Order: assets/badges/{seiden,bouen}.*, then an image in
+     * the media library whose title contains the mark name (e.g. "seiden_mark_制電マーク.jpg").
+     * A missing image is removed so that no broken-image icon is shown.
      */
     private function fill_badges($html) {
-        foreach (['SEIDEN' => 'seiden', 'BOUEN' => 'bouen'] as $marker => $name) {
+        $marks = [
+            'SEIDEN' => ['seiden', ['制電マーク', 'seiden']],
+            'BOUEN'  => ['bouen', ['防炎マーク', 'bouen', 'boen']],
+        ];
+        foreach ($marks as $marker => $def) {
             $token = '{{CFP_BADGE_' . $marker . '}}';
-            $url = '';
-            foreach (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] as $ext) {
-                if (is_readable(CFP_PLUGIN_DIR . 'assets/badges/' . $name . '.' . $ext)) {
-                    $url = CFP_PLUGIN_URL . 'assets/badges/' . $name . '.' . $ext;
-                    break;
-                }
-            }
-            if ($url !== '') {
+            $url = apply_filters('cfp_badge_url', $this->find_badge_url($def[0], $def[1]), strtolower($marker));
+            if ($url) {
                 $html = str_replace($token, esc_url($url), $html);
             } else {
                 $html = preg_replace('#<img[^>]*' . preg_quote($token, '#') . '[^>]*>#', '', $html);
             }
         }
         return $html;
+    }
+
+    private function find_badge_url($name, array $terms) {
+        foreach (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] as $ext) {
+            if (is_readable(CFP_PLUGIN_DIR . 'assets/badges/' . $name . '.' . $ext)) {
+                return CFP_PLUGIN_URL . 'assets/badges/' . $name . '.' . $ext;
+            }
+        }
+        $cache_key = 'cfp_badge_' . $name;
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            return $cached;
+        }
+        $url = '';
+        foreach ($terms as $term) {
+            $found = get_posts([
+                'post_type'      => 'attachment',
+                'post_status'    => 'inherit',
+                'post_mime_type' => 'image',
+                's'              => $term,
+                'numberposts'    => 1,
+                'orderby'        => 'date',
+                'order'          => 'DESC',
+            ]);
+            if ($found) {
+                $url = (string) wp_get_attachment_url($found[0]->ID);
+                break;
+            }
+        }
+        set_transient($cache_key, $url, 10 * MINUTE_IN_SECONDS);
+        return $url;
     }
 
     public function render_shortcode($atts) {
