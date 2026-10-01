@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.1.0
+ * Version: 2.2.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.1.0');
+define('CFP_VERSION', '2.2.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -234,7 +234,31 @@ final class CAD_Floor_Plan_Plugin {
         // Block themes render the content before wp_enqueue_scripts, so the handle may not be registered yet.
         wp_enqueue_script('domailer-frontend');
         $html = file_get_contents($file);
+        $html = $this->fill_badges($html);
         return str_replace('[' . CFP_SHORTCODE . ']', $this->render_shortcode(['height' => '600']), $html);
+    }
+
+    /**
+     * Puts assets/badges/seiden.* and bouen.* into the template. A missing image is removed
+     * so that no broken-image icon is shown.
+     */
+    private function fill_badges($html) {
+        foreach (['SEIDEN' => 'seiden', 'BOUEN' => 'bouen'] as $marker => $name) {
+            $token = '{{CFP_BADGE_' . $marker . '}}';
+            $url = '';
+            foreach (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] as $ext) {
+                if (is_readable(CFP_PLUGIN_DIR . 'assets/badges/' . $name . '.' . $ext)) {
+                    $url = CFP_PLUGIN_URL . 'assets/badges/' . $name . '.' . $ext;
+                    break;
+                }
+            }
+            if ($url !== '') {
+                $html = str_replace($token, esc_url($url), $html);
+            } else {
+                $html = preg_replace('#<img[^>]*' . preg_quote($token, '#') . '[^>]*>#', '', $html);
+            }
+        }
+        return $html;
     }
 
     public function render_shortcode($atts) {
