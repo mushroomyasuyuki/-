@@ -11,6 +11,6 @@ strip() { grep -v '^[[:space:]]*$' "$1"; }
   # widget markup: the <div class="cad-floor-plan-widget"> block from standalone.html
   sed -n '/<div class="cad-floor-plan-widget"/,/^<script/p' standalone.html | sed '$d' | grep -v '^[[:space:]]*$'
   echo '<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>'
-  for f in cad-parser three-room-renderer main; do echo "<script>"; strip assets/js/$f.js; echo "</script>"; done
+  for f in cad-parser three-room-renderer room-tracer main; do echo "<script>"; strip assets/js/$f.js; echo "</script>"; done
 } > "$OUT"
 echo "built $OUT ($(wc -c < "$OUT") bytes)"

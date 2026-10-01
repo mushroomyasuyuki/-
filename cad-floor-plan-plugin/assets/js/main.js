@@ -40,7 +40,15 @@
       this.roomIndex = 0;      // the room shown in 3D
       this.fromFile = false;   // true when the data came from an uploaded drawing (not the sample)
       this.lastFile = null;
-      this.raster = null;      // set while the drawing is a PNG / JPEG
+      this.raster = null;      // set while the drawing is read as a picture (PNG / JPEG / scanned PDF)
+      this.backdrop = null;    // the drawing picture shown under the plan (raster, or a rendered PDF page)
+      this.backdropFile = null;
+      this.sourceRooms = [];   // rooms found automatically
+      this.sourceMeta = null;
+      this.manual = [];        // rooms traced by hand: [{ poly: [[x, y]...] (picture px), name }]
+      this.hideAuto = false;
+      this.roomKinds = [];     // per room: { manual: bool, mi: index in this.manual }
+      this.tracer = null;
       this._rasterTimer = null;
       this.$ = (name) => el.querySelector('[data-cfp="' + name + '"]');
       this.height = parseInt(el.dataset.height, 10) || 600;
@@ -62,7 +70,7 @@
       ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('is-over'); }));
       drop.addEventListener('drop', (e) => e.dataTransfer.files[0] && this.loadFile(e.dataTransfer.files[0]));
 
-      const reload = () => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true });
+      const reload = () => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true, keepManual: true });
       this.$('scale').addEventListener('change', reload);
       this.$('unit').addEventListener('change', reload);
       this.$('apply-size').addEventListener('change', () => {
@@ -72,12 +80,29 @@
       });
       const rerun = () => {
         clearTimeout(this._rasterTimer);
-        this._rasterTimer = setTimeout(() => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true, keepScale: true }), 350);
+        this._rasterTimer = setTimeout(() => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true, keepScale: true, keepManual: true }), 350);
       };
       this.$('threshold').addEventListener('input', () => { this._rasterLabels(); rerun(); });
       this.$('gap').addEventListener('input', () => { this._rasterLabels(); rerun(); });
       this.$('cal-btn').addEventListener('click', () => this.calibrate());
       this.$('cal-mm').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.calibrate(); } });
+      this.$('trace-open').addEventListener('click', () => this.openTracer());
+      this.$('trace-close').addEventListener('click', () => { this.$('trace').hidden = true; });
+      const tool = (name) => {
+        if (!this.tracer) return;
+        this.tracer.setTool(name);
+        ['pan', 'rect', 'poly'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
+      };
+      ['pan', 'rect', 'poly'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
+      this.$('zoom-in').addEventListener('click', () => this.tracer && this.tracer.zoom(0.7));
+      this.$('zoom-out').addEventListener('click', () => this.tracer && this.tracer.zoom(1.4));
+      this.$('zoom-fit').addEventListener('click', () => this.tracer && this.tracer.fit());
+      this.$('undo-pt').addEventListener('click', () => this.tracer && this.tracer.undoPoint());
+      this.$('ortho').addEventListener('change', () => { if (this.tracer) this.tracer.ortho = this.$('ortho').checked; });
+      this.$('hide-auto').addEventListener('change', () => {
+        this.hideAuto = this.$('hide-auto').checked;
+        this._afterRoomsChanged(0);
+      });
       this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
@@ -87,6 +112,15 @@
 
     async loadFile(file, opts = {}) {
       this.lastFile = file;
+      if (!opts.keepManual) {
+        // a new drawing: forget hand-traced rooms and the picture of the previous one
+        this.manual = [];
+        this.hideAuto = false;
+        this.$('hide-auto').checked = false;
+        this.backdrop = null;
+        this.backdropFile = null;
+        this.$('trace').hidden = true;
+      }
       const isImage = /\.(png|jpe?g|webp)$/i.test(file.name);
       if (isImage) this.$('raster').hidden = false;
       else if (!opts.keepScale) { this.$('raster').hidden = true; this.raster = null; }
@@ -118,30 +152,69 @@
 
     loadData(data, label, opts = {}) {
       try {
-        const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: data.metadata };
-        CADParser.validate(normalized);
+        const meta = data.metadata || {};
+        const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: meta };
+        // a drawing read as a picture may have no room yet: the rooms are then traced by hand
+        if (!meta.raster || normalized.rooms.length) CADParser.validate(normalized);
         if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
-        this.raster = (normalized.metadata && normalized.metadata.raster) || null;
+        this.raster = meta.raster || null;
         if (this.raster) this.$('raster').hidden = false; // also for a scanned PDF read as an image
         const prevIndex = this.roomIndex;
         const prevCount = this.data ? this.data.rooms.length : 0;
-        this.data = normalized;
+        this.sourceRooms = normalized.rooms;
+        this.sourceMeta = meta;
         this.label = label;
         this.fromFile = !!opts.fromFile;
+        if (!this.fromFile) {
+          // the sample is not a drawing: no picture, no hand-traced rooms, no picture settings
+          this.manual = [];
+          this.hideAuto = false;
+          this.$('hide-auto').checked = false;
+          this.backdrop = null;
+          this.$('trace').hidden = true;
+          this.$('raster').hidden = true;
+        }
+        this._updateBackdrop();
+        // a cluttered drawing (furniture, equipment...) gives dozens of "rooms": hide them and let the user trace
+        let hiddenN = 0;
+        if (this.fromFile && !opts.keepManual && (this.raster || /\.pdf$/i.test(label))) {
+          const n = this.raster ? this.raster.polys.length : normalized.rooms.length;
+          if (n > 20) {
+            hiddenN = n;
+            this.hideAuto = true;
+            this.$('hide-auto').checked = true;
+          }
+        }
+        this.rebuildRooms();
+        const rooms = this.data.rooms;
 
-        // with several rooms, start from the largest one; the user picks another on the plan.
-        // A reload of the same drawing (scale / unit changed) keeps the room already chosen.
-        let best = 0;
-        normalized.rooms.forEach((r, i) => {
-          if (CADParser.calculateArea(r.vertices) > CADParser.calculateArea(normalized.rooms[best].vertices)) best = i;
-        });
-        if (opts.keepRoom && prevCount === normalized.rooms.length && prevIndex < normalized.rooms.length) best = prevIndex;
-        this.renderPicker();
-        this.selectRoom(best, this.fromFile);
+        this.$('trace-open').hidden = !(this.fromFile && (this.raster || /\.pdf$/i.test(label)));
 
-        const n = normalized.rooms.length;
+        if (!rooms.length) {
+          this._showEmpty();
+        } else {
+          // with several rooms, start from the largest one; the user picks another on the plan.
+          // A reload of the same drawing (scale / unit changed) keeps the room already chosen.
+          let best = 0;
+          rooms.forEach((r, i) => {
+            if (CADParser.calculateArea(r.vertices) > CADParser.calculateArea(rooms[best].vertices)) best = i;
+          });
+          if (opts.keepRoom && prevCount === rooms.length && prevIndex < rooms.length) best = prevIndex;
+          this.renderPicker();
+          this.selectRoom(best, this.fromFile);
+        }
         this._rasterNote();
-        if (this.raster && !this.raster.calibrated) {
+        this._refreshTracer();
+        if (this.fromFile && !this.$('trace').hidden) this.openTracer(false);
+
+        const n = rooms.length;
+        if (hiddenN && !n) {
+          this.status('自動で ' + hiddenN + ' 個の図形が見つかりましたが、家具や設備の囲みが多く含まれるため隠しています（「自動で出た部屋を隠す」を外すと表示します）。図面の上で部屋を指定してください。', 'success');
+          this.openTracer();
+        } else if (meta.pdfFallback) {
+          this.status(meta.pdfFallback.reason + (n ? '' : ' 下の「図面の上で部屋を指定」で、部屋を指定してください。'), n ? 'success' : 'error');
+          if (!n) this.openTracer();
+        } else if (this.raster && !this.raster.calibrated) {
           this.status('画像から部屋を ' + n + ' 室読み取りました。画像には縮尺が無いため、実際の大きさを入力してください。', 'success');
         } else this.status(n > 1
           ? '部屋が ' + n + ' 室見つかりました。3Dで見たい部屋を、平面図または一覧から選んでください。'
@@ -150,6 +223,59 @@
         this.status('エラー: ' + err.message, 'error');
         console.error(err);
       }
+    }
+
+    // the picture under the plan: the raster itself, or a rendered PDF page kept for hand tracing
+    _updateBackdrop() {
+      if (this.raster) { this.backdrop = this.raster; return; }
+      if (this.backdrop && this.backdrop.kind === 'pdf' && this.backdropFile === this.lastFile) {
+        const n = parseFloat(this.$('scale').value) || 1;
+        this.backdrop.mmPerPx = (25.4 / 72) * n / this.backdrop.k;
+        this.backdrop.calibrated = n > 1;
+      } else {
+        this.backdrop = null;
+      }
+    }
+
+    // automatic rooms (unless hidden) + rooms traced by hand, all in mm
+    rebuildRooms() {
+      const rooms = [];
+      const kinds = [];
+      if (!this.hideAuto) {
+        const auto = this.raster ? CADParser.roomsFromRaster(this.raster, this.raster.mmPerPx) : this.sourceRooms;
+        auto.forEach((r) => { rooms.push(r); kinds.push({ manual: false }); });
+      }
+      if (this.backdrop) {
+        const s = this.backdrop.mmPerPx, H = this.backdrop.heightPx;
+        this.manual.forEach((m, mi) => {
+          rooms.push(CADParser.normalizeRoom({
+            id: 'manual_' + (mi + 1), name: m.name, vertices: m.poly.map(([x, y]) => [x * s, (H - y) * s]),
+          }, rooms.length));
+          kinds.push({ manual: true, mi });
+        });
+      }
+      this.roomKinds = kinds;
+      this.data = { rooms, metadata: this.sourceMeta };
+    }
+
+    // after rooms were added / removed / hidden: redraw everything and keep a sensible selection
+    _afterRoomsChanged(select) {
+      this.rebuildRooms();
+      const n = this.data.rooms.length;
+      if (!n) { this._showEmpty(); this._refreshTracer(); return; }
+      this.roomIndex = Math.min(Math.max(select == null ? this.roomIndex : select, 0), n - 1);
+      this.renderPicker();
+      this.selectRoom(this.roomIndex, this.fromFile);
+      this._refreshTracer();
+    }
+
+    _showEmpty() {
+      if (this.renderer) this.renderer.clear();
+      this.$('rooms').hidden = true;
+      ['room-name', 'room-size', 'floor-area', 'wall-area'].forEach((k) => { this.$(k).textContent = '-'; });
+      this.$('room-count').textContent = '0';
+      this.$('filename').textContent = this.label;
+      this.$('size-note').textContent = '';
     }
 
     selectRoom(i, reflect) {
@@ -161,7 +287,8 @@
       const a = this.renderer.getAreas();
       this.$('filename').textContent = this.label;
       this.$('room-name').textContent = room.name || ('部屋 ' + (i + 1));
-      const prov = !!this.raster && !this.raster.calibrated;
+      const kind = this.roomKinds[i] || {};
+      const prov = kind.manual ? !!this.backdrop && !this.backdrop.calibrated : !!this.raster && !this.raster.calibrated;
       const tag = prov ? '（仮）' : '';
       this.$('room-size').textContent = fmtMm(b.maxX - b.minX) + ' × ' + fmtMm(b.maxY - b.minY) + ' mm' + tag;
       this.$('floor-area').textContent = a.floorArea + ' ㎡' + tag;
@@ -173,7 +300,8 @@
 
       // an uncalibrated image has no real size yet: do not push it into the estimate
       if (reflect && !prov && this.$('apply-size').checked) this.reflectSize(room);
-      else this.$('size-note').textContent = '';
+      else this.$('size-note').textContent = prov && kind.manual && this.backdrop.kind === 'pdf'
+        ? '指定した部屋の大きさは仮です。「PDFの縮尺（1:N の N）」に図面の縮尺（例: 100）を入力してください。' : '';
     }
 
     _unitText() {
@@ -191,17 +319,17 @@
     renderPicker() {
       const wrap = this.$('rooms');
       const rooms = this.data.rooms;
-      const raster = this.raster;
-      wrap.hidden = rooms.length < 2 && !raster;
+      const bd = this.backdrop;
+      wrap.hidden = rooms.length < 2 && !bd;
       const svg = this.$('plan');
       const list = this.$('room-list');
       svg.textContent = '';
       list.textContent = '';
-      if (rooms.length < 2 && !raster) return;
+      if (rooms.length < 2 && !bd) return;
 
       const all = rooms.flatMap((r) => r.vertices);
-      const b = raster
-        ? { minX: 0, minY: 0, maxX: raster.widthPx * raster.mmPerPx, maxY: raster.heightPx * raster.mmPerPx }
+      const b = bd
+        ? { minX: 0, minY: 0, maxX: bd.widthPx * bd.mmPerPx, maxY: bd.heightPx * bd.mmPerPx }
         : CADParser.bounds(all);
       const w = b.maxX - b.minX, h = b.maxY - b.minY;
       const pad = Math.max(w, h) * 0.04;
@@ -209,10 +337,10 @@
       svg.setAttribute('viewBox', [b.minX - pad, -b.maxY - pad, w + pad * 2, h + pad * 2].join(' '));
       const fs = Math.max(w, h) / (rooms.length > 12 ? 30 : 16);
 
-      if (raster) {
+      if (bd) {
         // the uploaded drawing, so that the detected rooms can be checked against it
         const img = document.createElementNS(SVG_NS, 'image');
-        img.setAttribute('href', raster.dataUrl);
+        img.setAttribute('href', bd.dataUrl);
         img.setAttribute('x', 0);
         img.setAttribute('y', -b.maxY);
         img.setAttribute('width', b.maxX);
@@ -253,6 +381,8 @@
 
       rooms.forEach((r, i) => {
         const rb = CADParser.bounds(r.vertices);
+        const item = document.createElement('div');
+        item.className = 'cfp-room-item';
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'cfp-room-btn';
@@ -268,7 +398,19 @@
         meta.textContent = fmtM(rb.maxX - rb.minX) + '×' + fmtM(rb.maxY - rb.minY) + 'm / ' + fmtArea(CADParser.calculateArea(r.vertices)) + '㎡';
         btn.append(num, name, meta);
         btn.addEventListener('click', () => this._pick(i));
-        list.appendChild(btn);
+        item.appendChild(btn);
+        const kind = this.roomKinds[i];
+        if (kind && kind.manual) {
+          const del = document.createElement('button');
+          del.type = 'button';
+          del.className = 'cfp-room-del';
+          del.textContent = '×';
+          del.title = 'この部屋を削除';
+          del.setAttribute('aria-label', r.name + ' を削除');
+          del.addEventListener('click', () => this._removeManual(kind.mi));
+          item.appendChild(del);
+        }
+        list.appendChild(item);
       });
     }
 
@@ -283,6 +425,64 @@
         n.classList.toggle('is-selected', on);
         if (n.tagName === 'BUTTON') n.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
+    }
+
+    // --------------------------------------------------- tracing rooms by hand
+    async openTracer(scroll = true) {
+      if (!this.lastFile || !this.fromFile) return;
+      this.$('trace').hidden = false;
+      if (!this.backdrop) {
+        // a PDF read as vectors: render its page so that rooms can be traced on it
+        try {
+          this.status('図面を表示しています…', 'loading');
+          const scale = parseFloat(this.$('scale').value) || 1;
+          this.backdrop = await CADParser.renderPdfBackdrop(this.lastFile, { scale });
+          this.backdropFile = this.lastFile;
+          this._afterRoomsChanged();
+          this.status('図面の上で部屋を指定してください。', 'success');
+        } catch (err) {
+          this.status('エラー: ' + err.message, 'error');
+          console.error(err);
+          return;
+        }
+      }
+      if (!this.tracer) {
+        this.tracer = new RoomTracer(this.$('trace-svg'), { onCommit: (poly) => this._commitManual(poly) });
+        this.$('tool-rect').classList.add('is-on');
+      }
+      this.tracer.ortho = this.$('ortho').checked;
+      if (this._tracerImage !== this.backdrop.dataUrl) {
+        // only when the picture changed, so that zoom / pan survive a reload
+        this.tracer.setBackdrop(this.backdrop.dataUrl, this.backdrop.widthPx, this.backdrop.heightPx);
+        this._tracerImage = this.backdrop.dataUrl;
+      }
+      this._refreshTracer();
+      if (scroll) this.$('trace').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    // rooms shown on the picture: every room of the plan converted back to picture pixels
+    _refreshTracer() {
+      if (!this.tracer || !this.backdrop || this.$('trace').hidden) return;
+      const s = this.backdrop.mmPerPx, H = this.backdrop.heightPx;
+      this.tracer.setRooms(this.data.rooms.map((r, i) => ({
+        poly: r.vertices.map(([x, y]) => [x / s, H - y / s]),
+        label: String(i + 1),
+        manual: !!(this.roomKinds[i] && this.roomKinds[i].manual),
+        selected: i === this.roomIndex,
+      })));
+    }
+
+    _commitManual(poly) {
+      this.manual.push({ poly, name: '指定した部屋 ' + (this.manual.length + 1) });
+      this._afterRoomsChanged(this.roomKinds.length); // the new room is last
+      const n = this.data.rooms.length;
+      this.status('部屋を追加しました（部屋 ' + n + '）。続けて指定するか、一覧から部屋を選んでください。', 'success');
+    }
+
+    _removeManual(mi) {
+      this.manual.splice(mi, 1);
+      this._afterRoomsChanged();
+      this.status('指定した部屋を削除しました。', 'success');
     }
 
     // ------------------------------------------------------------- image drawings
@@ -306,14 +506,14 @@
       if (!this.raster || !this.data) return;
       const mm = parseFloat(this.$('cal-mm').value);
       if (!(mm > 0)) { this.status('選んだ部屋の実際の長さ（mm）を入力してください。', 'error'); return; }
-      const b = CADParser.bounds(this.raster.polys[this.roomIndex]);
-      const px = this.$('cal-axis').value === 'h' ? b.maxY - b.minY : b.maxX - b.minX;
+      const room = this.data.rooms[this.roomIndex];
+      if (!room) { this.status('先に部屋を選んでください。', 'error'); return; }
+      const b = CADParser.bounds(room.vertices);
+      const px = (this.$('cal-axis').value === 'h' ? b.maxY - b.minY : b.maxX - b.minX) / this.raster.mmPerPx;
       if (!(px > 0)) return;
       this.raster.mmPerPx = mm / px;
       this.raster.calibrated = true;
-      this.data.rooms = CADParser.roomsFromRaster(this.raster, this.raster.mmPerPx);
-      this.renderPicker();
-      this.selectRoom(this.roomIndex, true);
+      this._afterRoomsChanged();
       this._rasterNote();
       this.status('縮尺を設定しました。', 'success');
     }

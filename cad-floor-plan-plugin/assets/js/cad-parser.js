@@ -262,39 +262,62 @@
       try {
         return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 }, labels);
       } catch (err) {
-        // a scanned PDF is just a picture: read the rendered page like a PNG
+        // No closed rooms in the vector data (a scanned PDF, or a CAD plan drawn with loose lines):
+        // show the rendered page so that the rooms can be read from the picture or traced by hand.
+        let reason;
         if (hasImage && vectorShapes < 20) {
-          const base = page.getViewport({ scale: 1 });
-          const k = 1200 / Math.max(base.width, base.height);
-          const viewport = page.getViewport({ scale: k });
-          const cv = document.createElement('canvas');
-          cv.width = Math.round(viewport.width);
-          cv.height = Math.round(viewport.height);
-          const ctx = cv.getContext('2d', { willReadFrequently: true });
-          ctx.fillStyle = '#fff';
-          ctx.fillRect(0, 0, cv.width, cv.height);
-          await page.render({ canvasContext: ctx, viewport }).promise;
-          const res = this._detectRaster(cv, options);
-          res.metadata.fromPdfImage = true;
-          return res;
+          reason = 'このPDFは画像（スキャン）です。画像として読み取りました。';
+        } else if (!loops.length) {
+          reason = 'このPDFでは、壁の線が閉じた部屋の輪郭になっていません（途切れている、または交差で枝分かれしています）。';
+        } else {
+          let w = 0, h = 0, best = 0;
+          loops.forEach((l) => {
+            const b = this.bounds(l), a = this.calculateArea(l);
+            if (a > best) { best = a; w = b.maxX - b.minX; h = b.maxY - b.minY; }
+          });
+          reason = '0.5㎡以上の閉じた部屋が見つかりませんでした（最も大きい閉じた図形は ' +
+            Math.round(w).toLocaleString('ja-JP') + '×' + Math.round(h).toLocaleString('ja-JP') + ' mm。' +
+            '縮尺が合っていなければ「PDFの縮尺」を直してください。現在は 1:' + (options.scale || 1) + '）。';
         }
-        if (!loops.length) {
-          throw new Error(
-            'PDFに線は見つかりましたが、閉じた部屋の輪郭になっていません（壁の線が途切れている、または交差で枝分かれしています）。' +
-            '壁の外形を閉じた線で描き直すか、PNG / JPEG に書き出して入稿してください。'
-          );
-        }
-        let w = 0, h = 0, best = 0;
-        loops.forEach((l) => {
-          const b = this.bounds(l), a = this.calculateArea(l);
-          if (a > best) { best = a; w = b.maxX - b.minX; h = b.maxY - b.minY; }
-        });
-        throw new Error(
-          'PDFの図形は読み取れましたが、0.5㎡以上の閉じた部屋が見つかりませんでした。最も大きい閉じた図形は ' +
-          Math.round(w).toLocaleString('ja-JP') + '×' + Math.round(h).toLocaleString('ja-JP') + ' mm です。' +
-          '図面の縮尺が合っていない可能性があります（現在は 1:' + (options.scale || 1) + '）。図面が 1:100 なら「PDFの縮尺」に 100 を入力してください。'
-        );
+        const bd = await this._renderPdfPage(page, options);
+        const opts = Object.assign({}, options, { allowEmpty: true, minAreaRatio: 0.004, mmPerPx: (options.scale || 1) > 1 ? bd.mmPerPx : undefined });
+        const res = this._detectRaster(bd.canvas, opts);
+        res.metadata.pdfFallback = { reason };
+        res.metadata.raster.pdfMmPerPx = bd.mmPerPx;
+        return res;
       }
+    }
+
+    // Renders a PDF page to a canvas (long side 2000 px). mmPerPx follows the drawing scale 1:N.
+    static async _renderPdfPage(page, options = {}) {
+      const base = page.getViewport({ scale: 1 });
+      const k = 2000 / Math.max(base.width, base.height); // px per PDF point
+      const viewport = page.getViewport({ scale: k });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      return { canvas, k, mmPerPx: (25.4 / 72) * (options.scale || 1) / k };
+    }
+
+    // The page picture for tracing rooms by hand on a PDF that was read as vectors.
+    static async renderPdfBackdrop(file, options = {}) {
+      const pdfjs = await this._ensurePdfJs(options);
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      const page = await pdf.getPage(options.page || 1);
+      const bd = await this._renderPdfPage(page, options);
+      return {
+        dataUrl: bd.canvas.toDataURL('image/jpeg', 0.85),
+        widthPx: bd.canvas.width,
+        heightPx: bd.canvas.height,
+        k: bd.k,
+        mmPerPx: bd.mmPerPx,
+        calibrated: (options.scale || 1) > 1,
+        kind: 'pdf',
+      };
     }
 
     static _ensurePdfJs(options) {
@@ -323,7 +346,7 @@
     // set afterwards (roomsFromRaster).
     static async parseImage(file, options = {}) {
       const img = await this._loadImage(file);
-      const MAX = 1200;
+      const MAX = options.maxSide || 1200;
       const k = Math.min(1, MAX / Math.max(img.width, img.height));
       const W = Math.max(1, Math.round(img.width * k));
       const H = Math.max(1, Math.round(img.height * k));
@@ -351,7 +374,9 @@
       }
       const auto = options.threshold == null || options.threshold === 'auto' || Number(options.threshold) <= 0;
       const threshold = auto ? Math.min(this._otsu(hist, gray.length), 160) : Number(options.threshold);
-      const gap = options.gap == null ? 4 : Math.max(0, Math.min(20, Number(options.gap)));
+      // the gap setting is in pixels of a 1200 px wide picture; scale it for bigger renders (PDF pages)
+      const sc = Math.max(1, Math.max(W, H) / 1200);
+      const gap = Math.round((options.gap == null ? 4 : Math.max(0, Math.min(20, Number(options.gap)))) * sc);
 
       const wall = new Uint8Array(W * H);
       for (let i = 0; i < wall.length; i++) wall[i] = gray[i] < threshold ? 1 : 0;
@@ -367,14 +392,14 @@
       // give the pixels of the closed gap band back to the nearest room (rooms keep their true size)
       this._grow(labels, wall, W, H, gap);
 
-      const minArea = Math.max(150, 0.002 * W * H);
+      const minArea = Math.max(150, (options.minAreaRatio || 0.002) * W * H);
       const eps = 2 + 0.002 * Math.max(W, H);
       const loops = this._outlines(labels, W, H, exterior);
       let polys = [];
       loops.forEach((pts, id) => {
         let poly = this._simplify(pts, eps);
-        poly = this._despike(poly, 2 * gap + 8);
-        poly = this._rectify(poly, 2 * gap + 8);
+        poly = this._despike(poly, 2 * gap + 8 * sc);
+        poly = this._rectify(poly, 2 * gap + 8 * sc);
         // an almost rectangular room (door arcs, small notches) becomes an exact rectangle;
         // rooms with a real step, like an L shape, keep their outline
         const bb = this.bounds(poly);
@@ -390,7 +415,7 @@
         const area = this.calculateArea(p);
         return !polys.some((q, j) => j !== i && this.calculateArea(q) > area && this.pointInPolygon(c, q));
       });
-      if (!polys.length) {
+      if (!polys.length && !options.allowEmpty) {
         throw new Error(
           '部屋を検出できませんでした。線が薄い・細いときは「線を検出する濃さ」を上げ、' +
           '部屋がつながって見えるときは「すき間を閉じる」を大きくしてみてください。'
@@ -422,7 +447,7 @@
         calibrated: !provisional,
         threshold,
         thresholdAuto: auto,
-        gap,
+        gap: options.gap == null ? 4 : Number(options.gap),
         polys: ordered,
       };
       return { rooms: this.roomsFromRaster(raster, raster.mmPerPx), metadata: { source: 'image', raster } };
@@ -517,26 +542,26 @@
     // expand every region by up to r pixels over light pixels that the dilation had blocked
     static _grow(labels, wall, W, H, r) {
       if (!r) return;
-      const neighbours = (p) => {
-        const x = p % W, y = (p / W) | 0;
-        const nb = [];
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if ((dx || dy) && x + dx >= 0 && x + dx < W && y + dy >= 0 && y + dy < H) nb.push(p + dy * W + dx);
-          }
-        }
-        return nb;
+      const D = [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1];
+      const DX = [-1, 0, 1, -1, 1, -1, 0, 1];
+      const DY = [-1, -1, -1, 0, 0, 1, 1, 1];
+      const open = (p, x, y, k) => {
+        const nx = x + DX[k], ny = y + DY[k];
+        return nx >= 0 && nx < W && ny >= 0 && ny < H && !labels[p + D[k]] && !wall[p + D[k]];
       };
       let frontier = [];
       for (let p = 0; p < labels.length; p++) {
-        if (labels[p] && neighbours(p).some((n) => !labels[n] && !wall[n])) frontier.push(p);
+        if (!labels[p]) continue;
+        const x = p % W, y = (p / W) | 0;
+        for (let k = 0; k < 8; k++) if (open(p, x, y, k)) { frontier.push(p); break; }
       }
       // 8-connected steps reach the same square distance as the dilation, so corners come back exactly
       for (let step = 0; step < r && frontier.length; step++) {
         const next = [];
         for (const p of frontier) {
-          for (const n of neighbours(p)) {
-            if (!labels[n] && !wall[n]) { labels[n] = labels[p]; next.push(n); }
+          const x = p % W, y = (p / W) | 0;
+          for (let k = 0; k < 8; k++) {
+            if (open(p, x, y, k)) { labels[p + D[k]] = labels[p]; next.push(p + D[k]); }
           }
         }
         frontier = next;

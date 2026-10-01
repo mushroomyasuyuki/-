@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.8.0
+ * Version: 2.9.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.8.0');
+define('CFP_VERSION', '2.9.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -208,7 +208,8 @@ final class CAD_Floor_Plan_Plugin {
         wp_register_script('cfp-three', 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', [], '128', true);
         wp_register_script('cfp-parser', CFP_PLUGIN_URL . 'assets/js/cad-parser.js', [], CFP_VERSION, true);
         wp_register_script('cfp-renderer', CFP_PLUGIN_URL . 'assets/js/three-room-renderer.js', ['cfp-three', 'cfp-parser'], CFP_VERSION, true);
-        wp_register_script('cfp-main', CFP_PLUGIN_URL . 'assets/js/main.js', ['cfp-renderer'], CFP_VERSION, true);
+        wp_register_script('cfp-tracer', CFP_PLUGIN_URL . 'assets/js/room-tracer.js', [], CFP_VERSION, true);
+        wp_register_script('cfp-main', CFP_PLUGIN_URL . 'assets/js/main.js', ['cfp-renderer', 'cfp-tracer'], CFP_VERSION, true);
 
         wp_localize_script('cfp-parser', 'cadFloorPlanData', [
             'pdfJsUrl'     => apply_filters('cad_floor_plan_pdfjs_url', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'),
@@ -355,6 +356,25 @@ final class CAD_Floor_Plan_Plugin {
                   </div>
                   <p class="cfp-hint" data-cfp="cal-note"></p>
                 </div>
+                <div class="cfp-trace" data-cfp="trace" hidden>
+                  <div class="cfp-trace-head">
+                    <span class="cfp-trace-title">図面の上で部屋を指定</span>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="trace-close">閉じる</button>
+                  </div>
+                  <p class="cfp-hint">自動で部屋を読み取れない図面は、ここで部屋を自分で囲んで指定します。「四角」は対角の2点をドラッグ、「多角形」は角を順にクリックし、最初の赤い点をクリック（またはダブルクリック）で確定します。ホイールで拡大・縮小、「移動」でドラッグして動かせます。</p>
+                  <div class="cfp-trace-bar">
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-pan">移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="tool-rect">四角</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-poly">多角形</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="undo-pt">1点戻す</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-in" aria-label="拡大">＋</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-out" aria-label="縮小">－</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-fit">全体</button>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="ortho" checked> 角を直角にそろえる</label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="hide-auto"> 自動で出た部屋を隠す</label>
+                  </div>
+                  <svg class="cfp-trace-view" data-cfp="trace-svg" role="img" aria-label="図面"></svg>
+                </div>
                 <div class="cfp-status" data-cfp="status"></div>
                 <div class="cfp-rooms" data-cfp="rooms" hidden>
                   <div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div>
@@ -369,6 +389,7 @@ final class CAD_Floor_Plan_Plugin {
                 <p class="cfp-hint" data-cfp="size-note"></p>
 
                 <div class="cfp-controls">
+                    <button type="button" class="cfp-btn" data-cfp="trace-open" hidden>図面の上で部屋を指定</button>
                     <button type="button" class="cfp-btn" data-cfp="sample-btn">サンプル</button>
                     <button type="button" class="cfp-btn" data-cfp="reset-btn">視点をリセット</button>
                     <button type="button" class="cfp-btn" data-cfp="save-btn">解析結果をJSON保存</button>

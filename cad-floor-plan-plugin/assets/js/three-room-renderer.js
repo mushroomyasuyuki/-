@@ -108,6 +108,14 @@
       this._setTexture('wall', canvas ? this._canvasTexture(canvas) : null);
     }
 
+    // remove the room (no rooms to show)
+    clear() {
+      this._clear();
+      this.rooms = [];
+      this.bounds = null;
+      this._render();
+    }
+
     resetCamera() {
       if (!this.bounds) return;
       const b = this.bounds;
