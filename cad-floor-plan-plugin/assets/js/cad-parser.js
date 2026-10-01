@@ -21,7 +21,7 @@
       const ext = (input.name.split('.').pop() || '').toLowerCase();
       switch (ext) {
         case 'dxf':
-          return this.parseDXF(await input.text(), options);
+          return this.parseDXF(this._decodeDXF(await input.arrayBuffer()), options);
         case 'pdf':
           return this.parsePDF(input, options);
         case 'json':
@@ -34,6 +34,28 @@
     }
 
     // ---------------------------------------------------------------- DXF
+    // DXF before R2007 stores text in the drawing's code page (Japanese drawings: Shift_JIS)
+    static _decodeDXF(buffer) {
+      const head = new TextDecoder('latin1').decode(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 20000)));
+      const ver = (head.match(/\$ACADVER\s+1\s+(AC\d+)/) || [])[1];
+      let enc = 'utf-8';
+      if (!ver || ver < 'AC1021') {
+        const cp = (head.match(/\$DWGCODEPAGE\s+3\s+(\S+)/) || [])[1] || '';
+        enc = { ANSI_932: 'shift_jis', ANSI_936: 'gbk', ANSI_949: 'euc-kr', ANSI_950: 'big5', ANSI_1252: 'windows-1252' }[cp.toUpperCase()] || (cp ? 'windows-1252' : 'utf-8');
+      }
+      try { return new TextDecoder(enc).decode(buffer); } catch (e) { return new TextDecoder('utf-8').decode(buffer); }
+    }
+
+    static _cleanDxfText(t) {
+      return t
+        .replace(/\\U\+([0-9A-Fa-f]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\P/g, ' ')
+        .replace(/\\[A-Za-z][^;\\]*;/g, '')
+        .replace(/[{}]/g, '')
+        .replace(/%%[cCdDpP]/g, '')
+        .trim();
+    }
+
     static parseDXF(text, options = {}) {
       const lines = text.split(/\r\n|\r|\n/);
       const pairs = [];
@@ -41,17 +63,14 @@
         pairs.push([parseInt(lines[i].trim(), 10), lines[i + 1].trim()]);
       }
 
-      // header units
-      let unitScale = options.unitScale || 0;
-      if (!unitScale) {
-        for (let i = 0; i < pairs.length; i++) {
-          if (pairs[i][0] === 9 && pairs[i][1] === '$INSUNITS' && pairs[i + 1]) {
-            unitScale = INSUNITS_TO_MM[parseInt(pairs[i + 1][1], 10)] || 1;
-            break;
-          }
+      // drawing units from the header ($INSUNITS; 0 = unspecified)
+      let headerScale = 0;
+      for (let i = 0; i < pairs.length; i++) {
+        if (pairs[i][0] === 9 && pairs[i][1] === '$INSUNITS' && pairs[i + 1]) {
+          headerScale = INSUNITS_TO_MM[parseInt(pairs[i + 1][1], 10)] || 0;
+          break;
         }
       }
-      unitScale = unitScale || 1;
 
       // entities section
       let start = -1;
@@ -66,6 +85,7 @@
       const closedLoops = [];
       const openPaths = [];
       const segments = [];
+      const texts = [];
 
       let i = start;
       const readEntity = () => {
@@ -113,19 +133,49 @@
             else if (code === 21) y2 = parseFloat(val);
           }
           segments.push([[x1, y1], [x2, y2]]);
+        } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          let x = 0, y = 0, body = '';
+          for (const [code, val] of ent.data) {
+            if (code === 10) x = parseFloat(val);
+            else if (code === 20) y = parseFloat(val);
+            else if (code === 3) body += val; // MTEXT continuation chunks
+            else if (code === 1) body += val;
+          }
+          const t = this._cleanDxfText(body);
+          if (t) texts.push({ text: t, x, y });
         }
+      }
+
+      // unit: manual option > header > guess from the drawing's extent (a room is 1.5 m or larger)
+      const allPts = [].concat(...closedLoops, ...openPaths, ...segments);
+      let unit = { name: 'mm', source: 'default' };
+      const byName = { mm: 1, cm: 10, m: 1000 };
+      let unitScale = 1;
+      if (options.unit && byName[options.unit]) {
+        unitScale = byName[options.unit];
+        unit = { name: options.unit, source: 'manual' };
+      } else if (headerScale) {
+        unitScale = headerScale;
+        unit = { name: { 1: 'mm', 10: 'cm', 1000: 'm' }[headerScale] || (headerScale === 25.4 ? 'inch' : headerScale === 304.8 ? 'feet' : 'mm'), source: 'header' };
+      } else if (allPts.length) {
+        const xs = allPts.map((p) => p[0]), ys = allPts.map((p) => p[1]);
+        const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+        if (extent < 100) { unitScale = 1000; unit = { name: 'm', source: 'auto' }; }
+        else if (extent < 1500) { unitScale = 10; unit = { name: 'cm', source: 'auto' }; }
+        else { unit = { name: 'mm', source: 'auto' }; }
       }
 
       const scalePts = (pts) => pts.map(([x, y]) => [x * unitScale, y * unitScale]);
       const loops = closedLoops.map(scalePts);
-      const edgeList = segments.map((s) => scalePts(s));
+      const edgeList = segments.map((sg) => scalePts(sg));
       for (const path of openPaths) {
         const p = scalePts(path);
         for (let k = 0; k + 1 < p.length; k++) edgeList.push([p[k], p[k + 1]]);
       }
       loops.push(...this._loopsFromSegments(edgeList));
+      const labels = texts.map((t) => ({ text: t.text, x: t.x * unitScale, y: t.y * unitScale }));
 
-      return this._buildResult(loops, { source: 'dxf', unitScale });
+      return this._buildResult(loops, { source: 'dxf', unitScale, unit }, labels);
     }
 
     // ---------------------------------------------------------------- PDF
@@ -191,7 +241,17 @@
       }
 
       loops.push(...this._loopsFromSegments(edges));
-      return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 });
+
+      // text on the page (room names) in the same coordinate space as the paths
+      let labels = [];
+      try {
+        const tc = await page.getTextContent();
+        labels = tc.items
+          .filter((it) => it.str && it.str.trim())
+          .map((it) => ({ text: it.str.trim(), x: it.transform[4] * mmPerUnit, y: it.transform[5] * mmPerUnit }));
+      } catch (e) { /* no text layer: rooms are simply numbered */ }
+
+      return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 }, labels);
     }
 
     static _ensurePdfJs(options) {
@@ -279,8 +339,8 @@
       return loops;
     }
 
-    static _buildResult(loops, metadata) {
-      const rooms = [];
+    static _buildResult(loops, metadata, labels = []) {
+      let rooms = [];
       loops.forEach((pts) => {
         const room = this.normalizeRoom({ vertices: pts }, rooms.length);
         if (this.calculateArea(room.vertices) >= MIN_ROOM_AREA_MM2) rooms.push(room);
@@ -291,8 +351,54 @@
           '壁の外形を閉じたポリライン、またはつながった線で描いてください。'
         );
       }
-      rooms.forEach((r, i) => { r.id = 'room_' + (i + 1); });
+
+      // reading order: top to bottom, then left to right (rows are grouped within 1.5 m)
+      const cen = (r) => {
+        const b = this.bounds(r.vertices);
+        return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+      };
+      rooms.sort((a, b) => cen(b)[1] - cen(a)[1]);
+      const ordered = [];
+      while (rooms.length) {
+        const rowY = cen(rooms[0])[1];
+        const row = rooms.filter((r) => rowY - cen(r)[1] <= 1500);
+        rooms = rooms.filter((r) => !row.includes(r));
+        row.sort((a, b) => cen(a)[0] - cen(b)[0]);
+        ordered.push(...row);
+      }
+      rooms = ordered;
+
+      // name each room from text inside it (skip pure numbers / dimensions)
+      const skip = /^[\d\s.,+\-×xX*\/mMcC㎜㎡²㎝()（）:：]*$/;
+      const named = labels.filter((l) => !skip.test(l.text) && l.text.length <= 14);
+      named.sort((a, b) => b.y - a.y || a.x - b.x);
+      rooms.forEach((r) => {
+        const inside = named.filter((l) => this.pointInPolygon([l.x, l.y], r.vertices));
+        r.name = inside.length ? inside[0].text : '';
+      });
+      // a name used by several rooms (e.g. a note repeated) is not helpful: drop duplicates
+      const count = {};
+      rooms.forEach((r) => { if (r.name) count[r.name] = (count[r.name] || 0) + 1; });
+      rooms.forEach((r, i) => {
+        r.id = 'room_' + (i + 1);
+        if (r.name && count[r.name] > 1) r.name = r.name + ' ' + (rooms.slice(0, i).filter((q) => q.name === r.name).length + 1);
+        if (!r.name) r.name = '部屋 ' + (i + 1);
+      });
       return { rooms, metadata };
+    }
+
+    static bounds(vertices) {
+      const xs = vertices.map((p) => p[0]), ys = vertices.map((p) => p[1]);
+      return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    }
+
+    static pointInPolygon(p, vertices) {
+      let inside = false;
+      for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+        const [xi, yi] = vertices[i], [xj, yj] = vertices[j];
+        if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
     }
 
     static normalizeRoom(room, idx) {
@@ -318,6 +424,7 @@
       });
       return {
         id: room.id || 'room_' + (idx + 1),
+        name: room.name || '',
         vertices: v,
         walls,
         floor: room.floor || { material: 'carpet' },

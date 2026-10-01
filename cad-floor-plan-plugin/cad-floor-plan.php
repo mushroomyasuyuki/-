@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.4.0
+ * Version: 2.5.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.4.0');
+define('CFP_VERSION', '2.5.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -319,6 +319,9 @@ final class CAD_Floor_Plan_Plugin {
                     </div>
                     <div class="cfp-info-panel">
                         <div class="cfp-info-row"><span class="cfp-label">ファイル</span><span class="cfp-value" data-cfp="filename">未選択</span></div>
+                        <div class="cfp-info-row"><span class="cfp-label">選択中の部屋</span><span class="cfp-value" data-cfp="room-name">-</span></div>
+                        <div class="cfp-info-row"><span class="cfp-label">サイズ（幅×奥行）</span><span class="cfp-value" data-cfp="room-size">-</span></div>
+                        <div class="cfp-info-row"><span class="cfp-label">図面の単位</span><span class="cfp-value" data-cfp="unit-info">-</span></div>
                         <div class="cfp-info-row"><span class="cfp-label">床面積</span><span class="cfp-value" data-cfp="floor-area">-</span></div>
                         <div class="cfp-info-row"><span class="cfp-label">壁面積</span><span class="cfp-value" data-cfp="wall-area">-</span></div>
                         <div class="cfp-info-row"><span class="cfp-label">部屋数</span><span class="cfp-value" data-cfp="room-count">0</span></div>
@@ -329,6 +332,8 @@ final class CAD_Floor_Plan_Plugin {
                     <label>PDFの縮尺（1:N の N）
                         <input type="number" data-cfp="scale" min="1" step="1" value="1">
                     </label>
+                    <label>DXFの単位<select data-cfp="unit"><option value="auto">自動判定</option><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="apply-size" checked> 図面のサイズを見積もり・パースに反映する</label>
                     <label>床デザイン画像
                         <input type="file" data-cfp="floor-tex" accept="image/*">
                     </label>
@@ -338,9 +343,17 @@ final class CAD_Floor_Plan_Plugin {
                 </div>
 
                 <div class="cfp-status" data-cfp="status"></div>
+                <div class="cfp-rooms" data-cfp="rooms" hidden>
+                  <div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div>
+                  <div class="cfp-rooms-body">
+                    <svg class="cfp-plan" data-cfp="plan" role="group" aria-label="間取りの平面図"></svg>
+                    <div class="cfp-room-list" data-cfp="room-list"></div>
+                  </div>
+                </div>
                 <div class="cfp-canvas" data-cfp="canvas"></div>
                 <p class="cfp-hint">ドラッグで回転、ホイールで拡大縮小</p>
                 <p class="cfp-hint" data-cfp="design-note"></p>
+                <p class="cfp-hint" data-cfp="size-note"></p>
 
                 <div class="cfp-controls">
                     <button type="button" class="cfp-btn" data-cfp="sample-btn">サンプル</button>

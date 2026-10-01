@@ -30,3 +30,27 @@
 .cfp-btn{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600}
 .cfp-btn:hover{background:#3f3f46;border-color:#60a5fa;color:#60a5fa}
 @media(max-width:768px){.cfp-input-area{grid-template-columns:1fr}.cfp-btn{flex:1}}
+
+.cfp-check{flex-direction:row!important;align-items:center;gap:8px!important;cursor:pointer}
+.cfp-options select{padding:6px 8px;background:#09090b;color:#fff;border:1px solid #3f3f46;border-radius:6px}
+.cfp-rooms{background:#09090b;border:1px solid #27272a;border-radius:8px;padding:14px;margin:0 0 12px}
+.cfp-rooms[hidden]{display:none}
+.cfp-rooms-title{font-size:13px;font-weight:700;color:#fbbf24;margin-bottom:10px}
+.cfp-rooms-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.cfp-plan{width:100%;height:240px;background:#18181b;border:1px solid #27272a;border-radius:6px}
+.cfp-plan-room{cursor:pointer;outline:none}
+.cfp-plan-room polygon{fill:#27272a;stroke:#71717a;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.cfp-plan-room text{fill:#d4d4d8;font-weight:700;pointer-events:none}
+.cfp-plan-room:hover polygon,.cfp-plan-room:focus polygon{fill:#3f3f46;stroke:#60a5fa}
+.cfp-plan-room.is-selected polygon{fill:#1d4ed8;stroke:#93c5fd;stroke-width:2.5}
+.cfp-plan-room.is-selected text{fill:#fff}
+.cfp-room-list{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto}
+.cfp-room-btn{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;text-align:left;background:#18181b;color:#e4e4e7;border:1px solid #3f3f46;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:13px}
+.cfp-room-btn:hover{border-color:#60a5fa}
+.cfp-room-btn.is-selected{background:#1e3a8a;border-color:#93c5fd;color:#fff}
+.cfp-room-num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#3f3f46;font-weight:700;font-size:12px}
+.cfp-room-btn.is-selected .cfp-room-num{background:#2563eb}
+.cfp-room-name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfp-room-meta{font-size:12px;color:#a1a1aa;white-space:nowrap}
+.cfp-room-btn.is-selected .cfp-room-meta{color:#bfdbfe}
+@media(max-width:768px){.cfp-rooms-body{grid-template-columns:1fr}}

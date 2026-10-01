@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.4.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.5.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -32,6 +32,29 @@
 .cfp-btn{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600}
 .cfp-btn:hover{background:#3f3f46;border-color:#60a5fa;color:#60a5fa}
 @media(max-width:768px){.cfp-input-area{grid-template-columns:1fr}.cfp-btn{flex:1}}
+.cfp-check{flex-direction:row!important;align-items:center;gap:8px!important;cursor:pointer}
+.cfp-options select{padding:6px 8px;background:#09090b;color:#fff;border:1px solid #3f3f46;border-radius:6px}
+.cfp-rooms{background:#09090b;border:1px solid #27272a;border-radius:8px;padding:14px;margin:0 0 12px}
+.cfp-rooms[hidden]{display:none}
+.cfp-rooms-title{font-size:13px;font-weight:700;color:#fbbf24;margin-bottom:10px}
+.cfp-rooms-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.cfp-plan{width:100%;height:240px;background:#18181b;border:1px solid #27272a;border-radius:6px}
+.cfp-plan-room{cursor:pointer;outline:none}
+.cfp-plan-room polygon{fill:#27272a;stroke:#71717a;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.cfp-plan-room text{fill:#d4d4d8;font-weight:700;pointer-events:none}
+.cfp-plan-room:hover polygon,.cfp-plan-room:focus polygon{fill:#3f3f46;stroke:#60a5fa}
+.cfp-plan-room.is-selected polygon{fill:#1d4ed8;stroke:#93c5fd;stroke-width:2.5}
+.cfp-plan-room.is-selected text{fill:#fff}
+.cfp-room-list{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto}
+.cfp-room-btn{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;text-align:left;background:#18181b;color:#e4e4e7;border:1px solid #3f3f46;border-radius:6px;padding:8px 10px;cursor:pointer;font-size:13px}
+.cfp-room-btn:hover{border-color:#60a5fa}
+.cfp-room-btn.is-selected{background:#1e3a8a;border-color:#93c5fd;color:#fff}
+.cfp-room-num{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#3f3f46;font-weight:700;font-size:12px}
+.cfp-room-btn.is-selected .cfp-room-num{background:#2563eb}
+.cfp-room-name{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfp-room-meta{font-size:12px;color:#a1a1aa;white-space:nowrap}
+.cfp-room-btn.is-selected .cfp-room-meta{color:#bfdbfe}
+@media(max-width:768px){.cfp-rooms-body{grid-template-columns:1fr}}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -47,6 +70,9 @@
       </div>
       <div class="cfp-info-panel">
         <div class="cfp-info-row"><span class="cfp-label">ファイル</span><span class="cfp-value" data-cfp="filename">未選択</span></div>
+        <div class="cfp-info-row"><span class="cfp-label">選択中の部屋</span><span class="cfp-value" data-cfp="room-name">-</span></div>
+        <div class="cfp-info-row"><span class="cfp-label">サイズ（幅×奥行）</span><span class="cfp-value" data-cfp="room-size">-</span></div>
+        <div class="cfp-info-row"><span class="cfp-label">図面の単位</span><span class="cfp-value" data-cfp="unit-info">-</span></div>
         <div class="cfp-info-row"><span class="cfp-label">床面積</span><span class="cfp-value" data-cfp="floor-area">-</span></div>
         <div class="cfp-info-row"><span class="cfp-label">壁面積</span><span class="cfp-value" data-cfp="wall-area">-</span></div>
         <div class="cfp-info-row"><span class="cfp-label">部屋数</span><span class="cfp-value" data-cfp="room-count">0</span></div>
@@ -54,13 +80,23 @@
     </div>
     <div class="cfp-options">
       <label>PDFの縮尺（1:N の N）<input type="number" data-cfp="scale" min="1" step="1" value="1"></label>
+      <label>DXFの単位<select data-cfp="unit"><option value="auto">自動判定</option><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></label>
+      <label class="cfp-check"><input type="checkbox" data-cfp="apply-size" checked> 図面のサイズを見積もり・パースに反映する</label>
       <label>床デザイン画像<input type="file" data-cfp="floor-tex" accept="image/*"></label>
       <label>壁紙デザイン画像<input type="file" data-cfp="wall-tex" accept="image/*"></label>
     </div>
     <div class="cfp-status" data-cfp="status"></div>
+    <div class="cfp-rooms" data-cfp="rooms" hidden>
+      <div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div>
+      <div class="cfp-rooms-body">
+        <svg class="cfp-plan" data-cfp="plan" role="group" aria-label="間取りの平面図"></svg>
+        <div class="cfp-room-list" data-cfp="room-list"></div>
+      </div>
+    </div>
     <div class="cfp-canvas" data-cfp="canvas"></div>
     <p class="cfp-hint">ドラッグで回転、ホイールで拡大縮小</p>
     <p class="cfp-hint" data-cfp="design-note"></p>
+    <p class="cfp-hint" data-cfp="size-note"></p>
     <div class="cfp-controls">
       <button type="button" class="cfp-btn" data-cfp="sample-btn">サンプル</button>
       <button type="button" class="cfp-btn" data-cfp="reset-btn">視点をリセット</button>
@@ -89,7 +125,7 @@
       const ext = (input.name.split('.').pop() || '').toLowerCase();
       switch (ext) {
         case 'dxf':
-          return this.parseDXF(await input.text(), options);
+          return this.parseDXF(this._decodeDXF(await input.arrayBuffer()), options);
         case 'pdf':
           return this.parsePDF(input, options);
         case 'json':
@@ -101,23 +137,40 @@
       }
     }
     // ---------------------------------------------------------------- DXF
+    // DXF before R2007 stores text in the drawing's code page (Japanese drawings: Shift_JIS)
+    static _decodeDXF(buffer) {
+      const head = new TextDecoder('latin1').decode(new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 20000)));
+      const ver = (head.match(/\$ACADVER\s+1\s+(AC\d+)/) || [])[1];
+      let enc = 'utf-8';
+      if (!ver || ver < 'AC1021') {
+        const cp = (head.match(/\$DWGCODEPAGE\s+3\s+(\S+)/) || [])[1] || '';
+        enc = { ANSI_932: 'shift_jis', ANSI_936: 'gbk', ANSI_949: 'euc-kr', ANSI_950: 'big5', ANSI_1252: 'windows-1252' }[cp.toUpperCase()] || (cp ? 'windows-1252' : 'utf-8');
+      }
+      try { return new TextDecoder(enc).decode(buffer); } catch (e) { return new TextDecoder('utf-8').decode(buffer); }
+    }
+    static _cleanDxfText(t) {
+      return t
+        .replace(/\\U\+([0-9A-Fa-f]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/\\P/g, ' ')
+        .replace(/\\[A-Za-z][^;\\]*;/g, '')
+        .replace(/[{}]/g, '')
+        .replace(/%%[cCdDpP]/g, '')
+        .trim();
+    }
     static parseDXF(text, options = {}) {
       const lines = text.split(/\r\n|\r|\n/);
       const pairs = [];
       for (let i = 0; i + 1 < lines.length; i += 2) {
         pairs.push([parseInt(lines[i].trim(), 10), lines[i + 1].trim()]);
       }
-      // header units
-      let unitScale = options.unitScale || 0;
-      if (!unitScale) {
-        for (let i = 0; i < pairs.length; i++) {
-          if (pairs[i][0] === 9 && pairs[i][1] === '$INSUNITS' && pairs[i + 1]) {
-            unitScale = INSUNITS_TO_MM[parseInt(pairs[i + 1][1], 10)] || 1;
-            break;
-          }
+      // drawing units from the header ($INSUNITS; 0 = unspecified)
+      let headerScale = 0;
+      for (let i = 0; i < pairs.length; i++) {
+        if (pairs[i][0] === 9 && pairs[i][1] === '$INSUNITS' && pairs[i + 1]) {
+          headerScale = INSUNITS_TO_MM[parseInt(pairs[i + 1][1], 10)] || 0;
+          break;
         }
       }
-      unitScale = unitScale || 1;
       // entities section
       let start = -1;
       for (let i = 0; i < pairs.length - 1; i++) {
@@ -130,6 +183,7 @@
       const closedLoops = [];
       const openPaths = [];
       const segments = [];
+      const texts = [];
       let i = start;
       const readEntity = () => {
         const type = pairs[i][1];
@@ -174,17 +228,46 @@
             else if (code === 21) y2 = parseFloat(val);
           }
           segments.push([[x1, y1], [x2, y2]]);
+        } else if (ent.type === 'TEXT' || ent.type === 'MTEXT') {
+          let x = 0, y = 0, body = '';
+          for (const [code, val] of ent.data) {
+            if (code === 10) x = parseFloat(val);
+            else if (code === 20) y = parseFloat(val);
+            else if (code === 3) body += val; // MTEXT continuation chunks
+            else if (code === 1) body += val;
+          }
+          const t = this._cleanDxfText(body);
+          if (t) texts.push({ text: t, x, y });
         }
+      }
+      // unit: manual option > header > guess from the drawing's extent (a room is 1.5 m or larger)
+      const allPts = [].concat(...closedLoops, ...openPaths, ...segments);
+      let unit = { name: 'mm', source: 'default' };
+      const byName = { mm: 1, cm: 10, m: 1000 };
+      let unitScale = 1;
+      if (options.unit && byName[options.unit]) {
+        unitScale = byName[options.unit];
+        unit = { name: options.unit, source: 'manual' };
+      } else if (headerScale) {
+        unitScale = headerScale;
+        unit = { name: { 1: 'mm', 10: 'cm', 1000: 'm' }[headerScale] || (headerScale === 25.4 ? 'inch' : headerScale === 304.8 ? 'feet' : 'mm'), source: 'header' };
+      } else if (allPts.length) {
+        const xs = allPts.map((p) => p[0]), ys = allPts.map((p) => p[1]);
+        const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+        if (extent < 100) { unitScale = 1000; unit = { name: 'm', source: 'auto' }; }
+        else if (extent < 1500) { unitScale = 10; unit = { name: 'cm', source: 'auto' }; }
+        else { unit = { name: 'mm', source: 'auto' }; }
       }
       const scalePts = (pts) => pts.map(([x, y]) => [x * unitScale, y * unitScale]);
       const loops = closedLoops.map(scalePts);
-      const edgeList = segments.map((s) => scalePts(s));
+      const edgeList = segments.map((sg) => scalePts(sg));
       for (const path of openPaths) {
         const p = scalePts(path);
         for (let k = 0; k + 1 < p.length; k++) edgeList.push([p[k], p[k + 1]]);
       }
       loops.push(...this._loopsFromSegments(edgeList));
-      return this._buildResult(loops, { source: 'dxf', unitScale });
+      const labels = texts.map((t) => ({ text: t.text, x: t.x * unitScale, y: t.y * unitScale }));
+      return this._buildResult(loops, { source: 'dxf', unitScale, unit }, labels);
     }
     // ---------------------------------------------------------------- PDF
     static async parsePDF(file, options = {}) {
@@ -244,7 +327,15 @@
         }
       }
       loops.push(...this._loopsFromSegments(edges));
-      return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 });
+      // text on the page (room names) in the same coordinate space as the paths
+      let labels = [];
+      try {
+        const tc = await page.getTextContent();
+        labels = tc.items
+          .filter((it) => it.str && it.str.trim())
+          .map((it) => ({ text: it.str.trim(), x: it.transform[4] * mmPerUnit, y: it.transform[5] * mmPerUnit }));
+      } catch (e) { /* no text layer: rooms are simply numbered */ }
+      return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 }, labels);
     }
     static _ensurePdfJs(options) {
       if (root.pdfjsLib) {
@@ -324,8 +415,8 @@
       }
       return loops;
     }
-    static _buildResult(loops, metadata) {
-      const rooms = [];
+    static _buildResult(loops, metadata, labels = []) {
+      let rooms = [];
       loops.forEach((pts) => {
         const room = this.normalizeRoom({ vertices: pts }, rooms.length);
         if (this.calculateArea(room.vertices) >= MIN_ROOM_AREA_MM2) rooms.push(room);
@@ -336,8 +427,50 @@
           '壁の外形を閉じたポリライン、またはつながった線で描いてください。'
         );
       }
-      rooms.forEach((r, i) => { r.id = 'room_' + (i + 1); });
+      // reading order: top to bottom, then left to right (rows are grouped within 1.5 m)
+      const cen = (r) => {
+        const b = this.bounds(r.vertices);
+        return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+      };
+      rooms.sort((a, b) => cen(b)[1] - cen(a)[1]);
+      const ordered = [];
+      while (rooms.length) {
+        const rowY = cen(rooms[0])[1];
+        const row = rooms.filter((r) => rowY - cen(r)[1] <= 1500);
+        rooms = rooms.filter((r) => !row.includes(r));
+        row.sort((a, b) => cen(a)[0] - cen(b)[0]);
+        ordered.push(...row);
+      }
+      rooms = ordered;
+      // name each room from text inside it (skip pure numbers / dimensions)
+      const skip = /^[\d\s.,+\-×xX*\/mMcC㎜㎡²㎝()（）:：]*$/;
+      const named = labels.filter((l) => !skip.test(l.text) && l.text.length <= 14);
+      named.sort((a, b) => b.y - a.y || a.x - b.x);
+      rooms.forEach((r) => {
+        const inside = named.filter((l) => this.pointInPolygon([l.x, l.y], r.vertices));
+        r.name = inside.length ? inside[0].text : '';
+      });
+      // a name used by several rooms (e.g. a note repeated) is not helpful: drop duplicates
+      const count = {};
+      rooms.forEach((r) => { if (r.name) count[r.name] = (count[r.name] || 0) + 1; });
+      rooms.forEach((r, i) => {
+        r.id = 'room_' + (i + 1);
+        if (r.name && count[r.name] > 1) r.name = r.name + ' ' + (rooms.slice(0, i).filter((q) => q.name === r.name).length + 1);
+        if (!r.name) r.name = '部屋 ' + (i + 1);
+      });
       return { rooms, metadata };
+    }
+    static bounds(vertices) {
+      const xs = vertices.map((p) => p[0]), ys = vertices.map((p) => p[1]);
+      return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+    }
+    static pointInPolygon(p, vertices) {
+      let inside = false;
+      for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i++) {
+        const [xi, yi] = vertices[i], [xj, yj] = vertices[j];
+        if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
     }
     static normalizeRoom(room, idx) {
       let v = (room.vertices || []).map((p) => [Number(p[0]), Number(p[1])]);
@@ -362,6 +495,7 @@
       });
       return {
         id: room.id || 'room_' + (idx + 1),
+        name: room.name || '',
         vertices: v,
         walls,
         floor: room.floor || { material: 'carpet' },
@@ -680,10 +814,15 @@
   const SAMPLE = {
     rooms: [{
       id: 'sample',
+      name: 'サンプル（L字の部屋）',
       vertices: [[0, 0], [6000, 0], [6000, 2500], [3500, 2500], [3500, 5000], [0, 5000]],
     }],
     metadata: { source: 'sample' },
   };
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const fmtM = (mm) => (mm / 1000).toFixed(1);
+  const fmtMm = (mm) => Math.round(mm).toLocaleString('ja-JP');
+  const fmtArea = (mm2) => (mm2 / 1e6).toFixed(2);
   // true when something has been drawn on the canvas (checked on a 16x16 downscale)
   function canvasHasContent(c) {
     try {
@@ -700,14 +839,19 @@
     constructor(el) {
       this.el = el;
       this.renderer = null;
-      this.data = null;
+      this.data = null;        // every room found in the drawing
+      this.roomIndex = 0;      // the room shown in 3D
+      this.fromFile = false;   // true when the data came from an uploaded drawing (not the sample)
       this.lastFile = null;
       this.$ = (name) => el.querySelector('[data-cfp="' + name + '"]');
       this.height = parseInt(el.dataset.height, 10) || 600;
       this.$('canvas').style.height = this.height + 'px';
+      // size reflection only makes sense on the page that has the estimate tool
+      this.hasTool = !!document.getElementById('cc-width');
+      if (!this.hasTool) this.$('apply-size').closest('label').hidden = true;
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
-      if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル（L字の部屋）');
+      if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル', { fromFile: false });
     }
     _bind() {
       const drop = this.$('drop');
@@ -717,43 +861,210 @@
       ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
       ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('is-over'); }));
       drop.addEventListener('drop', (e) => e.dataTransfer.files[0] && this.loadFile(e.dataTransfer.files[0]));
-      this.$('scale').addEventListener('change', () => this.lastFile && this.loadFile(this.lastFile));
-      this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル（L字の部屋）'));
+      const reload = () => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true });
+      this.$('scale').addEventListener('change', reload);
+      this.$('unit').addEventListener('change', reload);
+      this.$('apply-size').addEventListener('change', () => {
+        const room = this.data && this.data.rooms[this.roomIndex];
+        if (this.$('apply-size').checked && this.fromFile && room) this.reflectSize(room);
+        else this.$('size-note').textContent = '';
+      });
+      this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
       this.$('floor-tex').addEventListener('change', (e) => this._texture(e, 'floor'));
       this.$('wall-tex').addEventListener('change', (e) => this._texture(e, 'wall'));
     }
-    async loadFile(file) {
+    async loadFile(file, opts = {}) {
       this.lastFile = file;
       this.status('読み込み中…', 'loading');
       try {
         const scale = parseFloat(this.$('scale').value) || 1;
-        const data = await CADParser.parseFloorPlan(file, { scale });
-        this.loadData(data, file.name);
+        const unit = this.$('unit').value;
+        const data = await CADParser.parseFloorPlan(file, { scale, unit });
+        this.loadData(data, file.name, { fromFile: true, keepRoom: !!opts.keepRoom });
       } catch (err) {
         this.status('エラー: ' + err.message, 'error');
         console.error(err);
       }
     }
-    loadData(data, label) {
+    loadData(data, label, opts = {}) {
       try {
         const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: data.metadata };
         CADParser.validate(normalized);
         if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
-        this.renderer.loadFloorPlan(normalized);
+        const prevIndex = this.roomIndex;
+        const prevCount = this.data ? this.data.rooms.length : 0;
         this.data = normalized;
-        const a = this.renderer.getAreas();
-        this.$('filename').textContent = label;
-        this.$('floor-area').textContent = a.floorArea + ' ㎡';
-        this.$('wall-area').textContent = a.wallArea + ' ㎡';
-        this.$('room-count').textContent = normalized.rooms.length;
-        this.syncDesigns(false);
-        this.status('読み込みました（部屋 ' + normalized.rooms.length + '）', 'success');
+        this.label = label;
+        this.fromFile = !!opts.fromFile;
+        // with several rooms, start from the largest one; the user picks another on the plan.
+        // A reload of the same drawing (scale / unit changed) keeps the room already chosen.
+        let best = 0;
+        normalized.rooms.forEach((r, i) => {
+          if (CADParser.calculateArea(r.vertices) > CADParser.calculateArea(normalized.rooms[best].vertices)) best = i;
+        });
+        if (opts.keepRoom && prevCount === normalized.rooms.length && prevIndex < normalized.rooms.length) best = prevIndex;
+        this.renderPicker();
+        this.selectRoom(best, this.fromFile);
+        const n = normalized.rooms.length;
+        this.status(n > 1
+          ? '部屋が ' + n + ' 室見つかりました。3Dで見たい部屋を、平面図または一覧から選んでください。'
+          : '読み込みました（部屋 1）', 'success');
       } catch (err) {
         this.status('エラー: ' + err.message, 'error');
         console.error(err);
       }
+    }
+    selectRoom(i, reflect) {
+      const room = this.data.rooms[i];
+      this.roomIndex = i;
+      this.renderer.loadFloorPlan({ rooms: [room], metadata: this.data.metadata });
+      const b = CADParser.bounds(room.vertices);
+      const a = this.renderer.getAreas();
+      this.$('filename').textContent = this.label;
+      this.$('room-name').textContent = room.name || ('部屋 ' + (i + 1));
+      this.$('room-size').textContent = fmtMm(b.maxX - b.minX) + ' × ' + fmtMm(b.maxY - b.minY) + ' mm';
+      this.$('floor-area').textContent = a.floorArea + ' ㎡';
+      this.$('wall-area').textContent = a.wallArea + ' ㎡';
+      this.$('room-count').textContent = this.data.rooms.length;
+      this.$('unit-info').textContent = this._unitText();
+      this._markSelected();
+      this.syncDesigns(false);
+      if (reflect && this.$('apply-size').checked) this.reflectSize(room);
+      else this.$('size-note').textContent = '';
+    }
+    _unitText() {
+      const m = this.data.metadata || {};
+      if (m.unit) {
+        const how = { header: '図面の設定', auto: '自動判定', manual: '手動指定', default: '既定' }[m.unit.source] || '';
+        return m.unit.name + (how ? '（' + how + '）' : '');
+      }
+      if (m.source === 'pdf') return 'PDF 縮尺 1:' + (m.pdfScale || 1);
+      return '-';
+    }
+    // ----------------------------------------------------------- room picker
+    renderPicker() {
+      const wrap = this.$('rooms');
+      const rooms = this.data.rooms;
+      wrap.hidden = rooms.length < 2;
+      const svg = this.$('plan');
+      const list = this.$('room-list');
+      svg.textContent = '';
+      list.textContent = '';
+      if (rooms.length < 2) return;
+      const all = rooms.flatMap((r) => r.vertices);
+      const b = CADParser.bounds(all);
+      const w = b.maxX - b.minX, h = b.maxY - b.minY;
+      const pad = Math.max(w, h) * 0.04;
+      // CAD Y is up, SVG Y is down
+      svg.setAttribute('viewBox', [b.minX - pad, -b.maxY - pad, w + pad * 2, h + pad * 2].join(' '));
+      const fs = Math.max(w, h) / (rooms.length > 12 ? 30 : 16);
+      // big rooms first so that small rooms inside them stay clickable
+      const order = rooms.map((r, i) => i).sort((p, q) => CADParser.calculateArea(rooms[q].vertices) - CADParser.calculateArea(rooms[p].vertices));
+      order.forEach((i) => {
+        const r = rooms[i];
+        const g = document.createElementNS(SVG_NS, 'g');
+        g.setAttribute('class', 'cfp-plan-room');
+        g.setAttribute('data-i', i);
+        g.setAttribute('tabindex', '0');
+        g.setAttribute('role', 'button');
+        g.setAttribute('aria-label', (i + 1) + ' ' + r.name);
+        const poly = document.createElementNS(SVG_NS, 'polygon');
+        poly.setAttribute('points', r.vertices.map(([x, y]) => x + ',' + -y).join(' '));
+        const title = document.createElementNS(SVG_NS, 'title');
+        const rb = CADParser.bounds(r.vertices);
+        title.textContent = (i + 1) + '. ' + r.name + '（' + fmtM(rb.maxX - rb.minX) + '×' + fmtM(rb.maxY - rb.minY) + 'm）';
+        const text = document.createElementNS(SVG_NS, 'text');
+        text.setAttribute('x', (rb.minX + rb.maxX) / 2);
+        text.setAttribute('y', -(rb.minY + rb.maxY) / 2);
+        // keep the number inside small rooms
+        text.setAttribute('font-size', Math.min(fs, Math.min(rb.maxX - rb.minX, rb.maxY - rb.minY) / 2));
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'central');
+        text.textContent = i + 1;
+        g.append(poly, title, text);
+        g.addEventListener('click', () => this._pick(i));
+        g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this._pick(i); } });
+        svg.appendChild(g);
+      });
+      rooms.forEach((r, i) => {
+        const rb = CADParser.bounds(r.vertices);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cfp-room-btn';
+        btn.setAttribute('data-i', i);
+        const num = document.createElement('span');
+        num.className = 'cfp-room-num';
+        num.textContent = i + 1;
+        const name = document.createElement('span');
+        name.className = 'cfp-room-name';
+        name.textContent = r.name;
+        const meta = document.createElement('span');
+        meta.className = 'cfp-room-meta';
+        meta.textContent = fmtM(rb.maxX - rb.minX) + '×' + fmtM(rb.maxY - rb.minY) + 'm / ' + fmtArea(CADParser.calculateArea(r.vertices)) + '㎡';
+        btn.append(num, name, meta);
+        btn.addEventListener('click', () => this._pick(i));
+        list.appendChild(btn);
+      });
+    }
+    _pick(i) {
+      this.selectRoom(i, this.fromFile);
+      this.status('「' + (this.data.rooms[i].name) + '」を表示しています。', 'success');
+    }
+    _markSelected() {
+      this.el.querySelectorAll('.cfp-plan-room, .cfp-room-btn').forEach((n) => {
+        const on = Number(n.getAttribute('data-i')) === this.roomIndex;
+        n.classList.toggle('is-selected', on);
+        if (n.tagName === 'BUTTON') n.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    // ------------------------------------------------- size -> estimate / perspective
+    _setField(el, v) {
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    /**
+     * Writes the selected room's size into the estimate tool (carpet W x H, rounded up to the
+     * 500 mm tile) and the room perspective (width / floor depth / wall height).
+     */
+    reflectSize(room) {
+      const note = this.$('size-note');
+      const ccW = document.getElementById('cc-width');
+      const ccH = document.getElementById('cc-height');
+      if (!ccW || !ccH) { note.textContent = ''; return; }
+      const b = CADParser.bounds(room.vertices);
+      const w = b.maxX - b.minX, h = b.maxY - b.minY;
+      // round up to the 500 mm tile, but ignore drawing noise of up to 10 mm
+      const tiles = (mm) => Math.max(500, Math.ceil((mm - 10) / 500) * 500);
+      const tileW = tiles(w);
+      const tileH = tiles(h);
+      this._setField(ccW, tileW);
+      this._setField(ccH, tileH);
+      const wallH = Math.max(...room.walls.map((x) => x.height || CADParser.DEFAULT_WALL_HEIGHT));
+      let clamped = false;
+      const persp = { 'persp-width': w, 'persp-floor-depth': h, 'persp-wall-height': wallH };
+      const applied = {};
+      Object.keys(persp).forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const min = parseFloat(el.min) || 0, max = parseFloat(el.max) || Infinity;
+        const v = Math.min(max, Math.max(min, Math.round(persp[id] / 50) * 50));
+        if (v !== Math.round(persp[id] / 50) * 50) clamped = true;
+        applied[id] = v;
+        this._setField(el, v);
+      });
+      const area = CADParser.calculateArea(room.vertices);
+      let text = '図面から「' + (room.name || '部屋') + '」のサイズ ' + fmtMm(w) + '×' + fmtMm(h) + ' mm を読み取り、'
+        + 'カーペットを ' + fmtMm(tileW) + '×' + fmtMm(tileH) + ' mm（500mm単位に切り上げ。10mm以下の端数は切り捨て）、'
+        + 'お部屋パースを 幅' + fmtMm(applied['persp-width'] || w) + '／奥行' + fmtMm(applied['persp-floor-depth'] || h)
+        + '／壁の高さ' + fmtMm(applied['persp-wall-height'] || wallH) + ' mm に設定しました。';
+      if (Math.abs(area - w * h) / (w * h) > 0.01) {
+        text += ' ※四角でない部屋のため、見積もりは外接する四角（' + fmtArea(tileW * tileH) + '㎡）で計算されます（実際の床面積は ' + fmtArea(area) + '㎡）。';
+      }
+      if (clamped) text += ' ※パースの寸法は入力欄の上限・下限に丸めました。';
+      note.textContent = text;
     }
     /**
      * On the wallpaper/carpet simulator page, shows the converted (reduced-colour) floor and
