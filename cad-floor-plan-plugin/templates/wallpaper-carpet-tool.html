@@ -393,9 +393,9 @@
     <div class="palette-controls" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
       <button type="button" id="btn-save-floor-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟧 床デザイン画像を保存（PNG）</button>
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
-      <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（910mm幅に分割・ZIP）</button>
+      <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（元データ・全体・910mm幅の連続データ・ZIP）</button>
     </div>
-    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは左右10mmずつ重なり（1巾が受け持つ壁は890mm）、壁の範囲を赤枠（別レイヤー）で示します。</div>
+    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは左右10mmずつ重なり（1巾が受け持つ壁は890mm）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
     <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下100mmずつの裁断代」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
   </section>
 
@@ -961,6 +961,7 @@
 
     img.onload = function () {
       cwState.loadedImg = img;
+      cwState.file = file; // 印刷用ZIPに「元データ」として入れる
       updateWallCanvas();
       URL.revokeObjectURL(objectUrl);
     };
@@ -1626,6 +1627,7 @@
       drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP, P.TRIM_TOP, W, WH);
 
       const files = [];
+      const strips = [];
       const stamp = Date.now();
       for (let i = 0; i !== N; i++) {
         if (button) button.textContent = '印刷用データを作成中… ' + (i + 1) + ' / ' + N;
@@ -1649,6 +1651,7 @@
         const cx = comp.getContext('2d');
         cx.drawImage(strip, 0, 0);
         cx.drawImage(frame, 0, 0);
+        strips.push({ design: strip, frame: frame });
         const no = String(i + 1).padStart(2, '0');
         files.push({
           name: 'wallpaper_' + no + '_of_' + String(N).padStart(2, '0') + '_' + P.ROLL + 'x' + H + 'mm.psd',
@@ -1658,6 +1661,79 @@
           ], 25.4)
         });
       }
+      // ---- 変換後全体データ：全巾分の絵（左右の重なり・上下の裁断代を含む）＋赤枠（壁の範囲）と巾の境目 ----
+      if (button) button.textContent = '全体データを作成中…';
+      await new Promise((res) => setTimeout(res, 0));
+      const fullFrame = document.createElement('canvas');
+      fullFrame.width = full.width;
+      fullFrame.height = H;
+      const ff = fullFrame.getContext('2d');
+      ff.strokeStyle = '#ff0000';
+      ff.lineWidth = 3;
+      ff.strokeRect(P.OVERLAP + 1.5, P.TRIM_TOP + 1.5, W - 3, WH - 3);
+      ff.lineWidth = 2;
+      for (let i = 1; i !== N; i++) {
+        const lx = P.OVERLAP + i * P.STEP + 0.5;
+        ff.beginPath(); ff.moveTo(lx, 0); ff.lineTo(lx, H); ff.stroke();
+      }
+      const fullComp = document.createElement('canvas');
+      fullComp.width = full.width;
+      fullComp.height = H;
+      fullComp.getContext('2d').drawImage(full, 0, 0);
+      fullComp.getContext('2d').drawImage(fullFrame, 0, 0);
+      const extra = [];
+      extra.push({
+        name: '02_変換後全体データ_' + full.width + 'x' + H + 'mm.psd',
+        blob: writeCmykPsd(full.width, H, fullComp, [
+          { name: '①壁紙 全体（' + N + '巾分・左右の重なりと上下の裁断代を含む）', canvas: full },
+          { name: '②赤枠（壁の範囲）・巾の境目', canvas: fullFrame }
+        ], 25.4)
+      });
+
+      // ---- 910mm幅で切った長いデータ：巾を縦につなげ、1巾おきに180°回転（上下を逆向き）して連続させる ----
+      // 1巾目は上が天井側、2巾目は下が天井側…と交互にすることで、隣り合う巾の端どうし（天井側どうし・床側どうし）がつながる。
+      // PSDの高さの上限（30,000px）を超えるときは、複数のファイルに分ける。
+      const perFile = Math.max(1, Math.floor(30000 / H));
+      const parts = Math.ceil(N / perFile);
+      for (let pi = 0; pi !== parts; pi++) {
+        if (button) button.textContent = '長いデータを作成中… ' + (pi + 1) + ' / ' + parts;
+        await new Promise((res) => setTimeout(res, 0));
+        const first = pi * perFile, count = Math.min(perFile, N - first);
+        const longD = document.createElement('canvas');
+        const longF = document.createElement('canvas');
+        longD.width = longF.width = P.ROLL;
+        longD.height = longF.height = count * H;
+        const ld = longD.getContext('2d'), lf = longF.getContext('2d');
+        for (let j = 0; j !== count; j++) {
+          const si = first + j;
+          const put = (ctx, src) => {
+            ctx.save();
+            if (si % 2 === 1) { ctx.translate(P.ROLL, j * H + H); ctx.rotate(Math.PI); }
+            else ctx.translate(0, j * H);
+            ctx.drawImage(src, 0, 0);
+            ctx.restore();
+          };
+          put(ld, strips[si].design);
+          put(lf, strips[si].frame);
+        }
+        const longC = document.createElement('canvas');
+        longC.width = P.ROLL;
+        longC.height = count * H;
+        longC.getContext('2d').drawImage(longD, 0, 0);
+        longC.getContext('2d').drawImage(longF, 0, 0);
+        extra.push({
+          name: '03_910mm幅ロール連続データ_' + (first + 1) + '-' + (first + count) + '巾目_' + P.ROLL + 'x' + (count * H) + 'mm' + (parts > 1 ? '_' + (pi + 1) + 'of' + parts : '') + '.psd',
+          blob: writeCmykPsd(P.ROLL, count * H, longC, [
+            { name: '①壁紙 ' + (first + 1) + '〜' + (first + count) + '巾目（偶数巾は180°回転）', canvas: longD },
+            { name: '②赤枠（各巾の壁の範囲）', canvas: longF }
+          ], 25.4)
+        });
+      }
+      // 元データ（アップロードされたファイルそのまま）
+      if (cwState.file) extra.unshift({ name: '01_元データ_' + cwState.file.name, blob: cwState.file });
+      files.forEach((x) => { x.name = '04_巾ごと/' + x.name; });
+      files.unshift(...extra);
+
       const info = [
         '壁紙 印刷用データ（910mm幅の巾に分割）',
         '',
@@ -1667,7 +1743,13 @@
         '巾数：' + N + ' 巾（左から順に 01, 02, …）',
         '赤枠：各巾が受け持つ壁の範囲（別レイヤー「②赤枠」。印刷しない場合はレイヤーを非表示にしてください）',
         '形式：CMYK・8bit・PSD・25.4dpi（1px = 1mm）。RGBからの単純変換のため、印刷色は校正してください。',
-        '貼り方：' + ({ repeat: '柄を繰り返して貼る（柄の大きさ ' + getWallRepeat().mm + ' mm）', center: '1枚を壁ごとに中央に貼る', wrap: '1枚を部屋を一周して続けて貼る（奥の壁の部分）' }[getWallRepeat().mode] || '')
+        '貼り方：' + ({ repeat: '柄を繰り返して貼る（柄の大きさ ' + getWallRepeat().mm + ' mm）', center: '1枚を壁ごとに中央に貼る', wrap: '1枚を部屋を一周して続けて貼る（奥の壁の部分）' }[getWallRepeat().mode] || ''),
+        '',
+        '【入っているデータ】',
+        '01_元データ … アップロードされた壁紙用デザイン画像（そのまま）',
+        '02_変換後全体データ … 減色後のデザインを壁全体に貼った絵（全 ' + N + ' 巾分。左右の重なり・上下の裁断代を含む）。赤枠＝壁の範囲、縦線＝巾の境目',
+        '03_910mm幅ロール連続データ … 910mm幅の巾を縦に1本につなげたデータ。1巾目は上が天井側、2巾目は180°回転して下が天井側…と交互（1巾目の上をA・下をCとすると、AC→CA→AC→CA の順）。隣り合う巾は天井側どうし・床側どうしでつながります。PSDの高さ上限（30,000mm）を超える場合は複数ファイルに分けています',
+        '04_巾ごと … 1巾ずつのPSD（すべて天井側が上）'
       ].join('\r\n');
       files.push({ name: 'README_印刷データについて.txt', blob: new Blob([new TextEncoder().encode('﻿' + info)], { type: 'text/plain' }) });
       if (button) button.textContent = 'ZIPにまとめています…';
