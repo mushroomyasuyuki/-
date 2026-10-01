@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.25.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.26.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2561,7 +2561,9 @@
     }
     // The walls ticked on every loaded elevation sheet: total width, area and wall paper strips (910 mm rolls).
     _updateWallTotal() {
-      const ROLL = 910, TRIM = 200;
+      // 910mm幅のロールを左右10mmずつ重ねて貼る（1巾が受け持つのは890mm）。1巾の長さ = 壁の高さ + 上下100mm
+      const WP = window.cfpWallPrint || { STEP: 890, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+      const ROLL = WP.STEP, TRIM = WP.TRIM_TOP + WP.TRIM_BOTTOM;
       const picked = [];
       this.drawings.filter((d) => d.type === 'elev' && d.elev).forEach((d) => {
         const custom = d.file === this._elevFile && this.elev ? this.elev.custom : ((this.elevStates.get(d.file) || {}).custom || []);
@@ -2584,7 +2586,7 @@
           strips, lengthM: Math.round(len * 10) / 10, files,
         };
         total.text = picked.length + '面（' + files.join('・') + '）幅の合計 ' + fmtMm(total.widthMm) + ' mm／面積の合計 ' + total.areaM2
-          + ' ㎡／910mm幅のロールで ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 裁断代200mm）';
+          + ' ㎡／910mm幅のロール（左右10mmずつ重ね）で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下100mmずつ）';
         out.textContent = '壁紙の合計: ' + total.text + '。扉・窓などの開口は差し引いていません。';
       } else out.textContent = '壁紙の合計: 一覧の左のチェックで、合計に入れる壁を選んでください。';
       window.cfpWallTotal = total;

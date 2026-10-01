@@ -393,8 +393,10 @@
     <div class="palette-controls" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
       <button type="button" id="btn-save-floor-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟧 床デザイン画像を保存（PNG）</button>
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
+      <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（910mm幅に分割・ZIP）</button>
     </div>
-    <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。ガイドは「横910mm間隔の縦線（ロール幅の目安）」と「壁の高さ位置の横線（その下が+200mmの裁断代）」を赤色で示します。</div>
+    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは左右10mmずつ重なり（1巾が受け持つ壁は890mm）、壁の範囲を赤枠（別レイヤー）で示します。</div>
+    <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下100mmずつの裁断代」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
   </section>
 
   <!-- 保存ボタン群（通常PSD保存 ＆ 5mmストレッチ保存） -->
@@ -1159,7 +1161,9 @@
   window.cfpSingleImageWidthMm = singleImageWidthMm;
 
   // 壁いっぱいに1枚：縦横比を保ったまま、どの壁でも同じ大きさ（singleImageWidthMm）で中央に配置し、はみ出した分は切り取る
-  function coverWallCanvas(source, w, h) {
+  // wallH: 壁の高さ（px）。h がそれより大きい（下に裁断代がある）ときも、壁の部分の中央に合わせる
+  function coverWallCanvas(source, w, h, wallH) {
+    wallH = wallH || h;
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const out = document.createElement('canvas');
     out.width = w;
@@ -1171,7 +1175,7 @@
     ctx.fillRect(0, 0, w, h);
     const k = singleImageWidthMm(sw / sh) / sw;
     const dw = sw * k, dh = sh * k;
-    ctx.drawImage(source, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    ctx.drawImage(source, (w - dw) / 2, (wallH - dh) / 2, dw, dh);
     return out;
   }
 
@@ -1187,7 +1191,8 @@
   }
   window.cfpWrapBand = wrapBand;
 
-  function wrapWallCanvas(source, w, h) {
+  function wrapWallCanvas(source, w, h, wallH) {
+    wallH = wallH || h;
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const b = wrapBand(sw / sh);
     const out = document.createElement('canvas');
@@ -1198,7 +1203,7 @@
     ctx.fillRect(0, 0, w, h);
     ctx.imageSmoothingQuality = 'high';
     const k = w / b.W; // 帯[mm] → この壁のピクセル
-    ctx.drawImage(source, (b.s0 - b.D) * k, (h - b.ih * k) / 2, b.iw * k, b.ih * k);
+    ctx.drawImage(source, (b.s0 - b.D) * k, (wallH - b.ih * k) / 2, b.iw * k, b.ih * k);
     return out;
   }
 
@@ -1513,6 +1518,172 @@
   //   高さ = お部屋パースの「壁の高さ」(mm) + 200mm（裁断代）
   // を使用する。
   // =====================================================================
+  // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代、巾は910mm幅で左右10mmずつ重ねる
+  const WALL_PRINT = { ROLL: 910, OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+  WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP * 2; // 1巾が受け持つ壁の幅（890mm）
+  window.cfpWallPrint = WALL_PRINT;
+
+  // 壁の左上が (ox, oy) にある壁（wallW × wallH、1px=1mm）として、貼り方どおりにデザインを描く。
+  // 壁の外（裁断代・重なり）にも、柄・画像の続きを描く（1枚の画像の外は白）
+  function drawWallDesign(ctx, source, ox, oy, wallW, wallH) {
+    const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
+    const r = getWallRepeat();
+    const cw = ctx.canvas.width, chh = ctx.canvas.height;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cw, chh);
+    ctx.imageSmoothingQuality = 'high';
+    if (r.on) {
+      const tw = Math.max(1, Math.round(r.mm)), th = Math.max(1, Math.round(r.mm * sh / sw));
+      const tile = document.createElement('canvas');
+      tile.width = tw;
+      tile.height = th;
+      tile.getContext('2d').drawImage(source, 0, 0, tw, th);
+      // 柄の区切りを壁の左端・天井に合わせる
+      const x0 = ox - Math.ceil(ox / tw) * tw, y0 = oy - Math.ceil(oy / th) * th;
+      for (let y = y0; y <= chh; y += th) {
+        for (let x = x0; x <= cw; x += tw) ctx.drawImage(tile, x, y);
+      }
+      return;
+    }
+    if (r.mode === 'wrap') {
+      const b = wrapBand(sw / sh);
+      const k = wallW / b.W;
+      ctx.drawImage(source, ox + (b.s0 - b.D) * k, oy + (wallH - b.ih * k) / 2, b.iw * k, b.ih * k);
+      return;
+    }
+    const iw = singleImageWidthMm(sw / sh);
+    const ih = iw * sh / sw;
+    ctx.drawImage(source, ox + (wallW - iw) / 2, oy + (wallH - ih) / 2, iw, ih);
+  }
+
+  // 壁1面分のデザイン（1px=1mm）。貼り方（繰り返し／壁ごとに中央／一周）に合わせる
+  function buildWallDesignCanvas(source, w, h, wallH) {
+    const r = getWallRepeat();
+    if (r.on) return tileWallCanvas(source, w, h, r.mm);
+    return r.mode === 'wrap' ? wrapWallCanvas(source, w, h, wallH) : coverWallCanvas(source, w, h, wallH);
+  }
+
+  // ---- ZIP（無圧縮）：複数ファイルを1つにまとめてダウンロードするため ----
+  const CRC_TABLE = (() => {
+    const tb = new Uint32Array(256);
+    for (let n = 0; n !== 256; n++) {
+      let c = n;
+      for (let k = 0; k !== 8; k++) c = (c % 2) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      tb[n] = c >>> 0;
+    }
+    return tb;
+  })();
+  function crc32(u8) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i !== u8.length; i++) c = CRC_TABLE[((c ^ u8[i]) >>> 0) % 256] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  async function makeZip(files) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let offset = 0;
+    const u16 = (v) => Uint8Array.of(v % 256, Math.floor(v / 256) % 256);
+    const u32 = (v) => Uint8Array.of(v % 256, Math.floor(v / 256) % 256, Math.floor(v / 65536) % 256, Math.floor(v / 16777216) % 256);
+    for (const f of files) {
+      const data = new Uint8Array(await f.blob.arrayBuffer());
+      const name = enc.encode(f.name);
+      const crc = crc32(data);
+      const head = [u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)];
+      const local = [Uint8Array.of(0x50, 0x4b, 0x03, 0x04)].concat(head, [name]);
+      local.forEach((p) => parts.push(p));
+      parts.push(data);
+      central.push([Uint8Array.of(0x50, 0x4b, 0x01, 0x02), u16(20)].concat(head, [u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
+      offset += local.reduce((s, p) => s + p.length, 0) + data.length;
+    }
+    let csize = 0;
+    central.forEach((c) => c.forEach((p) => { parts.push(p); csize += p.length; }));
+    parts.push(Uint8Array.of(0x50, 0x4b, 0x05, 0x06), u16(0), u16(0), u16(files.length), u16(files.length), u32(csize), u32(offset), u16(0));
+    return new Blob(parts, { type: 'application/zip' });
+  }
+
+  // ---- 壁紙への印刷用：910mm幅（ロール幅）の巾に分割したCMYK PSDを、ZIPにまとめて保存 ----
+  // 1巾 = 幅910mm（左右10mmずつ隣の巾と重なる。壁を受け持つのは890mm）× 高さ（壁の高さ + 上下100mmずつ）。
+  // 赤枠（別レイヤー）は、その巾が受け持つ壁の範囲（左右の重なり・上下の裁断代の内側）。
+  async function downloadWallPrintStrips() {
+    const canvas = $('cw-reduced');
+    if (!canvas || !canvas.width) {
+      alert('先に「② 壁紙用デザイン」で画像を処理してください。');
+      return;
+    }
+    const button = $('btn-save-wall-print');
+    const label = button ? button.textContent : '';
+    if (button) button.disabled = true;
+    try {
+      const P = WALL_PRINT;
+      const W = Math.max(1, Math.round(parseFloat($('persp-width')?.value) || 3000));
+      const WH = Math.max(1, Math.round(parseFloat($('persp-wall-height')?.value) || 2400));
+      const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
+      const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
+      // 全巾分の絵：壁の左端が x = OVERLAP、天井が y = TRIM_TOP
+      const full = document.createElement('canvas');
+      full.width = N * P.STEP + P.OVERLAP * 2;
+      full.height = H;
+      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP, P.TRIM_TOP, W, WH);
+
+      const files = [];
+      const stamp = Date.now();
+      for (let i = 0; i !== N; i++) {
+        if (button) button.textContent = '印刷用データを作成中… ' + (i + 1) + ' / ' + N;
+        await new Promise((res) => setTimeout(res, 0));
+        const strip = document.createElement('canvas');
+        strip.width = P.ROLL;
+        strip.height = H;
+        strip.getContext('2d').drawImage(full, i * P.STEP, 0, P.ROLL, H, 0, 0, P.ROLL, H);
+        // 赤枠：この巾が受け持つ壁の範囲（最後の巾は壁の右端まで）
+        const frame = document.createElement('canvas');
+        frame.width = P.ROLL;
+        frame.height = H;
+        const fx = frame.getContext('2d');
+        fx.strokeStyle = '#ff0000';
+        fx.lineWidth = 2;
+        const fw = Math.min(P.STEP, W - i * P.STEP);
+        fx.strokeRect(P.OVERLAP + 1, P.TRIM_TOP + 1, Math.max(1, fw - 2), WH - 2);
+        const comp = document.createElement('canvas');
+        comp.width = P.ROLL;
+        comp.height = H;
+        const cx = comp.getContext('2d');
+        cx.drawImage(strip, 0, 0);
+        cx.drawImage(frame, 0, 0);
+        const no = String(i + 1).padStart(2, '0');
+        files.push({
+          name: 'wallpaper_' + no + '_of_' + String(N).padStart(2, '0') + '_' + P.ROLL + 'x' + H + 'mm.psd',
+          blob: writeCmykPsd(P.ROLL, H, comp, [
+            { name: '①壁紙 ' + (i + 1) + '巾目（左から） 幅' + P.ROLL + 'mm×高さ' + H + 'mm', canvas: strip },
+            { name: '②赤枠（壁の範囲：左右の重なり10mm・上下の裁断代100mmの内側）', canvas: frame }
+          ], 25.4)
+        });
+      }
+      const info = [
+        '壁紙 印刷用データ（910mm幅の巾に分割）',
+        '',
+        '壁のサイズ（図面）：幅 ' + W + ' mm × 高さ ' + WH + ' mm',
+        '1巾のサイズ：幅 ' + P.ROLL + ' mm × 高さ ' + H + ' mm（壁の高さ + 上下 ' + P.TRIM_TOP + ' mm ずつの裁断代）',
+        '巾の重なり：左右 ' + P.OVERLAP + ' mm ずつ（隣の巾と柄が重なります）。1巾が受け持つ壁の幅は ' + P.STEP + ' mm',
+        '巾数：' + N + ' 巾（左から順に 01, 02, …）',
+        '赤枠：各巾が受け持つ壁の範囲（別レイヤー「②赤枠」。印刷しない場合はレイヤーを非表示にしてください）',
+        '形式：CMYK・8bit・PSD・25.4dpi（1px = 1mm）。RGBからの単純変換のため、印刷色は校正してください。',
+        '貼り方：' + ({ repeat: '柄を繰り返して貼る（柄の大きさ ' + getWallRepeat().mm + ' mm）', center: '1枚を壁ごとに中央に貼る', wrap: '1枚を部屋を一周して続けて貼る（奥の壁の部分）' }[getWallRepeat().mode] || '')
+      ].join('\r\n');
+      files.push({ name: 'README_印刷データについて.txt', blob: new Blob([new TextEncoder().encode('﻿' + info)], { type: 'text/plain' }) });
+      if (button) button.textContent = 'ZIPにまとめています…';
+      const zip = await makeZip(files);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(zip);
+      link.download = 'wallpaper_print_' + P.ROLL + 'mm_' + W + 'x' + WH + '_' + N + 'strips_' + stamp + '.zip';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+    } catch (err) {
+      alert('壁紙の印刷用データの作成中にエラーが発生しました。\n' + err.message);
+    } finally {
+      if (button) { button.disabled = false; button.textContent = label; }
+    }
+  }
+
   async function downloadWallImagePsd() {
     const canvas = $('cw-reduced');
     if (!canvas || !canvas.width) {
@@ -1524,46 +1695,35 @@
     try {
       const agPsd = await loadAgPsd();
 
-      const TRIM_MM = 200;       // 裁断代（部屋の高さに加算する余裕分）
-      const ROLL_WIDTH_MM = 910; // 壁紙ロールの標準幅の目安
-
+      const P = WALL_PRINT;
       const widthMm = parseFloat(document.getElementById('persp-width')?.value) || 3000;
       const wallHeightMm = parseFloat(document.getElementById('persp-wall-height')?.value) || 2400;
 
       const imageW = Math.max(1, Math.round(widthMm));
-      const imageH = Math.max(1, Math.round(wallHeightMm + TRIM_MM));
+      const WH = Math.max(1, Math.round(wallHeightMm));
+      const imageH = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
 
-      // ①デザイン層：②壁紙用の減色画像を実寸(1px=1mm)に伸縮して描画
+      // ①デザイン層：貼り方に合わせて実寸(1px=1mm)で描画（壁の上下に100mmずつの裁断代）
       const designCanvas = document.createElement('canvas');
       designCanvas.width = imageW;
       designCanvas.height = imageH;
-      const wallRepeat = getWallRepeat();
-      if (wallRepeat.on) designCanvas.getContext('2d').drawImage(tileWallCanvas(canvas, imageW, imageH, wallRepeat.mm), 0, 0);
-      else designCanvas.getContext('2d').drawImage(wallRepeat.mode === 'wrap' ? wrapWallCanvas(canvas, imageW, imageH) : coverWallCanvas(canvas, imageW, imageH), 0, 0);
+      drawWallDesign(designCanvas.getContext('2d'), canvas, 0, P.TRIM_TOP, imageW, WH);
 
-      // ②裁断ガイド層：透明地に赤色の線
+      // ②裁断ガイド層：赤枠（壁の範囲）と、巾の境目（890mmごと）の縦線
       const guideCanvas = document.createElement('canvas');
       guideCanvas.width = imageW;
       guideCanvas.height = imageH;
       const gctx = guideCanvas.getContext('2d');
       gctx.strokeStyle = '#ff0000';
       gctx.lineWidth = 3;
-
-      // 横910mm間隔の縦線（ロール幅の目安）
-      for (let x = 0; x <= imageW; x += ROLL_WIDTH_MM) {
-        const lx = Math.min(x, imageW) + 0.5;
+      gctx.strokeRect(1.5, P.TRIM_TOP + 1.5, imageW - 3, WH - 3);
+      gctx.lineWidth = 2;
+      for (let x = P.STEP; x < imageW; x += P.STEP) {
         gctx.beginPath();
-        gctx.moveTo(lx, 0);
-        gctx.lineTo(lx, imageH);
+        gctx.moveTo(x + 0.5, 0);
+        gctx.lineTo(x + 0.5, imageH);
         gctx.stroke();
       }
-
-      // 壁の高さ位置に横線（この線より下が+200mmの裁断代）
-      const wallHeightPx = Math.min(Math.round(wallHeightMm), imageH);
-      gctx.beginPath();
-      gctx.moveTo(0, wallHeightPx + 0.5);
-      gctx.lineTo(imageW, wallHeightPx + 0.5);
-      gctx.stroke();
 
       // Photoshop以外のビューアーでも中身が分かるよう、合成プレビュー用キャンバスを用意
       const compositeCanvas = document.createElement('canvas');
@@ -1576,7 +1736,7 @@
       // 壁紙は CMYK で保存（ガイド線は C0 M100 Y100 K0 の赤）
       const blob = writeCmykPsd(imageW, imageH, compositeCanvas, [
         { name: '①壁紙デザイン（実寸・幅' + imageW + 'mm×高さ' + imageH + 'mm）', canvas: designCanvas },
-        { name: '②裁断ガイド（横910mm間隔／壁の高さ+200mm・赤線）', canvas: guideCanvas }
+        { name: '②裁断ガイド（赤枠＝壁の範囲・上下100mmの裁断代／縦線＝巾の境目 890mmごと）', canvas: guideCanvas }
       ], 25.4);
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -1884,6 +2044,7 @@
     if ($('cc-download-psd')) $('cc-download-psd').onclick = downloadPsd;
     if ($('btn-save-floor-image')) $('btn-save-floor-image').onclick = downloadFloorImagePng;
     if ($('btn-save-wall-image')) $('btn-save-wall-image').onclick = downloadWallImagePsd;
+    if ($('btn-save-wall-print')) $('btn-save-wall-print').onclick = downloadWallPrintStrips;
     if ($('cc-send-mail')) $('cc-send-mail').onclick = sendOrderMail;
     if ($('cc-delivery-inquiry')) $('cc-delivery-inquiry').onclick = sendDeliveryInquiryMail;
     if ($('cc-sample-loop')) $('cc-sample-loop').onclick = () => sendSampleRequestMail('ループパイル');
