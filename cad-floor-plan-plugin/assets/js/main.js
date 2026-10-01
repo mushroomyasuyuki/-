@@ -56,6 +56,13 @@
       // size reflection only makes sense on the page that has the estimate tool
       this.hasTool = !!document.getElementById('cc-width');
       if (!this.hasTool) this.$('apply-size').closest('label').hidden = true;
+      else {
+        // on the simulator page the floor / wall pictures come from the reduced-colour images of the tool,
+        // so the manual upload fields are not needed
+        this.$('design-src').hidden = false;
+        this.$('floor-tex').closest('label').hidden = true;
+        this.$('wall-tex').closest('label').hidden = true;
+      }
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
       if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル', { fromFile: false });
@@ -585,11 +592,26 @@
       const hasWall = !!wall && wall.width > 0 && wall.height > 0 && canvasHasContent(wall);
       if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? floor : null);
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
+      this._thumb('src-floor', hasFloor ? floor : null);
+      this._thumb('src-wall', hasWall ? wall : null);
+      this.$('src-floor-text').textContent = hasFloor ? '適用中' : '未処理（① でデザイン画像を選ぶと適用されます）';
+      this.$('src-wall-text').textContent = hasWall ? '適用中' : '未処理（② でデザイン画像を選ぶと適用されます）';
       if (!note) return;
-      if (hasFloor && hasWall) note.textContent = '床・壁のデザイン（変換後の画像）を反映しています。';
-      else if (hasFloor) note.textContent = '床のデザインを反映しています。壁は「② 壁紙用デザイン」を処理すると反映されます。';
-      else if (hasWall) note.textContent = '壁のデザインを反映しています。床は「① カーペット用デザイン」を処理すると反映されます。';
-      else note.textContent = '①カーペット用・②壁紙用のデザイン画像を処理すると、床・壁に自動で反映されます。';
+      note.textContent = hasFloor && hasWall ? '床・壁とも、減色後のイメージ画像を3Dに適用しています。' : '';
+    }
+
+    // small preview of the picture that is applied (nearest-neighbour, so the 1 px pattern stays crisp)
+    _thumb(name, src) {
+      const c = this.$(name);
+      const x = c.getContext('2d');
+      x.clearRect(0, 0, c.width, c.height);
+      x.fillStyle = '#27272a';
+      x.fillRect(0, 0, c.width, c.height);
+      if (!src) return;
+      const k = Math.min(c.width / src.width, c.height / src.height);
+      const w = Math.max(1, Math.round(src.width * k)), h = Math.max(1, Math.round(src.height * k));
+      x.imageSmoothingEnabled = false;
+      x.drawImage(src, (c.width - w) / 2, (c.height - h) / 2, w, h);
     }
 
     _texture(e, kind) {
