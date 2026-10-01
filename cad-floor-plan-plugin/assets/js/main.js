@@ -78,7 +78,25 @@
       drop.addEventListener('drop', (e) => e.dataTransfer.files[0] && this.loadFile(e.dataTransfer.files[0]));
 
       const reload = () => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true, keepManual: true });
-      this.$('scale').addEventListener('change', reload);
+      const scaleEl = this.$('scale');
+      let scaleTimer = null;
+      let scaleApplied = scaleEl.value;
+      const applyScale = () => {
+        clearTimeout(scaleTimer);
+        if (scaleEl.value === scaleApplied) return;
+        scaleApplied = scaleEl.value;
+        reload();
+      };
+      scaleEl.addEventListener('input', () => {
+        // 全角数字を半角にし、数字以外は取り除く
+        const v = scaleEl.value.replace(/[\uFF10-\uFF19]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[^0-9]/g, '');
+        if (v !== scaleEl.value) scaleEl.value = v;
+        clearTimeout(scaleTimer);
+        scaleTimer = setTimeout(applyScale, 700);
+      });
+      scaleEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyScale(); } });
+      scaleEl.addEventListener('change', applyScale);
+      scaleEl.addEventListener('focus', () => scaleEl.select());
       this.$('unit').addEventListener('change', reload);
       this.$('apply-size').addEventListener('change', () => {
         const room = this.data && this.data.rooms[this.roomIndex];

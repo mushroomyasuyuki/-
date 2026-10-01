@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.12.0
+ * Version: 2.13.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.12.0');
+define('CFP_VERSION', '2.13.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -331,7 +331,7 @@ final class CAD_Floor_Plan_Plugin {
 
                 <div class="cfp-options">
                     <label>PDFの縮尺（1:N の N）
-                        <input type="number" data-cfp="scale" min="1" step="1" value="1">
+                        <input type="text" inputmode="numeric" autocomplete="off" data-cfp="scale" value="1" placeholder="例: 100" aria-label="PDFの縮尺 N">
                     </label>
                     <label>DXFの単位<select data-cfp="unit"><option value="auto">自動判定</option><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="apply-size" checked> 図面のサイズを見積もり・お部屋パース・壁紙サイズに反映する</label>
