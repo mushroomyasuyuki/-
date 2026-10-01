@@ -1,7 +1,7 @@
 {
   "name": "cad-floor-plan-simulator",
-  "version": "1.3.1",
-  "description": "DXF / vector PDF / JSON floor plan 3D viewer (WordPress plugin and standalone page)",
+  "version": "2.0.0",
+  "description": "Wallpaper/carpet simulator with CAD floor plan 3D viewer and order mailer (WordPress plugin)",
   "private": true,
   "license": "MIT",
   "author": "mushroomyasuyuki",

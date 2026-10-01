@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Design Order Mailer コアクラス
+ * Design Order Mailer コアクラス（CAD Floor Plan プラグインに同梱。元の Design Order Mailer と同じテーブル・設定・AJAXアクション名を使う）
  *
  * 機能:
  *  1. デザインファイル（PSD/PNG等）をサーバーの非公開ディレクトリにアップロード保存
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *  3. 注文メールには添付せず、上記リンクを本文に記載して送信
  *  4. アップロードから60日経過したファイルをcronで自動削除
  */
-class DOMailer {
+class CFP_Domailer {
 
 	private static $instance = null;
 	private $table_name;
@@ -182,7 +182,7 @@ class DOMailer {
 
 		global $wpdb;
 		$now     = current_time( 'mysql', true );
-		$expires = gmdate( 'Y-m-d H:i:s', strtotime( $now . ' +' . DOMAILER_EXPIRY_DAYS . ' days' ) );
+		$expires = gmdate( 'Y-m-d H:i:s', strtotime( $now . ' +' . CFP_OM_EXPIRY_DAYS . ' days' ) );
 
 		$wpdb->insert(
 			$this->table_name,
@@ -240,7 +240,7 @@ class DOMailer {
 		if ( strtotime( $row->expires_at ) < time() ) {
 			$this->delete_file_row( $row );
 			status_header( 410 );
-			wp_die( 'このファイルの保存期限（' . DOMAILER_EXPIRY_DAYS . '日間）が切れているため削除されました。', '', array( 'response' => 410 ) );
+			wp_die( 'このファイルの保存期限（' . CFP_OM_EXPIRY_DAYS . '日間）が切れているため削除されました。', '', array( 'response' => 410 ) );
 		}
 
 		if ( ! file_exists( $row->file_path ) ) {
@@ -361,11 +361,11 @@ class DOMailer {
 			$body .= "■ 注文内容（お見積もり明細）\n{$order_summary}\n\n";
 		}
 
-		$body .= "■ デザインデータ ダウンロードリンク（保存期間: " . DOMAILER_EXPIRY_DAYS . "日間）\n";
+		$body .= "■ デザインデータ ダウンロードリンク（保存期間: " . CFP_OM_EXPIRY_DAYS . "日間）\n";
 		foreach ( $links as $link ) {
 			$body .= "- {$link}\n";
 		}
-		$body .= "\n※上記リンクはアップロードから" . DOMAILER_EXPIRY_DAYS . "日間のみ有効です。期限を過ぎるとファイルは自動的に削除されます。\n";
+		$body .= "\n※上記リンクはアップロードから" . CFP_OM_EXPIRY_DAYS . "日間のみ有効です。期限を過ぎるとファイルは自動的に削除されます。\n";
 
 		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
 		if ( is_email( $email ) ) {
@@ -448,8 +448,8 @@ class DOMailer {
 					<tr>
 						<th scope="row">ファイル保存期間</th>
 						<td>
-							<?php echo esc_html( DOMAILER_EXPIRY_DAYS ); ?>日間<br />
-							<p class="description">変更する場合は design-order-mailer.php 内の <code>DOMAILER_EXPIRY_DAYS</code> を編集してください。</p>
+							<?php echo esc_html( CFP_OM_EXPIRY_DAYS ); ?>日間<br />
+							<p class="description">変更する場合は cad-floor-plan.php 内の <code>CFP_OM_EXPIRY_DAYS</code> を編集してください。</p>
 						</td>
 					</tr>
 					<tr>
@@ -470,9 +470,9 @@ class DOMailer {
 	public function enqueue_frontend_assets() {
 		wp_register_script(
 			'domailer-frontend',
-			DOMAILER_PLUGIN_URL . 'assets/js/frontend.js',
+			CFP_PLUGIN_URL . 'assets/order-mailer/frontend.js',
 			array(),
-			DOMAILER_VERSION,
+			CFP_VERSION,
 			true
 		);
 
@@ -485,6 +485,5 @@ class DOMailer {
 			)
 		);
 
-		wp_enqueue_script( 'domailer-frontend' );
 	}
 }

@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: CAD Floor Plan 3D Simulator
+ * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
- * Description: DXF / ベクターPDF / JSON の間取りデータを読み込み、ブラウザ上で3D表示して床・壁の面積を計算します。有効化すると専用の固定ページを自動作成し、無効化すると削除します。
- * Version: 1.3.1
+ * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
+ * Version: 2.0.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,10 +15,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '1.3.1');
+define('CFP_VERSION', '2.0.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
-define('CFP_PAGE_SLUG', 'cad-floor-plan');
+define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
+define('CFP_PAGE_SLUG', '壁紙・カーペットシミュレーション');
 define('CFP_SHORTCODE', 'cad_floor_plan');
+define('CFP_SIM_SHORTCODE', 'wallpaper_carpet_simulator');
+if (!defined('CFP_OM_EXPIRY_DAYS')) {
+    define('CFP_OM_EXPIRY_DAYS', 60); // 注文デザインファイルの保存日数
+}
 
 final class CAD_Floor_Plan_Plugin {
     private static $instance = null;
@@ -35,9 +41,25 @@ final class CAD_Floor_Plan_Plugin {
         add_action('init', [$this, 'maybe_upgrade']);
         add_action('wp_enqueue_scripts', [$this, 'maybe_enqueue_assets']);
         add_shortcode(CFP_SHORTCODE, [$this, 'render_shortcode']);
+        add_shortcode(CFP_SIM_SHORTCODE, [$this, 'render_simulator']);
+        $this->load_order_mailer();
         add_action('rest_api_init', [$this, 'register_rest']);
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_post_cfp_create_page', [$this, 'handle_create_page']);
+    }
+
+    /* --------------------------------------------------------- order mailer */
+
+    /**
+     * Loads the bundled Design Order Mailer unless the standalone plugin is active
+     * (both register the same AJAX actions, so only one may run).
+     */
+    private function load_order_mailer() {
+        if (defined('DOMAILER_VERSION')) {
+            return;
+        }
+        require_once CFP_PLUGIN_DIR . 'includes/order-mailer/class-domailer.php';
+        CFP_Domailer::instance();
     }
 
     /* ---------------------------------------------------------- versioning */
@@ -47,7 +69,18 @@ final class CAD_Floor_Plan_Plugin {
         if ($stored === CFP_VERSION) {
             return;
         }
-        // Version-specific migrations go here, keyed on $stored.
+        // 1.x managed a CAD-only page; turn it into the combined simulator page.
+        if ($stored && version_compare($stored, '2.0.0', '<')) {
+            $id = (int) get_option('cad_floor_plan_page_id');
+            if ($id && get_option('cad_floor_plan_page_created') && get_post_type($id) === 'page') {
+                wp_update_post([
+                    'ID'           => $id,
+                    'post_title'   => CFP_PAGE_TITLE,
+                    'post_name'    => CFP_PAGE_SLUG,
+                    'post_content' => self::page_content(),
+                ]);
+            }
+        }
         update_option('cad_floor_plan_version', CFP_VERSION);
     }
 
@@ -65,8 +98,8 @@ final class CAD_Floor_Plan_Plugin {
             }
         }
 
-        $existing = get_page_by_path(CFP_PAGE_SLUG);
-        if ($existing && $existing->post_status !== 'trash' && strpos($existing->post_content, '[' . CFP_SHORTCODE) !== false) {
+        $existing = self::find_page_by_slug();
+        if ($existing && strpos($existing->post_content, '[' . CFP_SIM_SHORTCODE) !== false) {
             update_option('cad_floor_plan_page_id', $existing->ID);
             update_option('cad_floor_plan_page_created', 0);
             return (int) $existing->ID;
@@ -75,9 +108,9 @@ final class CAD_Floor_Plan_Plugin {
         $new_id = wp_insert_post([
             'post_type'    => 'page',
             'post_status'  => 'publish',
-            'post_title'   => 'CADお部屋シミュレーション',
+            'post_title'   => CFP_PAGE_TITLE,
             'post_name'    => CFP_PAGE_SLUG,
-            'post_content' => '<!-- wp:shortcode -->[' . CFP_SHORTCODE . ']<!-- /wp:shortcode -->',
+            'post_content' => self::page_content(),
         ], true);
 
         if (is_wp_error($new_id)) {
@@ -86,6 +119,20 @@ final class CAD_Floor_Plan_Plugin {
         update_option('cad_floor_plan_page_id', $new_id);
         update_option('cad_floor_plan_page_created', 1);
         return (int) $new_id;
+    }
+
+    private static function page_content() {
+        return '<!-- wp:shortcode -->[' . CFP_SIM_SHORTCODE . ']<!-- /wp:shortcode -->';
+    }
+
+    private static function find_page_by_slug() {
+        $found = get_posts([
+            'post_type'   => 'page',
+            'name'        => sanitize_title(CFP_PAGE_SLUG),
+            'post_status' => ['publish', 'draft', 'pending', 'private', 'future'],
+            'numberposts' => 1,
+        ]);
+        return $found ? $found[0] : null;
     }
 
     /**
@@ -118,7 +165,7 @@ final class CAD_Floor_Plan_Plugin {
 
     public function maybe_enqueue_assets() {
         $post = get_post();
-        if ($post && has_shortcode($post->post_content, CFP_SHORTCODE)) {
+        if ($post && (has_shortcode($post->post_content, CFP_SHORTCODE) || has_shortcode($post->post_content, CFP_SIM_SHORTCODE))) {
             $this->enqueue_assets();
         }
     }
@@ -146,6 +193,22 @@ final class CAD_Floor_Plan_Plugin {
     }
 
     /* ------------------------------------------------------------ shortcode */
+
+    /**
+     * [wallpaper_carpet_simulator]: the original wallpaper/carpet tool, with the CAD widget
+     * placed where templates/wallpaper-carpet-tool.html has the [cad_floor_plan] placeholder.
+     */
+    public function render_simulator() {
+        $file = CFP_PLUGIN_DIR . 'templates/wallpaper-carpet-tool.html';
+        if (!is_readable($file)) {
+            return '<!-- wallpaper-carpet-tool.html not found -->';
+        }
+        $this->enqueue_assets();
+        // Block themes render the content before wp_enqueue_scripts, so the handle may not be registered yet.
+        wp_enqueue_script('domailer-frontend');
+        $html = file_get_contents($file);
+        return str_replace('[' . CFP_SHORTCODE . ']', $this->render_shortcode(['height' => '600']), $html);
+    }
 
     public function render_shortcode($atts) {
         $atts = shortcode_atts([
@@ -227,7 +290,7 @@ final class CAD_Floor_Plan_Plugin {
     /* ---------------------------------------------------------------- admin */
 
     public function add_admin_menu() {
-        add_menu_page('CAD Floor Plan', 'CAD Floor Plan', 'manage_options', 'cad-floor-plan', [$this, 'render_admin_page'], 'dashicons-layout', 30);
+        add_menu_page('壁紙・カーペットシミュレーション', '壁紙・カーペット', 'manage_options', 'cad-floor-plan', [$this, 'render_admin_page'], 'dashicons-layout', 30);
     }
 
     public function render_admin_page() {
@@ -240,7 +303,7 @@ final class CAD_Floor_Plan_Plugin {
         $result  = isset($_GET['cfp_page']) ? sanitize_key($_GET['cfp_page']) : '';
         ?>
         <div class="wrap">
-            <h1>CAD Floor Plan 3D Simulator <small>v<?php echo esc_html(CFP_VERSION); ?></small></h1>
+            <h1>壁紙・カーペットシミュレーション（CAD対応） <small>v<?php echo esc_html(CFP_VERSION); ?></small></h1>
 
             <?php if ($result === 'ok') : ?>
                 <div class="notice notice-success"><p>固定ページを用意しました。</p></div>
@@ -249,6 +312,9 @@ final class CAD_Floor_Plan_Plugin {
             <?php endif; ?>
 
             <h2>固定ページ</h2>
+            <?php if ($exists && urldecode($page->post_name) !== urldecode(sanitize_title(CFP_PAGE_SLUG))) : ?>
+                <div class="notice notice-warning inline"><p>同じURLの既存ページがあったため、このページのURLは「<?php echo esc_html(urldecode($page->post_name)); ?>」になっています。既存ページを削除またはURL変更したあと、このページの「URL（スラッグ）」を「<?php echo esc_html(CFP_PAGE_SLUG); ?>」に変更してください。</p></div>
+            <?php endif; ?>
             <?php if ($exists) : ?>
                 <p>
                     <a href="<?php echo esc_url(get_permalink($page_id)); ?>" target="_blank" rel="noopener">表示</a> |
@@ -264,8 +330,18 @@ final class CAD_Floor_Plan_Plugin {
                 <?php submit_button($exists ? '固定ページは作成済みです' : '固定ページを作成', 'primary', 'submit', false, $exists ? ['disabled' => 'disabled'] : null); ?>
             </form>
 
+            <h2>注文メール（Design Order Mailer）</h2>
+            <p>
+                <?php if (defined('DOMAILER_VERSION')) : ?>
+                    元の「Design Order Mailer」プラグインが有効なため、そちらを使用しています。このプラグインに同梱の機能は停止中です（元のプラグインを無効化すると切り替わります）。
+                <?php else : ?>
+                    このプラグインに同梱の機能を使用しています。受信先メールアドレスは「設定」→「Design Order Mailer」で変更できます。
+                <?php endif; ?>
+            </p>
+
             <h2>ショートコード</h2>
-            <p>任意のページ・投稿に <code>[cad_floor_plan]</code> を貼ると表示できます。</p>
+            <p><code>[wallpaper_carpet_simulator]</code>: 壁紙・カーペットのシミュレーション全体（CAD表示を含む）。固定ページに使われています。<br>
+            <code>[cad_floor_plan]</code>: CADの3D表示だけを任意のページ・投稿に置きます。</p>
             <table class="widefat" style="max-width:640px">
                 <thead><tr><th>属性</th><th>既定値</th><th>説明</th></tr></thead>
                 <tbody>
@@ -283,7 +359,17 @@ add_action('plugins_loaded', ['CAD_Floor_Plan_Plugin', 'instance']);
 
 register_activation_hook(__FILE__, function () {
     update_option('cad_floor_plan_version', CFP_VERSION);
+    if (!defined('DOMAILER_VERSION')) {
+        require_once CFP_PLUGIN_DIR . 'includes/order-mailer/class-domailer.php';
+        CFP_Domailer::activate();
+    }
     CAD_Floor_Plan_Plugin::ensure_page();
 });
 
-register_deactivation_hook(__FILE__, ['CAD_Floor_Plan_Plugin', 'remove_page']);
+register_deactivation_hook(__FILE__, function () {
+    CAD_Floor_Plan_Plugin::remove_page();
+    if (!defined('DOMAILER_VERSION')) {
+        require_once CFP_PLUGIN_DIR . 'includes/order-mailer/class-domailer.php';
+        CFP_Domailer::deactivate();
+    }
+});

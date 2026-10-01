@@ -7,3 +7,5 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 delete_option('cad_floor_plan_version');
 delete_option('cad_floor_plan_page_id');
 delete_option('cad_floor_plan_page_created');
+
+require_once __DIR__ . '/includes/order-mailer/uninstall-data.php';

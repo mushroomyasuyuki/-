@@ -108,3 +108,9 @@ await DOMailer.sendOrderEmail([token1, token2, ...], {
 - 現状、WordPress管理画面へのコード反映（プラグインの更新・HTMLブロックの貼り付け）は手動で行っている
 - 自動化する場合の選択肢として、Claude in Chrome（ブラウザ操作の自動化）、WordPress REST API連携、WP-CLI + SSHなどを検討中
 - 「制電マーク」「防炎マーク」の認定バッジ画像は、コード共有時に一時的にプレースホルダー化されているため、最新のHTMLブロックには元画像の再設定が必要
+
+## 8. プラグイン統合（2026年10月）
+
+- Design Order Mailer とシミュレーションツールは、プラグイン `cad-floor-plan/`（`cad-floor-plan-plugin/`）に統合した。ツールのHTMLは `templates/wallpaper-carpet-tool.html`、メール送信の処理は `includes/order-mailer/` にある。
+- ツールにはCAD表示（DXF / ベクターPDF / JSON の間取りを3D表示し、床・壁の面積を計算）を追加した。ショートコード `[cad_floor_plan]` の位置に差し込まれる。
+- プラグインを有効化すると、固定ページ「壁紙・カーペットシミュレーション」が自動作成され、無効化すると削除される。詳細は `cad-floor-plan-plugin/README.md`。

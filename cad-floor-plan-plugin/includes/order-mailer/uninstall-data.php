@@ -8,6 +8,11 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
+// 元の Design Order Mailer プラグインが残っている場合は、そちらがデータを使うため削除しない
+if ( file_exists( WP_PLUGIN_DIR . '/design-order-mailer/design-order-mailer.php' ) ) {
+	return;
+}
+
 global $wpdb;
 $table_name = $wpdb->prefix . 'domailer_files';
 
