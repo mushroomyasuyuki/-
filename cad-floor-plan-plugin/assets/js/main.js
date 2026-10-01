@@ -49,6 +49,10 @@
       this.hideAuto = false;
       this.roomKinds = [];     // per room: { manual: bool, mi: index in this.manual }
       this.tracer = null;
+      this.elev = null;        // wall elevations read from a PDF sheet: { scale, walls, backdrop }
+      this.elevIndex = -1;
+      this.elevTracer = null;
+      this._elevFile = null;
       this._rasterTimer = null;
       this.$ = (name) => el.querySelector('[data-cfp="' + name + '"]');
       this.height = parseInt(el.dataset.height, 10) || 600;
@@ -128,6 +132,14 @@
         this.hideAuto = this.$('hide-auto').checked;
         this._afterRoomsChanged(0);
       });
+      const etool = (name) => {
+        if (!this.elevTracer) return;
+        this.elevTracer.setTool(name);
+        ['pan', 'rect'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+      };
+      ['pan', 'rect'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
+      this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
       this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
@@ -158,6 +170,9 @@
       }
       this._rasterLabels();
       this.status('読み込み中…', 'loading');
+      if (!isImage && /\.pdf$/i.test(file.name)) {
+        if (await this._detectElevations(file, opts)) return; // an elevation sheet: walls, not rooms
+      } else this._hideElev();
       try {
         const scale = parseFloat(this.$('scale').value) || 1;
         const unit = this.$('unit').value;
@@ -450,6 +465,162 @@
         n.classList.toggle('is-selected', on);
         if (n.tagName === 'BUTTON') n.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
+    }
+
+
+    // ------------------------------------------------ wall elevations (展開図) -> wall paper size
+    _hideElev() {
+      this.elev = null;
+      this.elevIndex = -1;
+      this._elevFile = null;
+      this.$('elev').hidden = true;
+    }
+
+    // Returns true when the PDF is a sheet of wall elevations (the walls are then listed instead of rooms).
+    async _detectElevations(file, opts = {}) {
+      let res;
+      try {
+        const typed = parseFloat(this.$('scale').value) || 0;
+        res = await CADParser.analyzeElevations(file, { scale: typed > 1 ? typed : 0 });
+      } catch (err) {
+        console.warn('elevation analysis failed', err);
+        this._hideElev();
+        return false;
+      }
+      if (!res.walls.length) { this._hideElev(); return false; }
+
+      const sameFile = this._elevFile === file;
+      let bd = sameFile && this.elev ? this.elev.backdrop : null;
+      if (!bd || Math.abs(bd.scaleN - res.scale) > 0.001) {
+        this.status('展開図を表示しています…', 'loading');
+        bd = await CADParser.renderPdfBackdrop(file, { scale: res.scale });
+        bd.scaleN = res.scale;
+      }
+      const keep = sameFile && this.elev && opts.keepRoom ? this.elevIndex : -1;
+      this._elevFile = file;
+      this.lastFile = file;
+      this.elev = { scale: res.scale, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: sameFile && this.elev ? this.elev.custom : [] };
+      this.elev.custom = this.elev.custom || [];
+      this.elevIndex = keep;
+      if (!sameFile) { this.$('elev-note').textContent = ''; this.elev.custom = []; }
+      // the floor-plan side is not used for a sheet of elevations
+      this.fromFile = true;
+      this.label = file.name;
+      this.manual = [];
+      this.hideAuto = false;
+      this.backdrop = null;
+      this.$('trace').hidden = true;
+      this.$('trace-open').hidden = true;
+      this.$('raster').hidden = true;
+      this.raster = null;
+      this._showEmpty();
+      this.$('scale').value = String(res.scale);
+
+      this.$('elev').hidden = false;
+      const nCloth = res.walls.filter((w) => w.cloth).length;
+      this.$('elev-cloth-only').checked = nCloth > 0 && sameFile ? this.$('elev-cloth-only').checked : false;
+      this._initElevTracer();
+      this._renderElevList();
+      this._refreshElevTracer();
+      this.status('展開図として読み取りました（縮尺 1:' + res.scale + '、壁 ' + res.walls.length + ' 面' + (nCloth ? '、うちクロス貼り ' + nCloth + ' 面' : '') + '）。壁を選ぶと、壁紙のサイズに反映します。', 'success');
+      this.$('elev').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      return true;
+    }
+
+    _elevAll() {
+      return this.elev ? this.elev.walls.concat(this.elev.custom) : [];
+    }
+
+    _initElevTracer() {
+      const bd = this.elev.backdrop;
+      if (!this.elevTracer) {
+        this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly) });
+        this.elevTracer.ortho = false;
+      }
+      if (this._elevImage !== bd.dataUrl) {
+        this.elevTracer.setBackdrop(bd.dataUrl, bd.widthPx, bd.heightPx);
+        this._elevImage = bd.dataUrl;
+      }
+    }
+
+    // wall rectangles in picture pixels
+    _wallPoly(w) {
+      const { pageH } = this.elev, k = this.elev.backdrop.k;
+      const x0 = w.x0 * k, x1 = w.x1 * k, y0 = (pageH - w.y1) * k, y1 = (pageH - w.y0) * k;
+      return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    }
+
+    _refreshElevTracer() {
+      if (!this.elevTracer || !this.elev) return;
+      const all = this._elevAll();
+      const items = [];
+      all.forEach((w, i) => {
+        if (!this._elevVisible(w, i)) return;
+        const sel = i === this.elevIndex;
+        let poly;
+        if (w.poly) poly = w.poly;
+        else poly = this._wallPoly(w);
+        items.push({ poly, label: String(i + 1), manual: !!w.custom, selected: sel, color: sel ? '#2563eb' : (w.custom ? '#16a34a' : (w.cloth ? '#a855f7' : '#a1a1aa')) });
+      });
+      this.elevTracer.setRooms(items);
+    }
+
+    _elevVisible(w, i) {
+      return !(this.$('elev-cloth-only').checked && !w.cloth && !w.custom);
+    }
+
+    _renderElevList() {
+      if (!this.elev) return;
+      const list = this.$('elev-list');
+      list.textContent = '';
+      this._elevAll().forEach((w, i) => {
+        if (!this._elevVisible(w, i)) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cfp-room-btn' + (w.cloth ? ' is-cloth' : '') + (i === this.elevIndex ? ' is-selected' : '');
+        b.setAttribute('data-i', i);
+        const num = document.createElement('span'); num.className = 'cfp-room-num'; num.textContent = i + 1;
+        const nm = document.createElement('span'); nm.className = 'cfp-room-name'; nm.textContent = w.name;
+        if (w.cloth) { const t = document.createElement('span'); t.className = 'cfp-badge'; t.textContent = 'クロス'; nm.appendChild(t); nm.title = w.cloth; }
+        const meta = document.createElement('span'); meta.className = 'cfp-room-meta'; meta.textContent = fmtMm(w.width) + ' × ' + fmtMm(w.height) + ' mm';
+        b.append(num, nm, meta);
+        b.addEventListener('click', () => this.selectWall(i));
+        list.appendChild(b);
+      });
+      this._refreshElevTracer();
+    }
+
+    // Sets the wall paper size (wall width / wall height) from the chosen wall.
+    selectWall(i) {
+      const w = this._elevAll()[i];
+      if (!w) return;
+      this.elevIndex = i;
+      this._renderElevList();
+      const area = Math.round(w.width * w.height / 1e4) / 100;
+      let msg = '「' + w.name + '」 幅 ' + fmtMm(w.width) + ' × 高さ ' + fmtMm(w.height) + ' mm（約 ' + area + ' ㎡）';
+      if (w.cloth) msg += '。図面の記載: ' + w.cloth;
+      const pw = document.getElementById('persp-width');
+      const ph = document.getElementById('persp-wall-height');
+      if (this.hasTool && pw && ph && this.$('apply-size').checked) {
+        this._setField(pw, Math.round(w.width));
+        this._setField(ph, Math.round(w.height));
+        msg += '。壁紙のサイズ（お部屋パースの幅・壁の高さ）に反映しました。';
+      } else if (this.hasTool) msg += '。「図面のサイズを…反映する」がオフのため、反映していません。';
+      this.$('elev-note').textContent = msg;
+      this.status('壁を選びました。', 'success');
+    }
+
+    // a rectangle drawn on the elevation: the wall paper area of that wall
+    _commitElevRect(poly) {
+      const bd = this.elev.backdrop, s = bd.mmPerPx;
+      const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+      const wmm = (Math.max(...xs) - Math.min(...xs)) * s;
+      const hmm = (Math.max(...ys) - Math.min(...ys)) * s;
+      if (wmm < 100 || hmm < 100) return;
+      const n = this.elev.custom.length + 1;
+      this.elev.custom.push({ id: 'custom_' + n, name: '指定した壁紙の範囲 ' + n, width: Math.round(wmm), height: Math.round(hmm), custom: true, poly, cloth: null });
+      this._renderElevList();
+      this.selectWall(this._elevAll().length - 1);
     }
 
     // --------------------------------------------------- tracing rooms by hand

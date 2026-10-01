@@ -52,7 +52,7 @@
       this.labels = [];
       items.forEach((it) => {
         const g = el('g');
-        const color = it.selected ? '#2563eb' : (it.manual ? '#16a34a' : '#a1a1aa');
+        const color = it.color || (it.selected ? '#2563eb' : (it.manual ? '#16a34a' : '#a1a1aa'));
         g.appendChild(el('polygon', {
           points: it.poly.map((p) => p[0] + ',' + p[1]).join(' '),
           fill: color, 'fill-opacity': it.selected ? 0.35 : 0.22,

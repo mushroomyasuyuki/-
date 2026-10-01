@@ -320,6 +320,111 @@
       };
     }
 
+    // ---------------------------------------------------- elevation drawings (展開図)
+    // A sheet of wall elevations: every drawing is one wall. Its height is the ceiling height written at
+    // the page edge (e.g. 2,700 beside "▼FL±0"), its width is the dimension string above the drawing.
+    // Callouts that mention クロス (wall paper) are matched to the wall they sit on.
+    static async analyzeElevations(file, options = {}) {
+      const pdfjs = await this._ensurePdfJs(options);
+      const base = (options.pdfJsUrl || (root.cadFloorPlanData && root.cadFloorPlanData.pdfJsUrl) || PDFJS_URL).replace(/\/build\/[^/]*$/, '/').replace(/[^/]*$/, '');
+      const cMapUrl = options.cMapUrl || (root.cadFloorPlanData && root.cadFloorPlanData.cMapUrl) || (base + 'cmaps/');
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), cMapUrl, cMapPacked: true }).promise;
+      const page = await pdf.getPage(options.page || 1);
+      const vp = page.getViewport({ scale: 1 });
+      const tc = await page.getTextContent();
+      const res = this.elevationsFromText(tc.items, vp.width, vp.height, options.scale || 0);
+      res.pageW = vp.width;
+      res.pageH = vp.height;
+      return res;
+    }
+
+    static elevationsFromText(items, pageW, pageH, scaleIn) {
+      const PT = 72 / 25.4; // points per mm at 1:1
+      const num = (s) => { const t = s.replace(/,/g, '').trim(); return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN; };
+      const T = items.filter((i) => i.str && i.str.trim()).map((i) => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width, v: num(i.str) }));
+      const fl = T.filter((t) => /FL[±+\-]/.test(t.s));
+      const dims = T.filter((t) => !isNaN(t.v) && t.v >= 20);
+      let N = scaleIn > 1 ? scaleIn : 0;
+      if (!N) {
+        // the scale that best explains the spacing of neighbouring chain dimensions
+        const rows = {};
+        dims.forEach((d) => { const k = Math.round(d.y / 2); (rows[k] = rows[k] || []).push(d); });
+        const std = [10, 20, 25, 30, 40, 50, 60, 75, 100, 150, 200];
+        const score = std.map(() => 0);
+        Object.values(rows).forEach((r) => {
+          r.sort((a, b) => a.x - b.x);
+          for (let i = 1; i < r.length; i++) {
+            const a = r[i - 1], b = r[i];
+            const dpt = (b.x + b.w / 2) - (a.x + a.w / 2);
+            if (dpt < 8) continue;
+            std.forEach((n, k) => { const exp = ((a.v + b.v) / 2) * PT / n; if (Math.abs(exp - dpt) < 0.08 * exp + 1) score[k]++; });
+          }
+        });
+        const best = Math.max(...score);
+        if (best >= 2) N = std[score.indexOf(best)];
+      }
+      if (!N) return { scale: 0, walls: [] };
+
+      // ceiling heights at the page edges, matched with the "▼FL±0" mark below them
+      const hl = T.filter((t) => !isNaN(t.v) && t.v >= 1800 && t.v <= 4500 && (t.x < 60 || t.x > pageW - 90));
+      const strips = [];
+      hl.forEach((h) => {
+        const below = fl.filter((f) => f.y < h.y + 2 && h.y - f.y < 150 && Math.abs(f.x - h.x) < 80).sort((a, b) => b.y - a.y)[0];
+        if (!below || strips.some((s) => Math.abs(s.floor - below.y) < 4)) return;
+        strips.push({ floor: below.y, H: h.v });
+      });
+      strips.sort((a, b) => b.floor - a.floor); // from the top row of the sheet
+
+      const walls = [];
+      strips.forEach((st, si) => {
+        const top = st.floor + st.H / N * PT;
+        const above = strips[si - 1] ? strips[si - 1].floor - 4 : pageH;
+        const lim = Math.min(top + 100, above);
+        const band = dims.filter((d) => d.y > top - 2 && d.y < lim).map((d) => ({ ...d, c: d.x + d.w / 2, sp: d.v / N * PT }));
+        const rowsB = {};
+        band.forEach((d) => { const k = Math.round(d.y / 3); (rowsB[k] = rowsB[k] || []).push(d); });
+        const runs = [];
+        Object.values(rowsB).forEach((r) => {
+          r.sort((a, b) => a.c - b.c);
+          let cur = null;
+          r.forEach((d) => {
+            const a = d.c - d.sp / 2, b = d.c + d.sp / 2;
+            if (cur && a - cur.b < 8) { cur.b = Math.max(cur.b, b); cur.v += d.v; } else { cur = { a, b, v: d.v }; runs.push(cur); }
+          });
+        });
+        // dimension rows of one drawing overlap: keep the longest chain per drawing
+        runs.sort((a, b) => b.v - a.v);
+        const groups = [];
+        runs.forEach((r) => {
+          const g = groups.find((q) => r.a < q.b - 4 && r.b > q.a + 4);
+          if (g) { g.a = Math.min(g.a, r.a); g.b = Math.max(g.b, r.b); } else groups.push({ ...r });
+        });
+        groups.sort((a, b) => a.a - b.a);
+        let k = 0;
+        groups.forEach((g) => {
+          if (g.v < 500) return;
+          k++;
+          walls.push({
+            id: 'wall_' + (si + 1) + '_' + k, name: (si + 1) + '段目 壁' + k, strip: si + 1,
+            width: Math.round(g.v * 10) / 10, height: st.H, x0: g.a, x1: g.b, y0: st.floor, y1: top, cloth: null,
+          });
+        });
+      });
+
+      // wall paper callouts (クロス): the nearest wall in the same row
+      const cloth = T.filter((t) => /ｸﾛｽ|クロス|壁紙/.test(t.s));
+      cloth.forEach((c) => {
+        let best = null, bd = 1e9;
+        walls.forEach((w) => {
+          if (c.y < w.y0 - 40 || c.y > w.y1 + 40) return;
+          const dx = c.x < w.x0 ? w.x0 - c.x : (c.x > w.x1 ? c.x - w.x1 : 0);
+          if (dx < 60 && dx < bd) { bd = dx; best = w; }
+        });
+        if (best) best.cloth = best.cloth ? (best.cloth.indexOf(c.s) < 0 ? best.cloth + ' / ' + c.s : best.cloth) : c.s;
+      });
+      return { scale: N, walls };
+    }
+
     static _ensurePdfJs(options) {
       if (root.pdfjsLib) {
         this._configureWorker(options);
