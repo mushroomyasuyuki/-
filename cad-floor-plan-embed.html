@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.21.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.22.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -1301,8 +1301,11 @@
     }
     // Wallpaper pattern size on the walls: one repeat is w x h mm (keep the picture's aspect ratio).
     // null stretches the picture over each wall.
-    setWallRepeat(w, h) {
+    // aspect: picture width / height, used when not repeating so that one picture covers each wall
+    // without distortion (centred, the overflow cut off).
+    setWallRepeat(w, h, aspect) {
       this.wallRepeat = w > 0 && h > 0 ? { w, h } : null;
+      this.wallAspect = aspect > 0 ? aspect : null;
       this.walls.forEach((e) => this._wallUV(e));
       if (this._textures.wall) {
         const t = this._textures.wall;
@@ -1320,7 +1323,12 @@
       for (let i = 0; i < uv.count; i++) {
         const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
         if (rep) uv.setXY(i, u0 * lenMm / rep.w, 1 - (1 - v0) * hMm / rep.h);
-        else uv.setXY(i, u0, v0);
+        else if (this.wallAspect) {
+          // cover: show the part of the picture that has the wall's aspect ratio
+          const a = (lenMm / hMm) / this.wallAspect;
+          const su = a < 1 ? a : 1, sv = a < 1 ? 1 : 1 / a;
+          uv.setXY(i, 0.5 + (u0 - 0.5) * su, 0.5 + (v0 - 0.5) * sv);
+        } else uv.setXY(i, u0, v0);
       }
       uv.needsUpdate = true;
     }
@@ -2727,7 +2735,8 @@
       if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm, h: rep.mm * wall.height / wall.width };
       else this.renderer.wallRepeat = null;
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
-      this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0);
+      this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
+        hasWall && rep && !rep.on ? wall.width / wall.height : 0);
       this._thumb('src-floor', hasFloor ? floor : null);
       this._thumb('src-wall', hasWall ? wall : null);
       this.$('src-floor-text').textContent = hasFloor ? '適用中' : '未処理（① でデザイン画像を選ぶと適用されます）';

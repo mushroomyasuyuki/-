@@ -110,8 +110,11 @@
 
     // Wallpaper pattern size on the walls: one repeat is w x h mm (keep the picture's aspect ratio).
     // null stretches the picture over each wall.
-    setWallRepeat(w, h) {
+    // aspect: picture width / height, used when not repeating so that one picture covers each wall
+    // without distortion (centred, the overflow cut off).
+    setWallRepeat(w, h, aspect) {
       this.wallRepeat = w > 0 && h > 0 ? { w, h } : null;
+      this.wallAspect = aspect > 0 ? aspect : null;
       this.walls.forEach((e) => this._wallUV(e));
       if (this._textures.wall) {
         const t = this._textures.wall;
@@ -130,7 +133,12 @@
       for (let i = 0; i < uv.count; i++) {
         const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
         if (rep) uv.setXY(i, u0 * lenMm / rep.w, 1 - (1 - v0) * hMm / rep.h);
-        else uv.setXY(i, u0, v0);
+        else if (this.wallAspect) {
+          // cover: show the part of the picture that has the wall's aspect ratio
+          const a = (lenMm / hMm) / this.wallAspect;
+          const su = a < 1 ? a : 1, sv = a < 1 ? 1 : 1 / a;
+          uv.setXY(i, 0.5 + (u0 - 0.5) * su, 0.5 + (v0 - 0.5) * sv);
+        } else uv.setXY(i, u0, v0);
       }
       uv.needsUpdate = true;
     }

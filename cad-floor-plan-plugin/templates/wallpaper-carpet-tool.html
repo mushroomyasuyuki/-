@@ -310,7 +310,7 @@
 
     <div class="dither-box cw-repeat-box">
       <div class="slider-row"><label for="cw-repeat-mm">柄の大きさ（1リピートの横幅）：<input type="number" id="cw-repeat-mm" value="910" min="50" max="20000" step="10" style="width:110px;min-height:0;padding:6px 8px;display:inline-block;"> mm</label><span>縦は画像の縦横比のまま（変形しません）</span></div>
-      <label class="cw-repeat-check" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;"><input type="checkbox" id="cw-repeat-on" checked style="width:auto;min-height:auto;"> 壁に柄を繰り返して貼る（外すと、壁いっぱいに1枚で伸ばします）</label>
+      <label class="cw-repeat-check" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;"><input type="checkbox" id="cw-repeat-on" checked style="width:auto;min-height:auto;"> 壁に柄を繰り返して貼る（外すと、縦横比を変えずに壁いっぱいに1枚で表示します）</label>
       <div class="file-note" id="cw-repeat-note" style="margin-top:6px;"></div>
     </div>
 
@@ -1139,12 +1139,26 @@
     return out;
   }
 
+  // 壁いっぱいに1枚：縦横比を保ったまま壁を覆う大きさにし（はみ出した分は切り取る）、中央に配置
+  function coverWallCanvas(source, w, h) {
+    const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    const k = Math.max(w / sw, h / sh);
+    const dw = sw * k, dh = sh * k;
+    ctx.drawImage(source, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    return out;
+  }
+
   function updateWallRepeatNote() {
     const note = $('cw-repeat-note');
     const src = $('cw-reduced');
     if (!note) return;
     const r = getWallRepeat();
-    if (!r.on) { note.textContent = '壁いっぱいに1枚で表示します（壁の縦横比に合わせて伸縮します）。'; return; }
+    if (!r.on) { note.textContent = '壁いっぱいに1枚で表示します（縦横比は変えず、壁からはみ出した部分は切り取ります。中央合わせ）。'; return; }
     if (!src || !src.width) { note.textContent = ''; return; }
     const th = Math.round(r.mm * src.height / src.width);
     const wallW = parseFloat($('persp-width')?.value) || 3000;
@@ -1465,7 +1479,7 @@
       designCanvas.height = imageH;
       const wallRepeat = getWallRepeat();
       if (wallRepeat.on) designCanvas.getContext('2d').drawImage(tileWallCanvas(canvas, imageW, imageH, wallRepeat.mm), 0, 0);
-      else designCanvas.getContext('2d').drawImage(canvas, 0, 0, imageW, imageH);
+      else designCanvas.getContext('2d').drawImage(coverWallCanvas(canvas, imageW, imageH), 0, 0);
 
       // ②裁断ガイド層：透明地に赤色の線
       const guideCanvas = document.createElement('canvas');
@@ -1655,7 +1669,7 @@
         const wallActiveEntries = getWallActivePaletteEntries();
 
         const { imageData: wallReducedData, usedEntries: wallUsedEntries } =
-          getReducedImageData(getWallRepeat().on ? tileWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm, getWallRepeat().mm) : cwState.loadedImg,
+          getReducedImageData(getWallRepeat().on ? tileWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm, getWallRepeat().mm) : coverWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm),
             wallWidthMm, wallHeightMm, wallDitherFactor, wallActiveEntries);
         cwState.lastUsedColorEntries = wallUsedEntries;
         wallColorsText = getUsedColorsSummaryText(wallUsedEntries);
@@ -1924,8 +1938,9 @@
         el.style.backgroundSize = Math.max(2, wallRepeat.mm * scale) + 'px auto';
         el.style.backgroundPosition = '0 0';
       } else {
+        // 1枚表示も縦横比を変えない（壁を覆う大きさ・中央合わせ）
         el.style.backgroundRepeat = 'no-repeat';
-        el.style.backgroundSize = '100% 100%';
+        el.style.backgroundSize = 'cover';
         el.style.backgroundPosition = 'center';
       }
     });
