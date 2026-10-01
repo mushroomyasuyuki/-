@@ -2,8 +2,8 @@
 /**
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
- * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.6.0
+ * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
+ * Version: 2.7.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.6.0');
+define('CFP_VERSION', '2.7.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -314,8 +314,8 @@ final class CAD_Floor_Plan_Plugin {
                 <div class="cfp-input-area">
                     <div class="cfp-drop" data-cfp="drop">
                         <span class="cfp-drop-title">ファイルをドロップ、またはクリックして選択</span>
-                        <input type="file" data-cfp="file" accept=".dxf,.pdf,.json">
-                        <div class="cfp-drop-note">対応形式: DXF / PDF（ベクター）/ JSON<br>DWGはDXFに書き出してください</div>
+                        <input type="file" data-cfp="file" accept=".dxf,.pdf,.json,.png,.jpg,.jpeg,.webp">
+                        <div class="cfp-drop-note">対応形式: DXF / PDF（ベクター）/ JSON / PNG・JPEG（画像）<br>DWGはDXFに書き出してください</div>
                     </div>
                     <div class="cfp-info-panel">
                         <div class="cfp-info-row"><span class="cfp-label">ファイル</span><span class="cfp-value" data-cfp="filename">未選択</span></div>
@@ -342,6 +342,19 @@ final class CAD_Floor_Plan_Plugin {
                     </label>
                 </div>
 
+                <div class="cfp-raster" data-cfp="raster" hidden>
+                  <div class="cfp-raster-title">画像（PNG / JPEG）の図面の読み取り設定</div>
+                  <p class="cfp-hint">線で囲まれた部分を部屋として読み取ります。画像には縮尺が無いため、実際の大きさを入力してください。</p>
+                  <div class="cfp-raster-row">
+                    <label>線を検出する濃さ <input type="range" data-cfp="threshold" min="0" max="220" step="5" value="0"> <span data-cfp="threshold-val">自動</span></label>
+                    <label>すき間を閉じる（ドアの開口など） <input type="range" data-cfp="gap" min="0" max="16" step="1" value="4"> <span data-cfp="gap-val">4</span> px</label>
+                  </div>
+                  <div class="cfp-raster-row">
+                    <label>選んだ部屋の <select data-cfp="cal-axis"><option value="w">横幅</option><option value="h">奥行（縦）</option></select> の実際の長さ <input type="number" data-cfp="cal-mm" min="100" step="10" placeholder="例 3600"> mm</label>
+                    <button type="button" class="cfp-btn" data-cfp="cal-btn">この大きさにする</button>
+                  </div>
+                  <p class="cfp-hint" data-cfp="cal-note"></p>
+                </div>
                 <div class="cfp-status" data-cfp="status"></div>
                 <div class="cfp-rooms" data-cfp="rooms" hidden>
                   <div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div>

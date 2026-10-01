@@ -26,10 +26,15 @@
           return this.parsePDF(input, options);
         case 'json':
           return this.parseJSON(await input.text());
+        case 'png':
+        case 'jpg':
+        case 'jpeg':
+        case 'webp':
+          return this.parseImage(input, options);
         case 'dwg':
           throw new Error('DWGは直接読み込めません。CADソフトでDXF形式に書き出してからアップロードしてください。');
         default:
-          throw new Error('未対応の形式です: .' + ext + '（DXF / PDF / JSON に対応）');
+          throw new Error('未対応の形式です: .' + ext + '（DXF / PDF / JSON / PNG / JPEG に対応）');
       }
     }
 
@@ -272,6 +277,363 @@
     static _configureWorker(options) {
       const w = options.pdfWorkerUrl || (root.cadFloorPlanData && root.cadFloorPlanData.pdfWorkerUrl) || PDFJS_WORKER_URL;
       root.pdfjsLib.GlobalWorkerOptions.workerSrc = w;
+    }
+
+    // ------------------------------------------------------- image (PNG / JPEG)
+    // A raster plan has no geometry and no scale: rooms are the enclosed light areas between dark
+    // lines, measured in pixels. metadata.raster keeps the pixel polygons so that the scale can be
+    // set afterwards (roomsFromRaster).
+    static async parseImage(file, options = {}) {
+      const img = await this._loadImage(file);
+      const MAX = 1200;
+      const k = Math.min(1, MAX / Math.max(img.width, img.height));
+      const W = Math.max(1, Math.round(img.width * k));
+      const H = Math.max(1, Math.round(img.height * k));
+      const cv = document.createElement('canvas');
+      cv.width = W;
+      cv.height = H;
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#fff'; // transparent PNG background counts as white
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(img, 0, 0, W, H);
+      const px = ctx.getImageData(0, 0, W, H).data;
+
+      const gray = new Uint8Array(W * H);
+      const hist = new Array(256).fill(0);
+      for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+        const g = ((px[p] * 299 + px[p + 1] * 587 + px[p + 2] * 114) / 1000) | 0;
+        gray[i] = g;
+        hist[g]++;
+      }
+      const auto = options.threshold == null || options.threshold === 'auto' || Number(options.threshold) <= 0;
+      const threshold = auto ? Math.min(this._otsu(hist, gray.length), 160) : Number(options.threshold);
+      const gap = options.gap == null ? 4 : Math.max(0, Math.min(20, Number(options.gap)));
+
+      const wall = new Uint8Array(W * H);
+      for (let i = 0; i < wall.length; i++) wall[i] = gray[i] < threshold ? 1 : 0;
+
+      // close small gaps (door openings, broken lines) so that rooms do not leak into each other
+      const blocked = this._dilate(wall, W, H, gap);
+      const { labels, areas, border } = this._label(blocked, W, H);
+
+      // the exterior is the biggest light area that touches the image border
+      let exterior = 0;
+      areas.forEach((a, id) => { if (id && border[id] && (!exterior || a > areas[exterior])) exterior = id; });
+
+      // give the pixels of the closed gap band back to the nearest room (rooms keep their true size)
+      this._grow(labels, wall, W, H, gap);
+
+      const minArea = Math.max(150, 0.002 * W * H);
+      const eps = 2 + 0.002 * Math.max(W, H);
+      const loops = this._outlines(labels, W, H, exterior);
+      let polys = [];
+      loops.forEach((pts, id) => {
+        let poly = this._simplify(pts, eps);
+        poly = this._despike(poly, 2 * gap + 8);
+        poly = this._rectify(poly, 2 * gap + 8);
+        // an almost rectangular room (door arcs, small notches) becomes an exact rectangle;
+        // rooms with a real step, like an L shape, keep their outline
+        const bb = this.bounds(poly);
+        const boxArea = (bb.maxX - bb.minX) * (bb.maxY - bb.minY);
+        if (boxArea > 0 && this.calculateArea(poly) / boxArea >= 0.95) {
+          poly = [[bb.minX, bb.minY], [bb.maxX, bb.minY], [bb.maxX, bb.maxY], [bb.minX, bb.maxY]];
+        }
+        if (poly.length >= 3 && this.calculateArea(poly) >= minArea) polys.push(poly);
+      });
+      // a closed shape inside another room is furniture or a pillar, not a room
+      polys = polys.filter((p, i) => {
+        const c = [(this.bounds(p).minX + this.bounds(p).maxX) / 2, (this.bounds(p).minY + this.bounds(p).maxY) / 2];
+        const area = this.calculateArea(p);
+        return !polys.some((q, j) => j !== i && this.calculateArea(q) > area && this.pointInPolygon(c, q));
+      });
+      if (!polys.length) {
+        throw new Error(
+          '部屋を検出できませんでした。線が薄い・細いときは「線を検出する濃さ」を上げ、' +
+          '部屋がつながって見えるときは「すき間を閉じる」を大きくしてみてください。'
+        );
+      }
+
+      // reading order: top to bottom (rows within 6% of the height), then left to right
+      const cen = (poly) => {
+        const b = this.bounds(poly);
+        return [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+      };
+      polys.sort((a, b) => cen(a)[1] - cen(b)[1]);
+      const ordered = [];
+      const tol = 0.06 * H;
+      while (polys.length) {
+        const rowY = cen(polys[0])[1];
+        const row = polys.filter((q) => cen(q)[1] - rowY <= tol);
+        polys = polys.filter((q) => !row.includes(q));
+        row.sort((a, b) => cen(a)[0] - cen(b)[0]);
+        ordered.push(...row);
+      }
+
+      const provisional = !(Number(options.mmPerPx) > 0);
+      const raster = {
+        dataUrl: cv.toDataURL('image/jpeg', 0.7),
+        widthPx: W,
+        heightPx: H,
+        mmPerPx: provisional ? 12000 / Math.max(W, H) : Number(options.mmPerPx),
+        calibrated: !provisional,
+        threshold,
+        thresholdAuto: auto,
+        gap,
+        polys: ordered,
+      };
+      return { rooms: this.roomsFromRaster(raster, raster.mmPerPx), metadata: { source: 'image', raster } };
+    }
+
+    // pixel polygons -> rooms in mm (image Y points down, CAD Y points up)
+    static roomsFromRaster(raster, mmPerPx) {
+      return raster.polys.map((poly, i) => this.normalizeRoom({
+        id: 'room_' + (i + 1),
+        name: '部屋 ' + (i + 1),
+        vertices: poly.map(([x, y]) => [x * mmPerPx, (raster.heightPx - y) * mmPerPx]),
+      }, i));
+    }
+
+    static _loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした。')); };
+        img.src = url;
+      });
+    }
+
+    static _otsu(hist, total) {
+      let sum = 0;
+      for (let i = 0; i < 256; i++) sum += i * hist[i];
+      let sumB = 0, wB = 0, best = 0, thr = 128;
+      for (let t = 0; t < 256; t++) {
+        wB += hist[t];
+        if (!wB) continue;
+        const wF = total - wB;
+        if (!wF) break;
+        sumB += t * hist[t];
+        const mB = sumB / wB, mF = (sum - sumB) / wF;
+        const between = wB * wF * (mB - mF) * (mB - mF);
+        if (between > best) { best = between; thr = t; }
+      }
+      return thr;
+    }
+
+    // square dilation by r pixels (two separable passes with running sums)
+    static _dilate(mask, W, H, r) {
+      if (!r) return mask.slice();
+      const tmp = new Uint8Array(W * H);
+      const out = new Uint8Array(W * H);
+      const pass = (src, dst, len, lines, stride, step) => {
+        const pre = new Int32Array(len + 1);
+        for (let l = 0; l < lines; l++) {
+          const base = l * stride;
+          for (let i = 0; i < len; i++) pre[i + 1] = pre[i] + src[base + i * step];
+          for (let i = 0; i < len; i++) {
+            const a = Math.max(0, i - r), b = Math.min(len, i + r + 1);
+            dst[base + i * step] = pre[b] - pre[a] > 0 ? 1 : 0;
+          }
+        }
+      };
+      pass(mask, tmp, W, H, W, 1);
+      pass(tmp, out, H, W, 1, W);
+      return out;
+    }
+
+    // 4-connected components of the zero pixels; id 0 = blocked
+    static _label(blocked, W, H) {
+      const labels = new Int32Array(W * H);
+      const areas = [0];
+      const border = [false];
+      const stack = new Int32Array(W * H);
+      let id = 0;
+      for (let s0 = 0; s0 < labels.length; s0++) {
+        if (blocked[s0] || labels[s0]) continue;
+        id++;
+        let sp = 0, area = 0, touches = false;
+        stack[sp++] = s0;
+        labels[s0] = id;
+        while (sp) {
+          const p = stack[--sp];
+          area++;
+          const x = p % W, y = (p / W) | 0;
+          if (x === 0 || y === 0 || x === W - 1 || y === H - 1) touches = true;
+          if (x > 0 && !blocked[p - 1] && !labels[p - 1]) { labels[p - 1] = id; stack[sp++] = p - 1; }
+          if (x < W - 1 && !blocked[p + 1] && !labels[p + 1]) { labels[p + 1] = id; stack[sp++] = p + 1; }
+          if (y > 0 && !blocked[p - W] && !labels[p - W]) { labels[p - W] = id; stack[sp++] = p - W; }
+          if (y < H - 1 && !blocked[p + W] && !labels[p + W]) { labels[p + W] = id; stack[sp++] = p + W; }
+        }
+        areas.push(area);
+        border.push(touches);
+      }
+      return { labels, areas, border };
+    }
+
+    // expand every region by up to r pixels over light pixels that the dilation had blocked
+    static _grow(labels, wall, W, H, r) {
+      if (!r) return;
+      const neighbours = (p) => {
+        const x = p % W, y = (p / W) | 0;
+        const nb = [];
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if ((dx || dy) && x + dx >= 0 && x + dx < W && y + dy >= 0 && y + dy < H) nb.push(p + dy * W + dx);
+          }
+        }
+        return nb;
+      };
+      let frontier = [];
+      for (let p = 0; p < labels.length; p++) {
+        if (labels[p] && neighbours(p).some((n) => !labels[n] && !wall[n])) frontier.push(p);
+      }
+      // 8-connected steps reach the same square distance as the dilation, so corners come back exactly
+      for (let step = 0; step < r && frontier.length; step++) {
+        const next = [];
+        for (const p of frontier) {
+          for (const n of neighbours(p)) {
+            if (!labels[n] && !wall[n]) { labels[n] = labels[p]; next.push(n); }
+          }
+        }
+        frontier = next;
+      }
+    }
+
+    // outer boundary (pixel corners, clockwise) of every region except `skip`
+    static _outlines(labels, W, H, skip) {
+      const edges = new Map(); // label -> Map(startKey -> [endKey...])
+      const key = (x, y) => y * (W + 1) + x;
+      const add = (id, a, b) => {
+        let m = edges.get(id);
+        if (!m) { m = new Map(); edges.set(id, m); }
+        const arr = m.get(a);
+        if (arr) arr.push(b); else m.set(a, [b]);
+      };
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const id = labels[y * W + x];
+          if (!id || id === skip) continue;
+          if (y === 0 || labels[(y - 1) * W + x] !== id) add(id, key(x, y), key(x + 1, y));
+          if (x === W - 1 || labels[y * W + x + 1] !== id) add(id, key(x + 1, y), key(x + 1, y + 1));
+          if (y === H - 1 || labels[(y + 1) * W + x] !== id) add(id, key(x + 1, y + 1), key(x, y + 1));
+          if (x === 0 || labels[y * W + x - 1] !== id) add(id, key(x, y + 1), key(x, y));
+        }
+      }
+      const out = new Map();
+      edges.forEach((m, id) => {
+        let best = null, bestArea = 0;
+        for (const [start] of m) {
+          if (!m.get(start) || !m.get(start).length) continue;
+          const pts = [];
+          let cur = start;
+          let guard = 0;
+          while (guard++ < 5e6) {
+            const nexts = m.get(cur);
+            if (!nexts || !nexts.length) break;
+            pts.push([cur % (W + 1), (cur / (W + 1)) | 0]);
+            cur = nexts.pop();
+            if (cur === start) break;
+          }
+          if (pts.length >= 3) {
+            const a = this.calculateArea(pts);
+            if (a > bestArea) { bestArea = a; best = pts; }
+          }
+        }
+        if (best) out.set(id, best);
+      });
+      return out;
+    }
+
+    // Douglas-Peucker on a closed loop
+    static _simplify(pts, eps) {
+      if (pts.length < 4) return pts;
+      // split at the two points that are farthest apart
+      let a = 0, b = 0, far = -1;
+      for (let i = 1; i < pts.length; i++) {
+        const d = (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2;
+        if (d > far) { far = d; b = i; }
+      }
+      const dp = (list) => {
+        if (list.length < 3) return list;
+        const [x1, y1] = list[0], [x2, y2] = list[list.length - 1];
+        const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+        let idx = 0, dmax = 0;
+        for (let i = 1; i < list.length - 1; i++) {
+          const d = Math.abs((y2 - y1) * list[i][0] - (x2 - x1) * list[i][1] + x2 * y1 - y2 * x1) / len;
+          if (d > dmax) { dmax = d; idx = i; }
+        }
+        if (dmax <= eps) return [list[0], list[list.length - 1]];
+        return dp(list.slice(0, idx + 1)).slice(0, -1).concat(dp(list.slice(idx)));
+      };
+      const first = pts.slice(a, b + 1);
+      const second = pts.slice(b).concat(pts.slice(0, a + 1));
+      return dp(first).slice(0, -1).concat(dp(second).slice(0, -1));
+    }
+
+    // drop thin spikes (a vertex whose two neighbours are close together, e.g. a door-swing arc)
+    static _despike(poly, width) {
+      let pts = poly;
+      let changed = true;
+      while (changed && pts.length > 3) {
+        changed = false;
+        for (let i = 0; i < pts.length && !changed; i++) {
+          const A = pts[(i + pts.length - 1) % pts.length], C = pts[(i + 1) % pts.length];
+          if (Math.hypot(A[0] - C[0], A[1] - C[1]) <= width) {
+            pts = pts.filter((_, k) => k !== i);
+            changed = true;
+          }
+        }
+      }
+      return pts;
+    }
+
+    // make nearly horizontal / vertical edges exact, then drop duplicate and collinear points
+    static _rectify(poly, bump = 0) {
+      const n = poly.length;
+      if (n < 3) return poly;
+      const p = poly.map((q) => [q[0], q[1]]);
+      for (let i = 0; i < n; i++) {
+        const a = p[i], b = p[(i + 1) % n];
+        const dx = b[0] - a[0], dy = b[1] - a[1];
+        const len = Math.hypot(dx, dy);
+        if (!len) continue;
+        if (Math.abs(dy) / len < 0.1) { const y = (a[1] + b[1]) / 2; a[1] = y; b[1] = y; }
+        else if (Math.abs(dx) / len < 0.1) { const x = (a[0] + b[0]) / 2; a[0] = x; b[0] = x; }
+      }
+      // flatten small protrusions / notches (door openings, wall thickness): A->B and C->D are short
+      // and opposite, so B and C are dropped and the outline runs straight from A to D
+      let pts = p;
+      const len2 = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+      let changed = bump > 0;
+      while (changed && pts.length > 4) {
+        changed = false;
+        const m = pts.length;
+        for (let i = 0; i < m && !changed; i++) {
+          const A = pts[i], B = pts[(i + 1) % m], C = pts[(i + 2) % m], D = pts[(i + 3) % m];
+          const e1 = [B[0] - A[0], B[1] - A[1]], e3 = [D[0] - C[0], D[1] - C[1]];
+          const opposite = e1[0] * e3[0] + e1[1] * e3[1] < 0;
+          const sameAxis = Math.abs(e1[0] * e3[1] - e1[1] * e3[0]) < 1e-6;
+          if (len2(A, B) <= bump && len2(C, D) <= bump && opposite && sameAxis) {
+            const drop = new Set([(i + 1) % m, (i + 2) % m]);
+            pts = pts.filter((_, k) => !drop.has(k));
+            changed = true;
+          }
+        }
+      }
+      const out = [];
+      for (let i = 0; i < pts.length; i++) {
+        const prev = out[out.length - 1];
+        if (!prev || Math.hypot(pts[i][0] - prev[0], pts[i][1] - prev[1]) > 0.5) out.push(pts[i]);
+      }
+      if (out.length > 1 && Math.hypot(out[0][0] - out[out.length - 1][0], out[0][1] - out[out.length - 1][1]) <= 0.5) out.pop();
+      // collinear
+      const res = [];
+      for (let i = 0; i < out.length; i++) {
+        const a = out[(i + out.length - 1) % out.length], b = out[i], c = out[(i + 1) % out.length];
+        const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (Math.abs(cross) > 1) res.push(b);
+      }
+      return res.length >= 3 ? res : out;
     }
 
     // --------------------------------------------------------------- JSON

@@ -40,6 +40,8 @@
       this.roomIndex = 0;      // the room shown in 3D
       this.fromFile = false;   // true when the data came from an uploaded drawing (not the sample)
       this.lastFile = null;
+      this.raster = null;      // set while the drawing is a PNG / JPEG
+      this._rasterTimer = null;
       this.$ = (name) => el.querySelector('[data-cfp="' + name + '"]');
       this.height = parseInt(el.dataset.height, 10) || 600;
       this.$('canvas').style.height = this.height + 'px';
@@ -68,6 +70,14 @@
         if (this.$('apply-size').checked && this.fromFile && room) this.reflectSize(room);
         else this.$('size-note').textContent = '';
       });
+      const rerun = () => {
+        clearTimeout(this._rasterTimer);
+        this._rasterTimer = setTimeout(() => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true, keepScale: true }), 350);
+      };
+      this.$('threshold').addEventListener('input', () => { this._rasterLabels(); rerun(); });
+      this.$('gap').addEventListener('input', () => { this._rasterLabels(); rerun(); });
+      this.$('cal-btn').addEventListener('click', () => this.calibrate());
+      this.$('cal-mm').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.calibrate(); } });
       this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
@@ -77,11 +87,28 @@
 
     async loadFile(file, opts = {}) {
       this.lastFile = file;
+      const isImage = /\.(png|jpe?g|webp)$/i.test(file.name);
+      this.$('raster').hidden = !isImage;
+      if (!isImage) this.raster = null;
+      else if (!opts.keepScale) {
+        // a new image: forget the previous calibration and start from the default detection settings
+        this.raster = null;
+        this.$('threshold').value = 0;
+        this.$('gap').value = 4;
+        this.$('cal-mm').value = '';
+      }
+      this._rasterLabels();
       this.status('読み込み中…', 'loading');
       try {
         const scale = parseFloat(this.$('scale').value) || 1;
         const unit = this.$('unit').value;
-        const data = await CADParser.parseFloorPlan(file, { scale, unit });
+        const options = { scale, unit };
+        if (isImage) {
+          options.threshold = parseFloat(this.$('threshold').value) || 0;
+          options.gap = parseFloat(this.$('gap').value);
+          if (this.raster && this.raster.calibrated) options.mmPerPx = this.raster.mmPerPx;
+        }
+        const data = await CADParser.parseFloorPlan(file, options);
         this.loadData(data, file.name, { fromFile: true, keepRoom: !!opts.keepRoom });
       } catch (err) {
         this.status('エラー: ' + err.message, 'error');
@@ -94,6 +121,7 @@
         const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: data.metadata };
         CADParser.validate(normalized);
         if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
+        this.raster = (normalized.metadata && normalized.metadata.raster) || null;
         const prevIndex = this.roomIndex;
         const prevCount = this.data ? this.data.rooms.length : 0;
         this.data = normalized;
@@ -111,7 +139,10 @@
         this.selectRoom(best, this.fromFile);
 
         const n = normalized.rooms.length;
-        this.status(n > 1
+        this._rasterNote();
+        if (this.raster && !this.raster.calibrated) {
+          this.status('画像から部屋を ' + n + ' 室読み取りました。画像には縮尺が無いため、実際の大きさを入力してください。', 'success');
+        } else this.status(n > 1
           ? '部屋が ' + n + ' 室見つかりました。3Dで見たい部屋を、平面図または一覧から選んでください。'
           : '読み込みました（部屋 1）', 'success');
       } catch (err) {
@@ -129,15 +160,18 @@
       const a = this.renderer.getAreas();
       this.$('filename').textContent = this.label;
       this.$('room-name').textContent = room.name || ('部屋 ' + (i + 1));
-      this.$('room-size').textContent = fmtMm(b.maxX - b.minX) + ' × ' + fmtMm(b.maxY - b.minY) + ' mm';
-      this.$('floor-area').textContent = a.floorArea + ' ㎡';
-      this.$('wall-area').textContent = a.wallArea + ' ㎡';
+      const prov = !!this.raster && !this.raster.calibrated;
+      const tag = prov ? '（仮）' : '';
+      this.$('room-size').textContent = fmtMm(b.maxX - b.minX) + ' × ' + fmtMm(b.maxY - b.minY) + ' mm' + tag;
+      this.$('floor-area').textContent = a.floorArea + ' ㎡' + tag;
+      this.$('wall-area').textContent = a.wallArea + ' ㎡' + tag;
       this.$('room-count').textContent = this.data.rooms.length;
       this.$('unit-info').textContent = this._unitText();
       this._markSelected();
       this.syncDesigns(false);
 
-      if (reflect && this.$('apply-size').checked) this.reflectSize(room);
+      // an uncalibrated image has no real size yet: do not push it into the estimate
+      if (reflect && !prov && this.$('apply-size').checked) this.reflectSize(room);
       else this.$('size-note').textContent = '';
     }
 
@@ -148,6 +182,7 @@
         return m.unit.name + (how ? '（' + how + '）' : '');
       }
       if (m.source === 'pdf') return 'PDF 縮尺 1:' + (m.pdfScale || 1);
+      if (m.source === 'image') return m.raster.calibrated ? '画像（1px = ' + m.raster.mmPerPx.toFixed(2) + ' mm）' : '画像（縮尺未設定）';
       return '-';
     }
 
@@ -155,20 +190,36 @@
     renderPicker() {
       const wrap = this.$('rooms');
       const rooms = this.data.rooms;
-      wrap.hidden = rooms.length < 2;
+      const raster = this.raster;
+      wrap.hidden = rooms.length < 2 && !raster;
       const svg = this.$('plan');
       const list = this.$('room-list');
       svg.textContent = '';
       list.textContent = '';
-      if (rooms.length < 2) return;
+      if (rooms.length < 2 && !raster) return;
 
       const all = rooms.flatMap((r) => r.vertices);
-      const b = CADParser.bounds(all);
+      const b = raster
+        ? { minX: 0, minY: 0, maxX: raster.widthPx * raster.mmPerPx, maxY: raster.heightPx * raster.mmPerPx }
+        : CADParser.bounds(all);
       const w = b.maxX - b.minX, h = b.maxY - b.minY;
       const pad = Math.max(w, h) * 0.04;
       // CAD Y is up, SVG Y is down
       svg.setAttribute('viewBox', [b.minX - pad, -b.maxY - pad, w + pad * 2, h + pad * 2].join(' '));
       const fs = Math.max(w, h) / (rooms.length > 12 ? 30 : 16);
+
+      if (raster) {
+        // the uploaded drawing, so that the detected rooms can be checked against it
+        const img = document.createElementNS(SVG_NS, 'image');
+        img.setAttribute('href', raster.dataUrl);
+        img.setAttribute('x', 0);
+        img.setAttribute('y', -b.maxY);
+        img.setAttribute('width', b.maxX);
+        img.setAttribute('height', b.maxY);
+        img.setAttribute('preserveAspectRatio', 'none');
+        img.setAttribute('opacity', '0.55');
+        svg.appendChild(img);
+      }
 
       // big rooms first so that small rooms inside them stay clickable
       const order = rooms.map((r, i) => i).sort((p, q) => CADParser.calculateArea(rooms[q].vertices) - CADParser.calculateArea(rooms[p].vertices));
@@ -231,6 +282,39 @@
         n.classList.toggle('is-selected', on);
         if (n.tagName === 'BUTTON') n.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
+    }
+
+    // ------------------------------------------------------------- image drawings
+    _rasterLabels() {
+      const t = parseFloat(this.$('threshold').value) || 0;
+      this.$('threshold-val').textContent = t ? String(t) : '自動';
+      this.$('gap-val').textContent = this.$('gap').value;
+    }
+
+    _rasterNote() {
+      const note = this.$('cal-note');
+      const r = this.raster;
+      if (!r) { note.textContent = ''; return; }
+      note.textContent = r.calibrated
+        ? '縮尺を設定しました（画像 1px ＝ ' + r.mmPerPx.toFixed(2) + ' mm）。別の部屋で確かめるには、その部屋を選んで実際の長さを入力し直してください。'
+        : '縮尺が未設定です。図面に書かれた寸法を見て、選んだ部屋の横幅または奥行の実際の長さを入力し、「この大きさにする」を押してください（押すまで、見積もり・壁紙サイズには反映しません）。';
+    }
+
+    // Sets the scale from the real length of the selected room's width or depth.
+    calibrate() {
+      if (!this.raster || !this.data) return;
+      const mm = parseFloat(this.$('cal-mm').value);
+      if (!(mm > 0)) { this.status('選んだ部屋の実際の長さ（mm）を入力してください。', 'error'); return; }
+      const b = CADParser.bounds(this.raster.polys[this.roomIndex]);
+      const px = this.$('cal-axis').value === 'h' ? b.maxY - b.minY : b.maxX - b.minX;
+      if (!(px > 0)) return;
+      this.raster.mmPerPx = mm / px;
+      this.raster.calibrated = true;
+      this.data.rooms = CADParser.roomsFromRaster(this.raster, this.raster.mmPerPx);
+      this.renderPicker();
+      this.selectRoom(this.roomIndex, true);
+      this._rasterNote();
+      this.status('縮尺を設定しました。', 'success');
     }
 
     // ------------------------------------------------- size -> estimate / perspective
@@ -317,7 +401,7 @@
 
     saveJSON() {
       if (!this.data) return;
-      const blob = new Blob([JSON.stringify(this.data, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(this.data, (k, v) => (k === 'dataUrl' ? undefined : v), 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'floor-plan.json';
