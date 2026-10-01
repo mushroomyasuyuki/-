@@ -918,9 +918,9 @@
     const on = isWallReduceOn();
     const boxes = [$('cw-dither'), $('cw-base-palette-selector'), $('cw-op-palette-selector')].map((el) => el ? el.closest('.dither-box, .palette-box') : null);
     boxes.forEach((b) => { if (b) b.style.display = on ? '' : 'none'; });
+    // 減色しないときは「変換後イメージ」の欄を出さない（キャンバスはパース・3Dの元として裏で使う）
     const card = $('cw-reduced') ? $('cw-reduced').closest('.preview-card') : null;
-    const h3 = card ? card.querySelector('h3') : null;
-    if (h3) h3.textContent = on ? 'カラーパレット減色イメージ' : '変換後イメージ（減色なし・元画像の色のまま）';
+    if (card) card.style.display = on ? '' : 'none';
   }
 
   function reprocessWallReduction() {
