@@ -1,205 +1,113 @@
 /**
- * CAD Floor Plan Plugin - Main Script
+ * CAD Floor Plan widget: wires the shortcode markup to CADParser and ThreeRoomRenderer.
+ * Each widget instance is available as element.cfpWidget (e.g. widget.renderer.setFloorTexture(url)).
  */
-
-(function() {
+(function () {
   'use strict';
 
+  const SAMPLE = {
+    rooms: [{
+      id: 'sample',
+      vertices: [[0, 0], [6000, 0], [6000, 2500], [3500, 2500], [3500, 5000], [0, 5000]],
+    }],
+    metadata: { source: 'sample' },
+  };
+
   class CADFloorPlanWidget {
-    constructor(element) {
-      this.element = element;
+    constructor(el) {
+      this.el = el;
       this.renderer = null;
-      this.currentData = null;
-      this.width = parseInt(element.dataset.width) || 800;
-      this.height = parseInt(element.dataset.height) || 600;
-      this.sample = element.dataset.sample || 'default';
-      this.showInfo = element.dataset.showInfo !== 'false';
-
-      this.init();
+      this.data = null;
+      this.lastFile = null;
+      this.$ = (name) => el.querySelector('[data-cfp="' + name + '"]');
+      this.height = parseInt(el.dataset.height, 10) || 600;
+      this.$('canvas').style.height = this.height + 'px';
+      this._bind();
+      if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル（L字の部屋）');
     }
 
-    init() {
-      this.setupEventListeners();
+    _bind() {
+      const drop = this.$('drop');
+      const input = this.$('file');
+      drop.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => input.files[0] && this.loadFile(input.files[0]));
+      ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
+      ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('is-over'); }));
+      drop.addEventListener('drop', (e) => e.dataTransfer.files[0] && this.loadFile(e.dataTransfer.files[0]));
 
-      if (this.sample === 'default') {
-        this.loadDefaultRoom();
-      }
+      this.$('scale').addEventListener('change', () => this.lastFile && this.loadFile(this.lastFile));
+      this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル（L字の部屋）'));
+      this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
+      this.$('save-btn').addEventListener('click', () => this.saveJSON());
+      this.$('floor-tex').addEventListener('change', (e) => this._texture(e, 'floor'));
+      this.$('wall-tex').addEventListener('change', (e) => this._texture(e, 'wall'));
     }
 
-    setupEventListeners() {
-      const fileInput = this.element.querySelector('#cfp-file-input');
-      if (fileInput) {
-        fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
-      }
-
-      const btnLoadSample = this.element.querySelector('#cfp-btn-load-sample');
-      if (btnLoadSample) {
-        btnLoadSample.addEventListener('click', () => this.loadDefaultRoom());
-      }
-
-      const btnResetCamera = this.element.querySelector('#cfp-btn-reset-camera');
-      if (btnResetCamera) {
-        btnResetCamera.addEventListener('click', () => this.resetCamera());
-      }
-
-      const btnDownload = this.element.querySelector('#cfp-btn-download-json');
-      if (btnDownload) {
-        btnDownload.addEventListener('click', () => this.downloadJSON());
-      }
-
-      // ドラッグ&ドロップ
-      const container = this.element.querySelector('.cfp-file-input');
-      if (container) {
-        container.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          container.style.borderColor = '#60a5fa';
-          container.style.background = '#0f172a';
-        });
-
-        container.addEventListener('dragleave', () => {
-          container.style.borderColor = '#3b82f6';
-          container.style.background = '#09090b';
-        });
-
-        container.addEventListener('drop', (e) => {
-          e.preventDefault();
-          container.style.borderColor = '#3b82f6';
-          container.style.background = '#09090b';
-
-          const file = e.dataTransfer.files[0];
-          if (file) {
-            fileInput.files = e.dataTransfer.files;
-            this.handleFileSelect({ target: { files: e.dataTransfer.files } });
-          }
-        });
-
-        container.addEventListener('click', () => {
-          fileInput.click();
-        });
-      }
-    }
-
-    async handleFileSelect(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-
+    async loadFile(file) {
+      this.lastFile = file;
+      this.status('読み込み中…', 'loading');
       try {
-        this.showStatus('ファイルを読み込んでいます...', 'loading');
-
-        this.element.querySelector('#cfp-filename').textContent = file.name;
-
-        // Parse file
-        this.currentData = await CADParser.parseFloorPlan(file);
-        CADParser.validate(this.currentData);
-
-        // Initialize renderer if needed
-        if (!this.renderer) {
-          const container = this.element.querySelector('#cfp-canvas-container');
-          this.renderer = new ThreeRoomRenderer(container, {
-            width: this.width,
-            height: this.height,
-            backgroundColor: 0x09090b
-          });
-        }
-
-        // Load floor plan
-        this.renderer.loadFloorPlan(this.currentData);
-
-        // Update info
-        const areas = this.renderer.getAreas();
-        this.element.querySelector('#cfp-floor-area').textContent = areas.floorArea + ' m²';
-        this.element.querySelector('#cfp-wall-area').textContent = areas.wallArea + ' m²';
-        this.element.querySelector('#cfp-room-count').textContent = this.currentData.rooms.length;
-
-        this.showStatus('✅ ファイルを読み込みました！', 'success');
-      } catch (error) {
-        this.showStatus('❌ エラー: ' + error.message, 'error');
-        console.error(error);
+        const scale = parseFloat(this.$('scale').value) || 1;
+        const data = await CADParser.parseFloorPlan(file, { scale });
+        this.loadData(data, file.name);
+      } catch (err) {
+        this.status('エラー: ' + err.message, 'error');
+        console.error(err);
       }
     }
 
-    loadDefaultRoom() {
-      const defaultData = {
-        rooms: [{
-          id: "room_1",
-          vertices: [[0, 0], [5000, 0], [5000, 3000], [0, 3000]],
-          walls: [
-            { from: 0, to: 1, length: 5000, height: 2800, material: "wallpaper" },
-            { from: 1, to: 2, length: 3000, height: 2800, material: "wallpaper" },
-            { from: 2, to: 3, length: 5000, height: 2800, material: "wallpaper" },
-            { from: 3, to: 0, length: 3000, height: 2800, material: "wallpaper" }
-          ],
-          floor: { material: "carpet" }
-        }],
-        metadata: { source: "default", scale: 1 }
-      };
-
+    loadData(data, label) {
       try {
-        this.currentData = defaultData;
-
-        if (!this.renderer) {
-          const container = this.element.querySelector('#cfp-canvas-container');
-          this.renderer = new ThreeRoomRenderer(container, {
-            width: this.width,
-            height: this.height,
-            backgroundColor: 0x09090b
-          });
-        }
-
-        this.renderer.loadFloorPlan(defaultData);
-
-        const areas = this.renderer.getAreas();
-        this.element.querySelector('#cfp-floor-area').textContent = areas.floorArea + ' m²';
-        this.element.querySelector('#cfp-wall-area').textContent = areas.wallArea + ' m²';
-        this.element.querySelector('#cfp-room-count').textContent = '1';
-        this.element.querySelector('#cfp-filename').textContent = 'サンプル（デフォルト）';
-
-        this.showStatus('✅ サンプル間取りを読み込みました', 'success');
-      } catch (error) {
-        this.showStatus('❌ エラー: ' + error.message, 'error');
+        const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: data.metadata };
+        CADParser.validate(normalized);
+        if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
+        this.renderer.loadFloorPlan(normalized);
+        this.data = normalized;
+        const a = this.renderer.getAreas();
+        this.$('filename').textContent = label;
+        this.$('floor-area').textContent = a.floorArea + ' ㎡';
+        this.$('wall-area').textContent = a.wallArea + ' ㎡';
+        this.$('room-count').textContent = normalized.rooms.length;
+        this.status('読み込みました（部屋 ' + normalized.rooms.length + '）', 'success');
+      } catch (err) {
+        this.status('エラー: ' + err.message, 'error');
+        console.error(err);
       }
     }
 
-    resetCamera() {
-      if (this.renderer) {
-        this.renderer.camera.position.set(5000, 3000, 5000);
-        this.renderer.camera.lookAt(2500, 0, 1500);
-      }
+    _texture(e, kind) {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (!this.renderer) return this.status('先に間取りを読み込んでください。', 'error');
+      const url = URL.createObjectURL(f);
+      if (kind === 'floor') this.renderer.setFloorTexture(url);
+      else this.renderer.setWallTexture(url);
     }
 
-    downloadJSON() {
-      if (!this.currentData) {
-        alert('先にCADファイルを読み込んでください');
-        return;
-      }
-
-      const json = JSON.stringify(this.currentData, null, 2);
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
+    saveJSON() {
+      if (!this.data) return;
+      const blob = new Blob([JSON.stringify(this.data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
-      a.href = url;
-      a.download = 'floor-plan-data.json';
+      a.href = URL.createObjectURL(blob);
+      a.download = 'floor-plan.json';
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(a.href);
     }
 
-    showStatus(message, type) {
-      const statusEl = this.element.querySelector('#cfp-status');
-      statusEl.textContent = message;
-      statusEl.className = 'cfp-status cfp-status-' + type;
+    status(msg, type) {
+      const s = this.$('status');
+      s.textContent = msg;
+      s.className = 'cfp-status cfp-status-' + type;
     }
   }
 
-  // Initialize on page load
-  document.addEventListener('DOMContentLoaded', function() {
-    const widgets = document.querySelectorAll('.cad-floor-plan-widget');
-    widgets.forEach(widget => {
-      new CADFloorPlanWidget(widget);
+  function init() {
+    document.querySelectorAll('.cad-floor-plan-widget').forEach((el) => {
+      if (!el.cfpWidget) el.cfpWidget = new CADFloorPlanWidget(el);
     });
-  });
+  }
 
-  // Handle late-loaded widgets (AJAX, etc.)
-  window.initCADFloorPlan = function(element) {
-    new CADFloorPlanWidget(element);
-  };
+  window.initCADFloorPlan = init;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();

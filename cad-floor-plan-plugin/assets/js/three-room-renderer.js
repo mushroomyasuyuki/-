@@ -1,340 +1,269 @@
 /**
- * Three.js Room Renderer Module
- * Handles 3D visualization of floor plans with carpet and wallpaper
+ * ThreeRoomRenderer: draws CADParser room data with Three.js.
+ * Input is millimetres (CAD, Y up); the scene is metres with CAD (x, y) -> world (x, 0, -y).
  */
+(function (root) {
+  'use strict';
 
-class ThreeRoomRenderer {
-  constructor(containerElement, options = {}) {
-    this.container = containerElement;
-    this.scene = null;
-    this.camera = null;
-    this.renderer = null;
-    this.rooms = [];
-    this.floorMesh = null;
-    this.wallMeshes = [];
+  const MM = 0.001;
 
-    this.options = {
-      width: options.width || 800,
-      height: options.height || 600,
-      backgroundColor: 0x18181b,
-      ambientLight: 0xffffff,
-      ...options
-    };
+  class ThreeRoomRenderer {
+    constructor(container, options = {}) {
+      if (typeof THREE === 'undefined') throw new Error('Three.js が読み込まれていません。');
+      this.container = container;
+      this.options = Object.assign({ width: 800, height: 600, backgroundColor: 0x09090b }, options);
 
-    this._initThreeJS();
-  }
+      this.floors = [];
+      this.walls = [];
+      this.rooms = [];
+      this.bounds = null;
+      this._raf = 0;
+      this._textures = { floor: null, wall: null };
 
-  /**
-   * Initialize Three.js scene
-   * @private
-   */
-  _initThreeJS() {
-    if (typeof THREE === 'undefined') {
-      throw new Error('Three.js not loaded');
-    }
+      const w = container.clientWidth || this.options.width;
+      const h = container.clientHeight || this.options.height;
 
-    // Scene setup
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(this.options.backgroundColor);
-    this.scene.fog = new THREE.Fog(0x09090b, 10000, 20000);
+      this.scene = new THREE.Scene();
+      this.scene.background = new THREE.Color(this.options.backgroundColor);
+      this.camera = new THREE.PerspectiveCamera(45, w / h, 0.05, 500);
 
-    // Camera setup
-    this.camera = new THREE.PerspectiveCamera(
-      75,
-      this.options.width / this.options.height,
-      0.1,
-      10000
-    );
-    this.camera.position.set(5000, 3000, 5000);
-    this.camera.lookAt(2500, 0, 1500);
+      this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setSize(w, h);
+      if ('outputColorSpace' in this.renderer) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      else this.renderer.outputEncoding = THREE.sRGBEncoding;
+      const el = this.renderer.domElement;
+      el.style.display = 'block';
+      el.style.width = '100%';
+      el.style.height = '100%';
+      el.style.touchAction = 'none';
+      container.appendChild(el);
 
-    // Renderer setup
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    this.renderer.setSize(this.options.width, this.options.height);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowShadowMap;
-    this.container.appendChild(this.renderer.domElement);
+      this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+      sun.position.set(3, 8, 4);
+      this.scene.add(sun);
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(this.options.ambientLight, 0.6);
-    this.scene.add(ambientLight);
+      this.orbit = { target: new THREE.Vector3(0, 0.5, 0), radius: 8, theta: Math.PI / 4, phi: 1.0 };
+      this._bindControls();
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5000, 4000, 5000);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    directionalLight.shadow.camera.far = 20000;
-    directionalLight.shadow.camera.left = -10000;
-    directionalLight.shadow.camera.right = 10000;
-    directionalLight.shadow.camera.top = 10000;
-    directionalLight.shadow.camera.bottom = -10000;
-    this.scene.add(directionalLight);
-
-    // Controls (optional - orbit-like movement)
-    this._setupControls();
-
-    // Start animation loop
-    this.animate();
-  }
-
-  /**
-   * Setup camera controls
-   * @private
-   */
-  _setupControls() {
-    const canvas = this.renderer.domElement;
-
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 2) { // Right mouse button
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const startCamX = this.camera.position.x;
-        const startCamZ = this.camera.position.z;
-
-        const onMouseMove = (moveEvent) => {
-          const deltaX = (moveEvent.clientX - startX) * 2;
-          const deltaY = (moveEvent.clientY - startY) * 2;
-
-          this.camera.position.x = startCamX - deltaX;
-          this.camera.position.z = startCamZ - deltaY;
-          this.camera.lookAt(2500, 0, 1500);
-        };
-
-        const onMouseUp = () => {
-          window.removeEventListener('mousemove', onMouseMove);
-          window.removeEventListener('mouseup', onMouseUp);
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
+      if (typeof ResizeObserver !== 'undefined') {
+        this._ro = new ResizeObserver(() => this.resize());
+        this._ro.observe(container);
       }
-    });
-
-    // Zoom with mouse wheel
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const zoomSpeed = 500;
-      const direction = e.deltaY > 0 ? 1 : -1;
-
-      const distance = Math.sqrt(
-        this.camera.position.x ** 2 +
-        this.camera.position.z ** 2
-      );
-      const newDistance = Math.max(2000, distance + direction * zoomSpeed);
-      const ratio = newDistance / distance;
-
-      this.camera.position.x *= ratio;
-      this.camera.position.z *= ratio;
-    });
-  }
-
-  /**
-   * Load and render floor plan
-   */
-  loadFloorPlan(floorPlanData) {
-    CADParser.validate(floorPlanData);
-    this.rooms = floorPlanData.rooms;
-
-    // Clear previous meshes
-    this._clearMeshes();
-
-    // Render each room
-    for (const room of this.rooms) {
-      this._renderRoom(room);
-    }
-  }
-
-  /**
-   * Render a single room with floor and walls
-   * @private
-   */
-  _renderRoom(room) {
-    // Create floor geometry from vertices
-    this._createFloor(room.vertices, room.floor);
-
-    // Create walls
-    if (room.walls) {
-      this._createWalls(room.vertices, room.walls);
-    }
-  }
-
-  /**
-   * Create floor geometry
-   * @private
-   */
-  _createFloor(vertices, floorConfig) {
-    // Convert mm to Three.js units (divide by 1000)
-    const scaledVertices = vertices.map(([x, y]) => [x / 1000, 0, y / 1000]);
-
-    // Use earcut for polygon triangulation
-    const points = scaledVertices.map(([x, , z]) => [x, z]);
-    const indices = this._triangulatePolygon(points);
-
-    // Create geometry
-    const geometry = new THREE.BufferGeometry();
-    const positions = [];
-
-    for (const [x, , z] of scaledVertices) {
-      positions.push(x, 0, z);
+      this._updateCamera();
     }
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-    geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
-    geometry.computeVertexNormals();
+    // ------------------------------------------------------------ public API
+    loadFloorPlan(data) {
+      root.CADParser.validate(data);
+      this._clear();
+      this.rooms = data.rooms;
 
-    // Create material and mesh
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xd4af37, // Gold carpet color
-      roughness: 0.6,
-      metalness: 0.1,
-      map: null // Texture will be set if provided
-    });
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.receiveShadow = true;
-    mesh.castShadow = true;
-
-    this.scene.add(mesh);
-    this.floorMesh = mesh;
-  }
-
-  /**
-   * Create wall geometry
-   * @private
-   */
-  _createWalls(vertices, walls) {
-    for (const wall of walls) {
-      const [x1, y1] = vertices[wall.from];
-      const [x2, y2] = vertices[wall.to];
-
-      const height = wall.height / 1000; // Convert mm to units
-      const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) / 1000;
-
-      // Create wall geometry
-      const geometry = new THREE.BoxGeometry(length, height, 0.05);
-
-      // Position wall
-      const centerX = (x1 + x2) / 2 / 1000;
-      const centerZ = (y1 + y2) / 2 / 1000;
-
-      // Rotate to face correct direction
-      const angle = Math.atan2(y2 - y1, x2 - x1);
-
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xe4e4e7,
-        roughness: 0.8,
-        metalness: 0
+      let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, maxH = 0;
+      this.rooms.forEach((room, ri) => {
+        const pts = room.vertices.map(([x, y]) => new THREE.Vector2(x * MM, -y * MM)); // (x, z)
+        pts.forEach((p) => {
+          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+          minZ = Math.min(minZ, p.y); maxZ = Math.max(maxZ, p.y);
+        });
+        this._buildFloor(room, pts);
+        room.walls.forEach((wall, wi) => {
+          maxH = Math.max(maxH, (wall.height || 2400) * MM);
+          this._buildWall(room, pts, wall, ri, wi);
+        });
       });
+      this.bounds = { minX, minZ, maxX, maxZ, maxH };
+      this._applyTextures();
+      this.resetCamera();
+    }
 
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(centerX, height / 2, centerZ);
-      mesh.rotation.y = angle;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+    setFloorTexture(url) {
+      this._loadTexture(url, (t) => { this._textures.floor = t; this._applyTextures(); });
+    }
 
+    // index === undefined: apply to every wall
+    setWallTexture(url, index) {
+      this._loadTexture(url, (t) => {
+        if (index == null) {
+          this._textures.wall = t;
+        } else if (this.walls[index]) {
+          this.walls[index].mesh.material.map = t;
+          this.walls[index].mesh.material.color.set(0xffffff);
+          this.walls[index].mesh.material.needsUpdate = true;
+        }
+        this._applyTextures();
+      });
+    }
+
+    resetCamera() {
+      if (!this.bounds) return;
+      const b = this.bounds;
+      const sizeX = b.maxX - b.minX, sizeZ = b.maxZ - b.minZ;
+      const size = Math.max(sizeX, sizeZ, b.maxH, 1);
+      this.orbit.target.set((b.minX + b.maxX) / 2, b.maxH * 0.3, (b.minZ + b.maxZ) / 2);
+      this.orbit.radius = size * 1.9;
+      this.orbit.theta = Math.PI / 4;
+      this.orbit.phi = 0.95;
+      this._updateCamera();
+    }
+
+    getAreas() {
+      let floor = 0, wall = 0;
+      this.rooms.forEach((r) => {
+        floor += root.CADParser.calculateArea(r.vertices);
+        wall += root.CADParser.calculateWallArea(r.walls);
+      });
+      return { floorArea: Math.round(floor / 1e4) / 100, wallArea: Math.round(wall / 1e4) / 100 };
+    }
+
+    resize() {
+      const w = this.container.clientWidth, h = this.container.clientHeight;
+      if (!w || !h) return;
+      this.renderer.setSize(w, h);
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      this._render();
+    }
+
+    dispose() {
+      cancelAnimationFrame(this._raf);
+      if (this._ro) this._ro.disconnect();
+      this._clear();
+      this.renderer.dispose();
+      if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
+
+    // -------------------------------------------------------------- geometry
+    _buildFloor(room, pts) {
+      const geo = new THREE.ShapeGeometry(new THREE.Shape(room.vertices.map(([x, y]) => new THREE.Vector2(x * MM, y * MM))));
+      // normalise UVs so one image spans the whole floor (north up)
+      const pos = geo.attributes.position;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        minX = Math.min(minX, pos.getX(i)); maxX = Math.max(maxX, pos.getX(i));
+        minY = Math.min(minY, pos.getY(i)); maxY = Math.max(maxY, pos.getY(i));
+      }
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < pos.count; i++) {
+        uv.setXY(i, (pos.getX(i) - minX) / (maxX - minX || 1), (pos.getY(i) - minY) / (maxY - minY || 1));
+      }
+      geo.rotateX(-Math.PI / 2); // (x, y, 0) -> (x, 0, -y)
+      const mat = new THREE.MeshStandardMaterial({ color: 0x8a7b5e, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geo, mat);
       this.scene.add(mesh);
-      this.wallMeshes.push(mesh);
+      this.floors.push({ mesh });
+    }
+
+    _buildWall(room, pts, wall, ri, wi) {
+      const a = pts[wall.from], b = pts[wall.to];
+      const dx = b.x - a.x, dz = b.y - a.y;
+      const len = Math.hypot(dx, dz);
+      if (len < 1e-6) return;
+      const h = (wall.height || 2400) * MM;
+
+      let angle = -Math.atan2(dz, dx);
+      // plane front face normal is (sin, cos) after rotation.y = angle; make it face the room interior
+      const mx = (a.x + b.x) / 2, mz = (a.y + b.y) / 2;
+      const probe = new THREE.Vector2(mx + Math.sin(angle) * 0.02, mz + Math.cos(angle) * 0.02);
+      if (!this._inside(probe, pts)) angle += Math.PI;
+
+      const geo = new THREE.PlaneGeometry(len, h);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xd8d8dc, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(mx, h / 2, mz);
+      mesh.rotation.y = angle;
+      this.scene.add(mesh);
+
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0x71717a })
+      );
+      edges.position.copy(mesh.position);
+      edges.rotation.copy(mesh.rotation);
+      this.scene.add(edges);
+
+      this.walls.push({ mesh, edges, roomIndex: ri, wallIndex: wi });
+    }
+
+    _inside(p, pts) {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+        if ((yi > p.y) !== (yj > p.y) && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+
+    // -------------------------------------------------------------- textures
+    _loadTexture(url, cb) {
+      new THREE.TextureLoader().load(url, (t) => {
+        if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
+        else t.encoding = THREE.sRGBEncoding;
+        t.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        cb(t);
+      });
+    }
+
+    _applyTextures() {
+      const f = this._textures.floor, w = this._textures.wall;
+      if (f) this.floors.forEach(({ mesh }) => { mesh.material.map = f; mesh.material.color.set(0xffffff); mesh.material.needsUpdate = true; });
+      if (w) this.walls.forEach(({ mesh }) => { if (!mesh.material.map) { mesh.material.map = w; mesh.material.color.set(0xffffff); mesh.material.needsUpdate = true; } });
+      this._render();
+    }
+
+    // -------------------------------------------------------------- controls
+    _bindControls() {
+      const el = this.renderer.domElement;
+      let last = null;
+      el.addEventListener('pointerdown', (e) => { last = [e.clientX, e.clientY]; el.setPointerCapture(e.pointerId); });
+      el.addEventListener('pointerup', () => { last = null; });
+      el.addEventListener('pointermove', (e) => {
+        if (!last) return;
+        this.orbit.theta -= (e.clientX - last[0]) * 0.008;
+        this.orbit.phi = Math.min(1.5, Math.max(0.1, this.orbit.phi - (e.clientY - last[1]) * 0.008));
+        last = [e.clientX, e.clientY];
+        this._updateCamera();
+      });
+      el.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.orbit.radius = Math.min(200, Math.max(0.5, this.orbit.radius * (e.deltaY > 0 ? 1.1 : 0.9)));
+        this._updateCamera();
+      }, { passive: false });
+    }
+
+    _updateCamera() {
+      const o = this.orbit;
+      this.camera.position.set(
+        o.target.x + o.radius * Math.sin(o.phi) * Math.sin(o.theta),
+        o.target.y + o.radius * Math.cos(o.phi),
+        o.target.z + o.radius * Math.sin(o.phi) * Math.cos(o.theta)
+      );
+      this.camera.lookAt(o.target);
+      this._render();
+    }
+
+    _render() {
+      if (this._raf) return;
+      this._raf = requestAnimationFrame(() => {
+        this._raf = 0;
+        this.renderer.render(this.scene, this.camera);
+      });
+    }
+
+    _clear() {
+      const drop = (obj) => {
+        this.scene.remove(obj);
+        obj.geometry && obj.geometry.dispose();
+        obj.material && obj.material.dispose();
+      };
+      this.floors.forEach(({ mesh }) => drop(mesh));
+      this.walls.forEach(({ mesh, edges }) => { drop(mesh); drop(edges); });
+      this.floors = [];
+      this.walls = [];
     }
   }
 
-  /**
-   * Simple polygon triangulation using earcut algorithm
-   * @private
-   */
-  _triangulatePolygon(points) {
-    // For simple cases, use a basic fan triangulation
-    const indices = [];
-
-    for (let i = 1; i < points.length - 1; i++) {
-      indices.push(0, i, i + 1);
-    }
-
-    return indices;
-  }
-
-  /**
-   * Update floor texture
-   */
-  setFloorTexture(imageUrl) {
-    if (!this.floorMesh) return;
-
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(imageUrl, (texture) => {
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(4, 4);
-
-      this.floorMesh.material.map = texture;
-      this.floorMesh.material.needsUpdate = true;
-    });
-  }
-
-  /**
-   * Update wall texture
-   */
-  setWallTexture(wallIndex, imageUrl) {
-    if (wallIndex >= this.wallMeshes.length) return;
-
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(imageUrl, (texture) => {
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-
-      this.wallMeshes[wallIndex].material.map = texture;
-      this.wallMeshes[wallIndex].material.needsUpdate = true;
-    });
-  }
-
-  /**
-   * Render animation loop
-   */
-  animate = () => {
-    requestAnimationFrame(this.animate);
-    this.renderer.render(this.scene, this.camera);
-  };
-
-  /**
-   * Clear all meshes from scene
-   * @private
-   */
-  _clearMeshes() {
-    this.wallMeshes.forEach(mesh => this.scene.remove(mesh));
-    this.wallMeshes = [];
-
-    if (this.floorMesh) {
-      this.scene.remove(this.floorMesh);
-      this.floorMesh = null;
-    }
-  }
-
-  /**
-   * Dispose of renderer
-   */
-  dispose() {
-    this.renderer.dispose();
-    this.container.removeChild(this.renderer.domElement);
-  }
-
-  /**
-   * Get calculated areas
-   */
-  getAreas() {
-    if (this.rooms.length === 0) {
-      return { floorArea: 0, wallArea: 0 };
-    }
-
-    const room = this.rooms[0];
-    const floorArea = CADParser.calculateArea(room.vertices) / 1000000; // Convert mm² to m²
-    const wallArea = CADParser.calculateWallArea(room.walls) / 1000000;
-
-    return {
-      floorArea: Math.round(floorArea * 100) / 100,
-      wallArea: Math.round(wallArea * 100) / 100
-    };
-  }
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = ThreeRoomRenderer;
-}
+  root.ThreeRoomRenderer = ThreeRoomRenderer;
+  if (typeof module !== 'undefined' && module.exports) module.exports = ThreeRoomRenderer;
+})(typeof window !== 'undefined' ? window : globalThis);
