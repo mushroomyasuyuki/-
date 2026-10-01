@@ -156,7 +156,8 @@
         else if (this.wallAspect && this.wallMode === 'wrap') {
           // one picture round the room: as wide as the perimeter (and the wall height), times the size setting
           const P = Math.max(entry.perimeter || lenMm, 1);
-          const imgW = Math.max(P, this._maxWall.h * this.wallAspect) * (this.wallSingleScale || 1);
+          const tr = this.wallTrim || { side: 0, top: 0, bottom: 0 };
+          const imgW = Math.max(P + tr.side * 2, (this._maxWall.h + tr.top + tr.bottom) * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
           const b0 = (P - imgW) / 2;
           uv.setXY(i, (s - b0) / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
@@ -164,7 +165,8 @@
         else if (this.wallAspect) {
           // one picture, the same size on every wall: big enough to cover the longest wall and the
           // highest wall, centred on each wall (the overflow is cut off)
-          const imgW = Math.max(this._maxWall.len, this._maxWall.h * this.wallAspect) * (this.wallSingleScale || 1);
+          const tr = this.wallTrim || { side: 0, top: 0, bottom: 0 };
+          const imgW = Math.max(this._maxWall.len + tr.side * 2, (this._maxWall.h + tr.top + tr.bottom) * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
           uv.setXY(i, 0.5 + (u0 - 0.5) * lenMm / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
         } else uv.setXY(i, u0, v0);

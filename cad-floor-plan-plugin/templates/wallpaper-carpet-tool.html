@@ -321,7 +321,7 @@
           <option value="center">1枚を壁ごとに中央に貼る</option>
           <option value="wrap">1枚を部屋を一周して続けて貼る（隣の壁へ途切れずに続く）</option>
         </select></label></div>
-      <div class="slider-row cw-single-row" style="margin-top:10px;"><label for="cw-single-scale">1枚表示の画像の大きさ：<span id="cw-single-scale-val">100</span>%</label><span>100% = 壁を覆う大きさ（壁ごとに中央：一番長い壁／一周：部屋の壁の合計の長さ）</span></div>
+      <div class="slider-row cw-single-row" style="margin-top:10px;"><label for="cw-single-scale">1枚表示の画像の大きさ：<span id="cw-single-scale-val">100</span>%</label><span>100% = 壁と裁断代（上下100mm・左右10mm）を覆う大きさ（壁ごとに中央：一番長い壁／一周：部屋の壁の合計の長さ）</span></div>
       <input type="range" id="cw-single-scale" min="10" max="300" step="5" value="100">
       <div class="file-note" id="cw-repeat-note" style="margin-top:6px;"></div>
     </div>
@@ -1192,7 +1192,9 @@
     const W = parseFloat($('persp-width')?.value) || 3000;
     const D = parseFloat($('persp-floor-depth')?.value) || 2500;
     const H = parseFloat($('persp-wall-height')?.value) || 2400;
-    return Math.max(W, D, H * aspect) * getWallRepeat().scale;
+    // 100% のとき、印刷の裁断代（上下100mm）と巾の重なり（左右10mm）まで画像が入る大きさにする
+    const WP = window.cfpWallPrint || { OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+    return Math.max(W + WP.OVERLAP * 2, D + WP.OVERLAP * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
   }
   window.cfpSingleImageWidthMm = singleImageWidthMm;
 
@@ -1222,7 +1224,9 @@
     const D = parseFloat($('persp-floor-depth')?.value) || 2500;
     const H = parseFloat($('persp-wall-height')?.value) || 2400;
     const P = W + D;
-    const iw = Math.max(P, H * aspect) * getWallRepeat().scale;
+    const WP = window.cfpWallPrint || { OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+    // 100% のとき、裁断代（上下100mm）と両端の重なり（10mm）まで画像が入る大きさ
+    const iw = Math.max(P + WP.OVERLAP * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
     return { W: W, D: D, H: H, P: P, iw: iw, ih: iw / aspect, s0: (P - iw) / 2 };
   }
   window.cfpWrapBand = wrapBand;

@@ -1017,6 +1017,9 @@
       if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm, h: rep.mm * wall.height / wall.width };
       else this.renderer.wallRepeat = null;
       this.renderer.wallSingle = !!(hasWall && rep && !rep.on);
+      // the single picture also covers the print margins (top / bottom trim, side overlaps), as in the saved data
+      const wp = window.cfpWallPrint;
+      this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);
