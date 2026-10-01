@@ -348,9 +348,9 @@
 
     <div class="palette-controls" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
       <button type="button" id="btn-save-floor-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟧 床デザイン画像を保存（PNG）</button>
-      <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（PSD・裁断ガイド付き）</button>
+      <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
     </div>
-    <div class="file-note" style="text-align:center;">※壁紙画像はPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます。ガイドは「横910mm間隔の縦線（ロール幅の目安）」と「壁の高さ位置の横線（その下が+200mmの裁断代）」を赤色で示します。</div>
+    <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。ガイドは「横910mm間隔の縦線（ロール幅の目安）」と「壁の高さ位置の横線（その下が+200mmの裁断代）」を赤色で示します。</div>
   </section>
 
   <!-- 保存ボタン群（通常PSD保存 ＆ 5mmストレッチ保存） -->
@@ -1153,6 +1153,121 @@
     return window.__cocoonAgPsdPromise;
   }
 
+  // ---------------------------------------------------------------------------
+  // CMYK PSD 書き出し（壁紙用）。ag-psd は CMYK の書き出しに未対応のため、PSD を直接組み立てる。
+  // 8bit / CMYK / レイヤー付き / RLE圧縮。RGB→CMYK は ICC を使わない単純変換（K=1-max(R,G,B)）。
+  // layers: [{ name, canvas }]（下のレイヤーから順に）。composite: 統合イメージ用キャンバス
+  // ---------------------------------------------------------------------------
+  function writeCmykPsd(width, height, composite, layers, dpi) {
+    const n = width * height;
+    function toPlanes(canvas) {
+      const d = canvas.getContext('2d').getImageData(0, 0, width, height).data;
+      const p = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)]; // C,M,Y,K,A
+      const pc = p[0], pm = p[1], py = p[2], pk = p[3], pa = p[4];
+      let last = -1, lc = 255, lm = 255, ly = 255, lk = 255;
+      for (let i = 0, j = 0; i < n; i++, j += 4) {
+        const a = d[j + 3];
+        pa[i] = a;
+        if (a === 0) { pc[i] = pm[i] = py[i] = pk[i] = 255; continue; }
+        const r = d[j], g = d[j + 1], b = d[j + 2];
+        const key = (r << 16) | (g << 8) | b;
+        if (key === last) { pc[i] = lc; pm[i] = lm; py[i] = ly; pk[i] = lk; continue; } // 同じ色が続くときは再計算しない
+        const mx = Math.max(r, g, b);
+        const kInk = 255 - mx;                       // K のインク量 0..255
+        let c = 0, m = 0, y = 0;
+        if (mx > 0) { c = Math.round((mx - r) * 255 / mx); m = Math.round((mx - g) * 255 / mx); y = Math.round((mx - b) * 255 / mx); }
+        // PSD の CMYK は 255=インクなし の反転値で保存する
+        last = key; lc = 255 - c; lm = 255 - m; ly = 255 - y; lk = 255 - kInk;
+        pc[i] = lc; pm[i] = lm; py[i] = ly; pk[i] = lk;
+      }
+      return p;
+    }
+    function packBits(plane) { // 行ごとにRLE。{counts:Uint16Array(height), data:Uint8Array}
+      const counts = new Uint16Array(height);
+      let out = new Uint8Array(Math.max(1024, n >> 3)); let o = 0;
+      const rowBuf = new Uint8Array(width * 2 + 4);
+      for (let y = 0; y < height; y++) {
+        const base = y * width; let i = 0, r = 0;
+        while (i < width) {
+          const v = plane[base + i];
+          let run = 1;
+          // ※ WordPress の整形（wptexturize）で論理積の記号が壊れないよう、ここでは比較と論理積を同じ行に書かない
+          while (i + run !== width) { if (run === 128) break; if (plane[base + i + run] !== v) break; run++; }
+          if (run >= 2) { rowBuf[r++] = 257 - run; rowBuf[r++] = v; i += run; continue; }
+          const start = i; i++;
+          while (i !== width) {
+            if (i - start === 128) break;
+            if (i + 1 !== width) { if (plane[base + i] === plane[base + i + 1]) break; }
+            i++;
+          }
+          rowBuf[r++] = i - start - 1;
+          for (let k = start; k < i; k++) rowBuf[r++] = plane[base + k];
+        }
+        if (o + r > out.length) { const bigger = new Uint8Array(Math.max(out.length * 2, o + r)); bigger.set(out); out = bigger; }
+        out.set(rowBuf.subarray(0, r), o); o += r; counts[y] = r;
+      }
+      return { counts, data: out.subarray(0, o) };
+    }
+    const parts = []; let size = 0;
+    const push = (u8) => { parts.push(u8); size += u8.length; };
+    const be = (bytes, v) => { const u = new Uint8Array(bytes); for (let i = bytes - 1; i >= 0; i--) { u[i] = v & 255; v = Math.floor(v / 256); } return u; };
+    const i16 = (v) => be(2, v < 0 ? v + 65536 : v);
+    const i32 = (v) => be(4, v < 0 ? v + 4294967296 : v);
+    const ascii = (t) => Uint8Array.from(t.split('').map((c) => c.charCodeAt(0)));
+    const concat = (arr) => { const t = arr.reduce((a, b) => a + b.length, 0); const u = new Uint8Array(t); let o = 0; arr.forEach((b) => { u.set(b, o); o += b.length; }); return u; };
+    // チャンネル（RLE）= 圧縮方式(2) + 行バイト数 + データ
+    const encodeChannel = (plane) => {
+      const r = packBits(plane);
+      const cnt = new Uint8Array(height * 2);
+      r.counts.forEach((c, i) => { cnt[i * 2] = c >> 8; cnt[i * 2 + 1] = c & 255; });
+      return concat([i16(1), cnt, r.data]);
+    };
+
+    // ---- ヘッダー ----
+    push(ascii('8BPS')); push(i16(1)); push(new Uint8Array(6)); push(i16(4));
+    push(i32(height)); push(i32(width)); push(i16(8)); push(i16(4)); // 4 = CMYK
+    push(i32(0)); // カラーモードデータなし
+    // 画像リソース：解像度
+    const fx = Math.round(dpi * 65536);
+    const resBody = concat([ascii('8BIM'), i16(1005), i16(0), i32(16), i32(fx), i16(1), i16(1), i32(fx), i16(1), i16(1)]);
+    push(i32(resBody.length)); push(resBody);
+
+    // ---- レイヤー ----
+    const recs = []; const dataParts = [];
+    layers.forEach((L) => {
+      const pl = toPlanes(L.canvas);
+      const order = [[-1, pl[4]], [0, pl[0]], [1, pl[1]], [2, pl[2]], [3, pl[3]]];
+      const enc = order.map((o) => encodeChannel(o[1]));
+      const nameBytes = (() => { const nb = unescape(encodeURIComponent(L.name)); const u = Uint8Array.from(nb.split('').map((c) => c.charCodeAt(0))); return u.length > 255 ? u.subarray(0, 255) : u; })();
+      // Pascal文字列（4バイト境界に詰める）
+      let pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
+      const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
+      // Unicodeレイヤー名（luni）で日本語名を保持
+      const uni = [i32(L.name.length)]; const ub = new Uint8Array(L.name.length * 2);
+      for (let i = 0; i < L.name.length; i++) { const c = L.name.charCodeAt(i); ub[i * 2] = c >> 8; ub[i * 2 + 1] = c & 255; }
+      let luniData = concat([i32(L.name.length), ub]);
+      if (luniData.length % 4) luniData = concat([luniData, new Uint8Array(4 - (luniData.length % 4))]);
+      const luni = concat([ascii('8BIM'), ascii('luni'), i32(luniData.length), luniData]);
+      const extra = concat([i32(0), i32(0), pascal, luni]);
+      const head = [i32(0), i32(0), i32(height), i32(width), i16(5)];
+      order.forEach((o, i) => { head.push(i16(o[0])); head.push(i32(enc[i].length)); });
+      head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, 0, 0), i32(extra.length), extra);
+      recs.push(concat(head)); enc.forEach((e) => dataParts.push(e));
+    });
+    let layerInfo = concat([i16(layers.length), ...recs, ...dataParts]);
+    if (layerInfo.length % 2) layerInfo = concat([layerInfo, new Uint8Array(1)]);
+    const layerSection = concat([i32(layerInfo.length), layerInfo, i32(0)]); // + グローバルレイヤーマスク情報(空)
+    push(i32(layerSection.length)); push(layerSection);
+
+    // ---- 統合イメージ（CMYK 4チャンネル・RLE）----
+    const cp = toPlanes(composite);
+    const cenc = [0, 1, 2, 3].map((k) => packBits(cp[k]));
+    push(i16(1));
+    cenc.forEach((r) => { const cnt = new Uint8Array(height * 2); r.counts.forEach((c, i) => { cnt[i * 2] = c >> 8; cnt[i * 2 + 1] = c & 255; }); push(cnt); });
+    cenc.forEach((r) => push(r.data));
+    return new Blob(parts, { type: 'image/vnd.adobe.photoshop' });
+  }
+
   async function downloadPsd() {
     if (!state.loadedImg) {
       alert('先に画像を選択してください。');
@@ -1294,21 +1409,11 @@
       cctx.drawImage(designCanvas, 0, 0);
       cctx.drawImage(guideCanvas, 0, 0);
 
-      const psdData = {
-        width: imageW,
-        height: imageH,
-        bitsPerChannel: 8,
-        colorMode: 3,
-        resolution: 25.4,
-        canvas: compositeCanvas,
-        children: [
-          { name: '②裁断ガイド（横910mm間隔／壁の高さ+200mm・赤線）', top: 0, left: 0, right: imageW, bottom: imageH, canvas: guideCanvas },
-          { name: '①壁紙デザイン（実寸・幅' + imageW + 'mm×高さ' + imageH + 'mm）', top: 0, left: 0, right: imageW, bottom: imageH, canvas: designCanvas }
-        ]
-      };
-
-      const buffer = agPsd.writePsd(psdData, { generateThumbnail: true });
-      const blob = new Blob([buffer], { type: 'image/vnd.adobe.photoshop' });
+      // 壁紙は CMYK で保存（ガイド線は C0 M100 Y100 K0 の赤）
+      const blob = writeCmykPsd(imageW, imageH, compositeCanvas, [
+        { name: '①壁紙デザイン（実寸・幅' + imageW + 'mm×高さ' + imageH + 'mm）', canvas: designCanvas },
+        { name: '②裁断ガイド（横910mm間隔／壁の高さ+200mm・赤線）', canvas: guideCanvas }
+      ], 25.4);
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = 'wallpaper_design_guide_' + imageW + 'x' + imageH + '_' + Date.now() + '.psd';
@@ -1353,6 +1458,10 @@
   // メール本文にはダウンロードリンクと、両方の階調表現（誤差拡散）％を記載する（添付なし）。
   // ファイルは60日間サーバーに保存され、期限を過ぎると自動的に削除される。
   // ---------------------------------------------------------------------------
+  function makeSingleLayerCmykPsdBlob(canvas, layerName) {
+    return writeCmykPsd(canvas.width, canvas.height, canvas, [{ name: layerName, canvas: canvas }], 25.4);
+  }
+
   function makeSingleLayerPsdBlob(agPsd, canvas, layerName) {
     const psdData = {
       width: canvas.width,
@@ -1465,8 +1574,8 @@
         wallReducedCanvas.height = wallHeightMm;
         wallReducedCanvas.getContext('2d').putImageData(wallReducedData, 0, 0);
 
-        wallOriginalBlob = makeSingleLayerPsdBlob(agPsd, wallOriginalCanvas, '壁：元画像（オリジナル）');
-        wallReducedBlob = makeSingleLayerPsdBlob(agPsd, wallReducedCanvas, '壁：変換後画像（実寸出力・1px=1mm）');
+        wallOriginalBlob = makeSingleLayerCmykPsdBlob(wallOriginalCanvas, '壁：元画像（オリジナル）');
+        wallReducedBlob = makeSingleLayerCmykPsdBlob(wallReducedCanvas, '壁：変換後画像（実寸出力・1px=1mm）');
         wallOriginalFileName = 'wall_original_' + safeName + '_' + stamp + '.psd';
         wallReducedFileName = 'wall_reduced_' + safeName + '_dither' + wallDitherPct + 'pct_' + stamp + '.psd';
       }
