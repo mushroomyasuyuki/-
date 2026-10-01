@@ -1713,6 +1713,8 @@
         statusEl.textContent = '✅ 床・壁ともにパースへ反映されています。';
       }
     }
+    // CAD表示（cad-floor-plan）にも床・壁の変換後画像を反映させるための通知
+    document.dispatchEvent(new Event('cfp:designs-updated'));
   }
 
   // 上のカーペット用・壁紙用デザインが再処理される（減色・パレット・サイズ変更の）たびに、

@@ -6,6 +6,8 @@
   'use strict';
 
   const MM = 0.001;
+  const FLOOR_COLOR = 0x8a7b5e;
+  const WALL_COLOR = 0xd8d8dc;
 
   class ThreeRoomRenderer {
     constructor(container, options = {}) {
@@ -39,8 +41,8 @@
       el.style.touchAction = 'none';
       container.appendChild(el);
 
-      this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-      const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+      this.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.3);
       sun.position.set(3, 8, 4);
       this.scene.add(sun);
 
@@ -79,21 +81,31 @@
     }
 
     setFloorTexture(url) {
-      this._loadTexture(url, (t) => { this._textures.floor = t; this._applyTextures(); });
+      this._loadTexture(url, (t) => this._setTexture('floor', t));
     }
 
-    // index === undefined: apply to every wall
+    // index === undefined: apply to every wall that has no texture of its own
     setWallTexture(url, index) {
       this._loadTexture(url, (t) => {
         if (index == null) {
-          this._textures.wall = t;
+          this._setTexture('wall', t);
         } else if (this.walls[index]) {
+          this.walls[index].custom = true;
           this.walls[index].mesh.material.map = t;
           this.walls[index].mesh.material.color.set(0xffffff);
           this.walls[index].mesh.material.needsUpdate = true;
+          this._render();
         }
-        this._applyTextures();
       });
+    }
+
+    // Textures straight from a <canvas> (e.g. the reduced-colour design image). null clears.
+    setFloorCanvas(canvas) {
+      this._setTexture('floor', canvas ? this._canvasTexture(canvas) : null);
+    }
+
+    setWallCanvas(canvas) {
+      this._setTexture('wall', canvas ? this._canvasTexture(canvas) : null);
     }
 
     resetCamera() {
@@ -149,7 +161,7 @@
         uv.setXY(i, (pos.getX(i) - minX) / (maxX - minX || 1), (pos.getY(i) - minY) / (maxY - minY || 1));
       }
       geo.rotateX(-Math.PI / 2); // (x, y, 0) -> (x, 0, -y)
-      const mat = new THREE.MeshStandardMaterial({ color: 0x8a7b5e, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+      const mat = new THREE.MeshStandardMaterial({ color: FLOOR_COLOR, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geo, mat);
       this.scene.add(mesh);
       this.floors.push({ mesh });
@@ -169,7 +181,7 @@
       if (!this._inside(probe, pts)) angle += Math.PI;
 
       const geo = new THREE.PlaneGeometry(len, h);
-      const mat = new THREE.MeshStandardMaterial({ color: 0xd8d8dc, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
+      const mat = new THREE.MeshStandardMaterial({ color: WALL_COLOR, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(mx, h / 2, mz);
       mesh.rotation.y = angle;
@@ -183,7 +195,7 @@
       edges.rotation.copy(mesh.rotation);
       this.scene.add(edges);
 
-      this.walls.push({ mesh, edges, roomIndex: ri, wallIndex: wi });
+      this.walls.push({ mesh, edges, roomIndex: ri, wallIndex: wi, custom: false });
     }
 
     _inside(p, pts) {
@@ -198,17 +210,47 @@
     // -------------------------------------------------------------- textures
     _loadTexture(url, cb) {
       new THREE.TextureLoader().load(url, (t) => {
-        if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
-        else t.encoding = THREE.sRGBEncoding;
-        t.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        this._prepareTexture(t);
         cb(t);
       });
     }
 
+    _prepareTexture(t) {
+      if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
+      else t.encoding = THREE.sRGBEncoding;
+      t.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    }
+
+    _canvasTexture(canvas) {
+      // copy (max 2048px) so later redraws of the source canvas do not affect it and GPU memory stays bounded
+      const max = 2048;
+      const k = Math.min(1, max / Math.max(canvas.width, canvas.height));
+      const copy = document.createElement('canvas');
+      copy.width = Math.max(1, Math.round(canvas.width * k));
+      copy.height = Math.max(1, Math.round(canvas.height * k));
+      copy.getContext('2d').drawImage(canvas, 0, 0, copy.width, copy.height);
+      const t = new THREE.CanvasTexture(copy);
+      t.minFilter = THREE.LinearFilter;
+      t.generateMipmaps = false;
+      this._prepareTexture(t);
+      return t;
+    }
+
+    _setTexture(kind, texture) {
+      if (this._textures[kind]) this._textures[kind].dispose();
+      this._textures[kind] = texture;
+      this._applyTextures();
+    }
+
     _applyTextures() {
       const f = this._textures.floor, w = this._textures.wall;
-      if (f) this.floors.forEach(({ mesh }) => { mesh.material.map = f; mesh.material.color.set(0xffffff); mesh.material.needsUpdate = true; });
-      if (w) this.walls.forEach(({ mesh }) => { if (!mesh.material.map) { mesh.material.map = w; mesh.material.color.set(0xffffff); mesh.material.needsUpdate = true; } });
+      const apply = (mat, tex, base) => {
+        mat.map = tex || null;
+        mat.color.set(tex ? 0xffffff : base);
+        mat.needsUpdate = true;
+      };
+      this.floors.forEach(({ mesh }) => apply(mesh.material, f, FLOOR_COLOR));
+      this.walls.forEach((entry) => { if (!entry.custom) apply(entry.mesh.material, w, WALL_COLOR); });
       this._render();
     }
 

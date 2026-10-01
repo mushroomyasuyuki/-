@@ -13,6 +13,19 @@
     metadata: { source: 'sample' },
   };
 
+  // true when something has been drawn on the canvas (checked on a 16x16 downscale)
+  function canvasHasContent(c) {
+    try {
+      const t = document.createElement('canvas');
+      t.width = t.height = 16;
+      const x = t.getContext('2d');
+      x.drawImage(c, 0, 0, 16, 16);
+      const d = x.getImageData(0, 0, 16, 16).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true;
+    } catch (e) { /* tainted or unreadable canvas: treat as empty */ }
+    return false;
+  }
+
   class CADFloorPlanWidget {
     constructor(el) {
       this.el = el;
@@ -23,6 +36,7 @@
       this.height = parseInt(el.dataset.height, 10) || 600;
       this.$('canvas').style.height = this.height + 'px';
       this._bind();
+      document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
       if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル（L字の部屋）');
     }
 
@@ -68,11 +82,33 @@
         this.$('floor-area').textContent = a.floorArea + ' ㎡';
         this.$('wall-area').textContent = a.wallArea + ' ㎡';
         this.$('room-count').textContent = normalized.rooms.length;
+        this.syncDesigns(false);
         this.status('読み込みました（部屋 ' + normalized.rooms.length + '）', 'success');
       } catch (err) {
         this.status('エラー: ' + err.message, 'error');
         console.error(err);
       }
+    }
+
+    /**
+     * On the wallpaper/carpet simulator page, shows the converted (reduced-colour) floor and
+     * wallpaper designs from #cc-reduced / #cw-reduced on the 3D floor and walls.
+     * fromEvent: the tool re-processed a design, so an emptied canvas clears the texture too.
+     */
+    syncDesigns(fromEvent) {
+      const floor = document.getElementById('cc-reduced');
+      const wall = document.getElementById('cw-reduced');
+      const note = this.$('design-note');
+      if (!this.renderer || (!floor && !wall)) return;
+      const hasFloor = !!floor && floor.width > 0 && floor.height > 0 && canvasHasContent(floor);
+      const hasWall = !!wall && wall.width > 0 && wall.height > 0 && canvasHasContent(wall);
+      if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? floor : null);
+      if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
+      if (!note) return;
+      if (hasFloor && hasWall) note.textContent = '床・壁のデザイン（変換後の画像）を反映しています。';
+      else if (hasFloor) note.textContent = '床のデザインを反映しています。壁は「② 壁紙用デザイン」を処理すると反映されます。';
+      else if (hasWall) note.textContent = '壁のデザインを反映しています。床は「① カーペット用デザイン」を処理すると反映されます。';
+      else note.textContent = '①カーペット用・②壁紙用のデザイン画像を処理すると、床・壁に自動で反映されます。';
     }
 
     _texture(e, kind) {
