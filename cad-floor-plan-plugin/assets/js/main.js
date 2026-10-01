@@ -144,6 +144,10 @@
       ['pan', 'rect'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
+      const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
+      this.$('total-all').addEventListener('click', () => setTotal(() => true));
+      this.$('total-cloth').addEventListener('click', () => setTotal((w) => !!w.cloth || !!w.custom));
+      this.$('total-none').addEventListener('click', () => setTotal(() => false));
       this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
@@ -477,6 +481,7 @@
       this.elevIndex = -1;
       this._elevFile = null;
       this.$('elev').hidden = true;
+      window.cfpWallTotal = null;
     }
 
     // ------------------------------------------------------- several drawings
@@ -616,6 +621,7 @@
         }
       }
       this._renderDrawings();
+      if (this.elev) this._updateWallTotal();
       this.status('「' + d.file.name + '」を外しました。', 'success');
     }
 
@@ -717,9 +723,54 @@
         const meta = document.createElement('span'); meta.className = 'cfp-room-meta'; meta.textContent = fmtMm(w.width) + ' × ' + fmtMm(w.height) + ' mm';
         b.append(num, nm, meta);
         b.addEventListener('click', () => this.selectWall(i));
-        list.appendChild(b);
+        const item = document.createElement('div');
+        item.className = 'cfp-room-item';
+        const chk = document.createElement('label');
+        chk.className = 'cfp-elev-chk';
+        chk.title = '壁紙の合計に入れる';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!w.inTotal;
+        cb.setAttribute('aria-label', w.name + ' を壁紙の合計に入れる');
+        cb.addEventListener('change', () => { w.inTotal = cb.checked; this._updateWallTotal(); });
+        chk.appendChild(cb);
+        item.append(chk, b);
+        list.appendChild(item);
       });
       this._refreshElevTracer();
+      this._updateWallTotal();
+    }
+
+    // The walls ticked on every loaded elevation sheet: total width, area and wall paper strips (910 mm rolls).
+    _updateWallTotal() {
+      const ROLL = 910, TRIM = 200;
+      const picked = [];
+      this.drawings.filter((d) => d.type === 'elev' && d.elev).forEach((d) => {
+        const custom = d.file === this._elevFile && this.elev ? this.elev.custom : ((this.elevStates.get(d.file) || {}).custom || []);
+        d.elev.walls.concat(custom).forEach((w) => { if (w.inTotal) picked.push({ w, file: d.file.name }); });
+      });
+      const out = this.$('elev-total');
+      let total = null;
+      if (picked.length) {
+        let width = 0, area = 0, strips = 0, len = 0;
+        picked.forEach(({ w }) => {
+          width += w.width;
+          area += w.width * w.height / 1e6;
+          const n = Math.ceil((w.width - 5) / ROLL);
+          strips += n;
+          len += n * (w.height + TRIM) / 1000;
+        });
+        const files = [...new Set(picked.map((p) => p.file))];
+        total = {
+          count: picked.length, widthMm: Math.round(width), areaM2: Math.round(area * 100) / 100,
+          strips, lengthM: Math.round(len * 10) / 10, files,
+        };
+        total.text = picked.length + '面（' + files.join('・') + '）幅の合計 ' + fmtMm(total.widthMm) + ' mm／面積の合計 ' + total.areaM2
+          + ' ㎡／910mm幅のロールで ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 裁断代200mm）';
+        out.textContent = '壁紙の合計: ' + total.text + '。扉・窓などの開口は差し引いていません。';
+      } else out.textContent = '壁紙の合計: 一覧の左のチェックで、合計に入れる壁を選んでください。';
+      window.cfpWallTotal = total;
+      document.dispatchEvent(new CustomEvent('cfp:wall-total', { detail: total }));
     }
 
     // Sets the wall paper size (wall width / wall height) from the chosen wall.

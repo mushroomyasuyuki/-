@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.18.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.19.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -102,6 +102,10 @@
 .cfp-dw-chip.is-active{border-color:#93c5fd;background:#1e3a8a}
 .cfp-dw-chip.is-active button{color:#fff}
 .cfp-dw-none{color:#71717a;font-size:12px}
+.cfp-elev-chk{flex:0 0 34px;display:flex;align-items:center;justify-content:center;background:#18181b;border:1px solid #3f3f46;border-radius:6px;cursor:pointer}
+.cfp-elev-chk input{width:16px;height:16px;cursor:pointer}
+.cfp-elev-sep{margin-left:8px;color:#a1a1aa}
+.cfp-elev-total{margin:6px 0 4px;padding:8px 10px;background:#1e1b4b;border:1px solid #6d28d9;border-radius:6px;color:#ede9fe;font-size:13px;font-weight:700;line-height:1.6}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -174,11 +178,16 @@
         <span class="cfp-elev-title">展開図から壁を読み取りました：壁を選ぶと、壁紙のサイズに反映します</span>
       </div>
       <p class="cfp-hint" data-cfp="elev-note"></p>
+      <p class="cfp-elev-total" data-cfp="elev-total"></p>
       <div class="cfp-trace-bar">
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角で壁紙の範囲を指定</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
         <label class="cfp-check"><input type="checkbox" data-cfp="elev-cloth-only"> クロス貼りの壁だけ表示</label>
+        <span class="cfp-elev-sep">この図面の壁を合計に：</span>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-all">全部</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-cloth">クロス貼りだけ</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-none">解除</button>
       </div>
       <div class="cfp-rooms-body">
         <svg class="cfp-elev-view" data-cfp="elev-svg" role="img" aria-label="展開図"></svg>
@@ -1806,6 +1815,10 @@
       ['pan', 'rect'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
+      const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
+      this.$('total-all').addEventListener('click', () => setTotal(() => true));
+      this.$('total-cloth').addEventListener('click', () => setTotal((w) => !!w.cloth || !!w.custom));
+      this.$('total-none').addEventListener('click', () => setTotal(() => false));
       this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
@@ -2117,6 +2130,7 @@
       this.elevIndex = -1;
       this._elevFile = null;
       this.$('elev').hidden = true;
+      window.cfpWallTotal = null;
     }
     // ------------------------------------------------------- several drawings
     // Floor plans (rooms -> carpet) and elevation sheets (walls -> wall paper) can be uploaded together;
@@ -2251,6 +2265,7 @@
         }
       }
       this._renderDrawings();
+      if (this.elev) this._updateWallTotal();
       this.status('「' + d.file.name + '」を外しました。', 'success');
     }
     _renderDrawings() {
@@ -2345,9 +2360,53 @@
         const meta = document.createElement('span'); meta.className = 'cfp-room-meta'; meta.textContent = fmtMm(w.width) + ' × ' + fmtMm(w.height) + ' mm';
         b.append(num, nm, meta);
         b.addEventListener('click', () => this.selectWall(i));
-        list.appendChild(b);
+        const item = document.createElement('div');
+        item.className = 'cfp-room-item';
+        const chk = document.createElement('label');
+        chk.className = 'cfp-elev-chk';
+        chk.title = '壁紙の合計に入れる';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!w.inTotal;
+        cb.setAttribute('aria-label', w.name + ' を壁紙の合計に入れる');
+        cb.addEventListener('change', () => { w.inTotal = cb.checked; this._updateWallTotal(); });
+        chk.appendChild(cb);
+        item.append(chk, b);
+        list.appendChild(item);
       });
       this._refreshElevTracer();
+      this._updateWallTotal();
+    }
+    // The walls ticked on every loaded elevation sheet: total width, area and wall paper strips (910 mm rolls).
+    _updateWallTotal() {
+      const ROLL = 910, TRIM = 200;
+      const picked = [];
+      this.drawings.filter((d) => d.type === 'elev' && d.elev).forEach((d) => {
+        const custom = d.file === this._elevFile && this.elev ? this.elev.custom : ((this.elevStates.get(d.file) || {}).custom || []);
+        d.elev.walls.concat(custom).forEach((w) => { if (w.inTotal) picked.push({ w, file: d.file.name }); });
+      });
+      const out = this.$('elev-total');
+      let total = null;
+      if (picked.length) {
+        let width = 0, area = 0, strips = 0, len = 0;
+        picked.forEach(({ w }) => {
+          width += w.width;
+          area += w.width * w.height / 1e6;
+          const n = Math.ceil((w.width - 5) / ROLL);
+          strips += n;
+          len += n * (w.height + TRIM) / 1000;
+        });
+        const files = [...new Set(picked.map((p) => p.file))];
+        total = {
+          count: picked.length, widthMm: Math.round(width), areaM2: Math.round(area * 100) / 100,
+          strips, lengthM: Math.round(len * 10) / 10, files,
+        };
+        total.text = picked.length + '面（' + files.join('・') + '）幅の合計 ' + fmtMm(total.widthMm) + ' mm／面積の合計 ' + total.areaM2
+          + ' ㎡／910mm幅のロールで ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 裁断代200mm）';
+        out.textContent = '壁紙の合計: ' + total.text + '。扉・窓などの開口は差し引いていません。';
+      } else out.textContent = '壁紙の合計: 一覧の左のチェックで、合計に入れる壁を選んでください。';
+      window.cfpWallTotal = total;
+      document.dispatchEvent(new CustomEvent('cfp:wall-total', { detail: total }));
     }
     // Sets the wall paper size (wall width / wall height) from the chosen wall.
     selectWall(i) {

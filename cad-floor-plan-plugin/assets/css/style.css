@@ -108,3 +108,8 @@
 .cfp-dw-chip.is-active{border-color:#93c5fd;background:#1e3a8a}
 .cfp-dw-chip.is-active button{color:#fff}
 .cfp-dw-none{color:#71717a;font-size:12px}
+
+.cfp-elev-chk{flex:0 0 34px;display:flex;align-items:center;justify-content:center;background:#18181b;border:1px solid #3f3f46;border-radius:6px;cursor:pointer}
+.cfp-elev-chk input{width:16px;height:16px;cursor:pointer}
+.cfp-elev-sep{margin-left:8px;color:#a1a1aa}
+.cfp-elev-total{margin:6px 0 4px;padding:8px 10px;background:#1e1b4b;border:1px solid #6d28d9;border-radius:6px;color:#ede9fe;font-size:13px;font-weight:700;line-height:1.6}

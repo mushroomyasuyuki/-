@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.18.0
+ * Version: 2.19.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.18.0');
+define('CFP_VERSION', '2.19.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -386,11 +386,16 @@ final class CAD_Floor_Plan_Plugin {
                     <span class="cfp-elev-title">展開図から壁を読み取りました：壁を選ぶと、壁紙のサイズに反映します</span>
                   </div>
                   <p class="cfp-hint" data-cfp="elev-note"></p>
+                  <p class="cfp-elev-total" data-cfp="elev-total"></p>
                   <div class="cfp-trace-bar">
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角で壁紙の範囲を指定</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
                     <label class="cfp-check"><input type="checkbox" data-cfp="elev-cloth-only"> クロス貼りの壁だけ表示</label>
+                    <span class="cfp-elev-sep">この図面の壁を合計に：</span>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-all">全部</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-cloth">クロス貼りだけ</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-none">解除</button>
                   </div>
                   <div class="cfp-rooms-body">
                     <svg class="cfp-elev-view" data-cfp="elev-svg" role="img" aria-label="展開図"></svg>
