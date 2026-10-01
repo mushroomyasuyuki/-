@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.0.0
+ * Version: 2.1.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.0.0');
+define('CFP_VERSION', '2.1.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -81,6 +81,13 @@ final class CAD_Floor_Plan_Plugin {
                 ]);
             }
         }
+        // 2.1.0: apply the Cocoon page settings to the page this plugin created.
+        if ($stored && version_compare($stored, '2.1.0', '<')) {
+            $id = (int) get_option('cad_floor_plan_page_id');
+            if ($id && get_option('cad_floor_plan_page_created') && get_post_type($id) === 'page') {
+                self::apply_page_meta($id);
+            }
+        }
         update_option('cad_floor_plan_version', CFP_VERSION);
     }
 
@@ -111,6 +118,7 @@ final class CAD_Floor_Plan_Plugin {
             'post_title'   => CFP_PAGE_TITLE,
             'post_name'    => CFP_PAGE_SLUG,
             'post_content' => self::page_content(),
+            'meta_input'   => self::page_meta(),
         ], true);
 
         if (is_wp_error($new_id)) {
@@ -119,6 +127,25 @@ final class CAD_Floor_Plan_Plugin {
         update_option('cad_floor_plan_page_id', $new_id);
         update_option('cad_floor_plan_page_created', 1);
         return (int) $new_id;
+    }
+
+    /**
+     * Cocoon page settings: "本文のみ（フルワイド）", hide title, reading time and table of contents.
+     * Other themes ignore these custom fields.
+     */
+    private static function page_meta() {
+        return [
+            'page_type'                   => 'content_only_full_wide',
+            'the_page_title_novisible'    => 1,
+            'the_page_read_time_novisible' => 1,
+            'the_page_toc_novisible'      => 1,
+        ];
+    }
+
+    private static function apply_page_meta($id) {
+        foreach (self::page_meta() as $key => $value) {
+            update_post_meta($id, $key, $value);
+        }
     }
 
     private static function page_content() {
