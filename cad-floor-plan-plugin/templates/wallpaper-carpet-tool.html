@@ -197,9 +197,14 @@
     <div class="grid-2"><div class="form-group"><label for="cc-width">横幅 (W) [mm]</label><input type="number" id="cc-width" value="1000" min="500" step="500"></div><div class="form-group"><label for="cc-height">縦幅 (H) [mm]</label><input type="number" id="cc-height" value="1000" min="500" step="500"></div></div>
     <div class="file-note" id="cc-tile-count" style="text-align:center;margin:-8px 0 18px;">合計カーペット枚数：4枚（横2枚 × 縦2枚）</div>
     <div class="form-group"><label for="cc-region">お届け先地域（送料/箱）</label><select id="cc-region"><option value="honshu" data-shipping="2000">本州 (送料: ¥2,000 / 箱)</option><option value="hokkaido_shikoku_kyushu" data-shipping="2500">北海道・四国・九州 (送料: ¥2,500 / 箱)</option><option value="okinawa" data-shipping="5500">沖縄 (送料: ¥5,500 / 箱)</option></select><small>※ループパイル：1箱＝20枚（5㎡）換算／カットパイル：1箱＝16枚（4㎡）換算で送料を計算します。<br>※配送はヤマト運輸（クロネコヤマト便）にて発送いたします。</small></div>
-    
+  </div>
+
+  <!-- ▼▼▼ ① カーペット用デザイン（お見積り・PSD保存・ご注文の対象） ▼▼▼ -->
+  <div class="room-sim-panel" style="margin:25px 0; border-color:#3b82f6;">
+    <div class="room-sim-panel-title" style="color:#60a5fa;">🟦 ① カーペット用デザイン画像（お見積り・PSD保存・ご注文はこちらのデザインが対象になります）</div>
+
     <div class="file-box">
-      <label for="cc-file">① カーペット用デザイン画像の選択（JPEG / PNG / GIF / WebP）</label>
+      <label for="cc-file" style="color:#60a5fa;">① カーペット用デザイン画像の選択（JPEG / PNG / GIF / WebP）</label>
       <input type="file" id="cc-file" accept="image/*">
       <div class="file-note">※上の枠内をクリックして画像ファイルを選択してください。お見積り・PSD保存・ご注文はこちらのデザインが対象になります。<br>※元データの解像度が粗い（画素が少ない）場合、文字やラインが潰れてしまう場合がございます。<br>※目安として、10cm角のサイズで画数の多い漢字が表現できる程度の解像度をご用意いただくと安心です。</div>
     </div>
@@ -228,7 +233,6 @@
       </div>
       <div id="cc-op-palette-selector" class="palette-select-grid"></div>
     </div>
-  </div>
 
   <div id="cc-status" class="status-box"></div>
   <div class="preview-grid">
@@ -237,13 +241,15 @@
   </div>
 
   <div class="file-note" style="text-align:center;">※上記プレビュー（印刷イメージ）と実際の仕上がりは、モニターの発色や制作工程の都合上、多少異なる場合がございます。</div>
+  </div>
+  <!-- ▲▲▲ ① カーペット用デザイン ここまで ▲▲▲ -->
 
   <!-- ▼▼▼ ② 壁紙用デザイン（独立ツール・お見積りには含まれません） ▼▼▼ -->
   <div class="room-sim-panel" style="margin:25px 0; border-color:#3b82f6;">
     <div class="room-sim-panel-title" style="color:#60a5fa;">🟦 ② 壁紙用デザイン画像（下の「お部屋パース」の壁面に使用されます／お見積りには含まれません）</div>
 
     <div class="file-box">
-      <label for="cw-file">壁紙用デザイン画像の選択（JPEG / PNG / GIF / WebP）</label>
+      <label for="cw-file" style="color:#60a5fa;">壁紙用デザイン画像の選択（JPEG / PNG / GIF / WebP）</label>
       <input type="file" id="cw-file" accept="image/*">
       <div class="file-note">※カーペットとは別の柄を壁紙シミュレーションに使いたい場合はこちらにアップロードしてください。<br>※元データの解像度が粗い（画素が少ない）場合、文字やラインが潰れてしまう場合がございます。<br>※目安として、10cm角のサイズで画数の多い漢字が表現できる程度の解像度をご用意いただくと安心です。</div>
     </div>
