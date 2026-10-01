@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAD Parser & 3D Renderer テスト</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #09090b;
+      color: #f4f4f5;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .test-container {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      color: #fff;
+      border-left: 4px solid #3b82f6;
+      padding-left: 10px;
+    }
+    h2 {
+      color: #60a5fa;
+      margin-top: 20px;
+    }
+    .demo-box {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    button {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 10px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    button:disabled {
+      background: #6b7280;
+      cursor: not-allowed;
+    }
+    #three-canvas {
+      width: 100%;
+      height: 500px;
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      margin: 15px 0;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 15px 0;
+    }
+    .info-card {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .info-label {
+      color: #a1a1aa;
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    .info-value {
+      color: #fff;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .code-block {
+      background: #09090b;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      padding: 15px;
+      overflow-x: auto;
+      font-family: 'Monaco', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .status {
+      padding: 12px 15px;
+      border-radius: 6px;
+      margin: 15px 0;
+      display: none;
+    }
+    .status.success {
+      background: #064e3b;
+      border: 1px solid #059669;
+      color: #86efac;
+      display: block;
+    }
+    .status.error {
+      background: #7f1d1d;
+      border: 1px solid #991b1b;
+      color: #fca5a5;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏗️ CAD Parser & 3D Renderer - テストページ</h1>
+
+  <div class="test-container">
+    <h2>① デモ：デフォルト間取り（JSON）</h2>
+    <p>プリロードされたサンプル間取りを3D表示します。</p>
+
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="info-label">床面積</div>
+        <div class="info-value" id="demo-floor-area">-</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">壁面積</div>
+        <div class="info-value" id="demo-wall-area">-</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">部屋数</div>
+        <div class="info-value" id="demo-room-count">-</div>
+      </div>
+    </div>
+
+    <button onclick="loadDefaultRoom()">🎯 デフォルト間取りを読み込み</button>
+    <button onclick="resetDemoCamera()">🎥 カメラをリセット</button>
+    <button id="demo-status"></button>
+
+    <div id="demo-three-canvas"></div>
+  </div>
+
+  <div class="test-container">
+    <h2>② テスト：JSON形式の間取り</h2>
+    <p>カスタムJSON形式で複雑な間取りをテストします。</p>
+
+    <button onclick="testComplexRoom()">📐 複雑な間取りをテスト</button>
+
+    <div class="status" id="test-status"></div>
+
+    <div id="test-three-canvas"></div>
+
+    <div class="code-block" id="test-json-output"></div>
+  </div>
+
+  <div class="test-container">
+    <h2>③ CAD Parser 関数テスト</h2>
+
+    <button onclick="testAreaCalculation()">📏 面積計算テスト</button>
+    <button onclick="testWallCalculation()">🧱 壁面積テスト</button>
+    <button onclick="testJSONParsing()">✅ JSON解析テスト</button>
+
+    <div id="function-test-output" class="code-block"></div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="./modules/cad-parser.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="./modules/three-room-renderer.js"></script>
+
+  <script>
+    let demoRenderer = null;
+    let testRenderer = null;
+
+    // Demo: Load default room
+    function loadDefaultRoom() {
+      try {
+        const defaultData = {
+          rooms: [{
+            id: "room_1",
+            vertices: [[0, 0], [5000, 0], [5000, 3000], [0, 3000]],
+            walls: [
+              { from: 0, to: 1, length: 5000, height: 2800, material: "wallpaper" },
+              { from: 1, to: 2, length: 3000, height: 2800, material: "wallpaper" },
+              { from: 2, to: 3, length: 5000, height: 2800, material: "wallpaper" },
+              { from: 3, to: 0, length: 3000, height: 2800, material: "wallpaper" }
+            ],
+            floor: { material: "carpet" }
+          }],
+          metadata: { source: "default", scale: 1 }
+        };
+
+        CADParser.validate(defaultData);
+
+        if (!demoRenderer) {
+          const container = document.getElementById('demo-three-canvas');
+          demoRenderer = new ThreeRoomRenderer(container, {
+            width: container.offsetWidth,
+            height: 500,
+            backgroundColor: 0x09090b
+          });
+        }
+
+        demoRenderer.loadFloorPlan(defaultData);
+        const areas = demoRenderer.getAreas();
+
+        document.getElementById('demo-floor-area').textContent = areas.floorArea + ' m²';
+        document.getElementById('demo-wall-area').textContent = areas.wallArea + ' m²';
+        document.getElementById('demo-room-count').textContent = '1';
+
+        showDemoStatus('✅ デフォルト間取りを読み込みました', 'success');
+      } catch (error) {
+        showDemoStatus('❌ エラー: ' + error.message, 'error');
+      }
+    }
+
+    function resetDemoCamera() {
+      if (demoRenderer) {
+        demoRenderer.camera.position.set(5000, 3000, 5000);
+        demoRenderer.camera.lookAt(2500, 0, 1500);
+      }
+    }
+
+    function showDemoStatus(msg, type) {
+      const btn = document.getElementById('demo-status');
+      btn.textContent = msg;
+      btn.style.background = type === 'success' ? '#059669' : '#991b1b';
+    }
+
+    // Test: Complex room
+    function testComplexRoom() {
+      try {
+        const complexData = {
+          rooms: [{
+            id: "complex_room",
+            vertices: [
+              [0, 0], [4000, 0], [4000, 2000], [6000, 2000],
+              [6000, 5000], [0, 5000]
+            ],
+            walls: [
+              { from: 0, to: 1, length: 4000, height: 2800, material: "wallpaper" },
+              { from: 1, to: 2, length: 2000, height: 2800, material: "wallpaper" },
+              { from: 2, to: 3, length: 2000, height: 2800, material: "wallpaper" },
+              { from: 3, to: 4, length: 3000, height: 2800, material: "wallpaper" },
+              { from: 4, to: 5, length: 6000, height: 2800, material: "wallpaper" },
+              { from: 5, to: 0, length: 5000, height: 2800, material: "wallpaper" }
+            ],
+            floor: { material: "carpet" }
+          }],
+          metadata: { source: "json", scale: 1 }
+        };
+
+        CADParser.validate(complexData);
+
+        if (!testRenderer) {
+          const container = document.getElementById('test-three-canvas');
+          testRenderer = new ThreeRoomRenderer(container, {
+            width: container.offsetWidth,
+            height: 500,
+            backgroundColor: 0x09090b
+          });
+        }
+
+        testRenderer.loadFloorPlan(complexData);
+        const areas = testRenderer.getAreas();
+
+        document.getElementById('test-json-output').innerHTML =
+          `<strong>複雑な間取り（L字型）</strong><br>` +
+          `床面積: ${areas.floorArea} m²<br>` +
+          `壁面積: ${areas.wallArea} m²<br>` +
+          `<br><strong>JSON データ:</strong><br>` +
+          JSON.stringify(complexData, null, 2).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        showTestStatus('✅ 複雑な間取りを表示しました', 'success');
+      } catch (error) {
+        showTestStatus('❌ エラー: ' + error.message, 'error');
+      }
+    }
+
+    function showTestStatus(msg, type) {
+      const status = document.getElementById('test-status');
+      status.textContent = msg;
+      status.className = 'status ' + type;
+    }
+
+    // Function Tests
+    function testAreaCalculation() {
+      try {
+        const vertices = [[0, 0], [5000, 0], [5000, 3000], [0, 3000]];
+        const area = CADParser.calculateArea(vertices);
+        const areaSqm = (area / 1000000).toFixed(2);
+
+        document.getElementById('function-test-output').innerHTML =
+          `<strong>✅ 面積計算テスト</strong><br>` +
+          `頂点: ${JSON.stringify(vertices)}<br>` +
+          `計算方法: Shoelace Formula<br>` +
+          `面積（mm²）: ${Math.round(area)}<br>` +
+          `面積（m²）: ${areaSqm}`;
+      } catch (error) {
+        document.getElementById('function-test-output').innerHTML = `❌ テスト失敗: ${error.message}`;
+      }
+    }
+
+    function testWallCalculation() {
+      try {
+        const walls = [
+          { length: 5000, height: 2800 },
+          { length: 3000, height: 2800 },
+          { length: 5000, height: 2800 },
+          { length: 3000, height: 2800 }
+        ];
+        const wallArea = CADParser.calculateWallArea(walls);
+        const wallAreaSqm = (wallArea / 1000000).toFixed(2);
+
+        document.getElementById('function-test-output').innerHTML =
+          `<strong>✅ 壁面積計算テスト</strong><br>` +
+          `壁数: ${walls.length}<br>` +
+          `壁構成: ${walls.map(w => w.length + 'mm').join(' + ')}<br>` +
+          `壁高さ: 2800mm<br>` +
+          `合計面積（mm²）: ${Math.round(wallArea)}<br>` +
+          `合計面積（m²）: ${wallAreaSqm}`;
+      } catch (error) {
+        document.getElementById('function-test-output').innerHTML = `❌ テスト失敗: ${error.message}`;
+      }
+    }
+
+    function testJSONParsing() {
+      try {
+        const jsonStr = JSON.stringify({
+          rooms: [{
+            id: "test_room",
+            vertices: [[0, 0], [3000, 0], [3000, 2000], [0, 2000]],
+            walls: [{ from: 0, to: 1, length: 3000, height: 2400, material: "wallpaper" }],
+            floor: { material: "carpet" }
+          }],
+          metadata: { source: "test", scale: 1 }
+        });
+
+        const result = CADParser.parseJSON(jsonStr);
+        CADParser.validate(result);
+
+        document.getElementById('function-test-output').innerHTML =
+          `<strong>✅ JSON解析テスト成功</strong><br>` +
+          `部屋数: ${result.rooms.length}<br>` +
+          `頂点数: ${result.rooms[0].vertices.length}<br>` +
+          `壁数: ${result.rooms[0].walls.length}<br>` +
+          `ソース: ${result.metadata.source}`;
+      } catch (error) {
+        document.getElementById('function-test-output').innerHTML = `❌ テスト失敗: ${error.message}`;
+      }
+    }
+
+    // Auto-load demo on page load
+    window.addEventListener('load', () => {
+      loadDefaultRoom();
+    });
+  </script>
+</body>
+</html>
