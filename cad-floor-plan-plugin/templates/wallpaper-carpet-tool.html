@@ -18,7 +18,7 @@
 .used-colors{margin-top:15px;color:#d4d4d8}.used-colors-text{margin-top:8px;font-size:12px;color:#a1a1aa;line-height:1.6;text-align:left}.psd-palette-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;justify-content:center}.psd-color-chip{width:28px;height:28px;border-radius:4px;border:1px solid rgba(255,255,255,.2)}.btn-submit{display:block;width:100%;background:#f39c12;color:#000;border:0;padding:14px;font-size:18px;font-weight:700;border-radius:6px;cursor:pointer;margin-top:20px;text-align:center}.btn-submit:hover:not(:disabled){background:#d35400;color:#fff}.btn-psd{background:#10b981;color:#fff}.btn-psd:hover:not(:disabled){background:#059669}.btn-stretch{background:#3b82f6;color:#fff;margin-top:10px}.btn-stretch:hover:not(:disabled){background:#2563eb}.btn-submit:disabled{background:#3f3f46;color:#71717a;cursor:not-allowed}.estimate-summary,.customer-info-section{background:#18181b;border:1px solid #27272a;border-radius:8px;padding:20px;margin-top:25px}.summary-title,.customer-info-title{font-size:18px;font-weight:700;color:#fff;border-bottom:1px solid #27272a;padding-bottom:10px;margin-bottom:15px}.customer-info-title{font-size:16px}.summary-row{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:12px}.summary-label{color:#d4d4d8;font-size:15px}.summary-value{font-size:16px;font-weight:700;color:#fff;text-align:right}.summary-row.total{border-top:2px dashed #3f3f46;padding-top:12px;margin-top:15px}.summary-row.total .summary-label{font-size:18px;font-weight:700}.summary-row.total .summary-value{font-size:22px;color:#ef4444}.delivery-notice-box{background:#272013;border:1px solid #b45309;border-left:5px solid #f39c12;border-radius:6px;padding:12px 16px;margin:15px 0;display:flex;align-items:center;gap:12px}.delivery-notice-icon{font-size:22px}.delivery-notice-title{font-weight:700;color:#f59e0b;font-size:13px}.delivery-notice-text{font-size:15px;font-weight:700;color:#fff}.required{color:#ef4444;margin-left:4px}.cocoon-debug{font-size:13px;color:#fbbf24;margin-top:15px;background:#18181b;padding:12px;border-radius:6px;border:1px solid #f59e0b;display:block;white-space:pre-wrap;word-break:break-all}.tool-anchor{scroll-margin-top:30px}
 .perspective-section{background:#18181b;border:1px solid #27272a;border-radius:8px;padding:22px;margin:30px 0;text-align:center}.persp-room{position:relative;width:100%;max-width:640px;height:360px;margin:18px auto;perspective:1600px;perspective-origin:50% 50%;background:#09090b;border-radius:8px;overflow:hidden;border:1px solid #27272a}.persp-box{position:absolute;left:50%;top:50%;width:0;height:0;transform-style:preserve-3d}.persp-geo{position:absolute;left:0;top:0;transform-style:preserve-3d}.persp-back-wall,.persp-floor,.persp-side-wall{position:absolute;background-repeat:no-repeat;background-size:100% 100%;background-position:center}.persp-back-wall{background-color:#3f3f46;box-shadow:inset 0 0 50px rgba(0,0,0,.55)}.persp-floor{background-color:#27272a;box-shadow:inset 0 0 50px rgba(0,0,0,.55)}.persp-side-wall{background-color:#27272a;box-shadow:inset 0 0 50px rgba(0,0,0,.65)}.persp-size-grid{display:flex;gap:10px;margin-top:10px;text-align:left}.persp-size-field{flex:1;min-width:0}.persp-size-field label{display:block;font-size:12px;font-weight:700;margin-bottom:4px;color:#d4d4d8}.persp-size-field input[type=number]{width:100%;padding:7px 8px;background:#09090b;color:#fff;border:1px solid #3f3f46;border-radius:6px;font-size:13px;box-sizing:border-box}.room-sim-panel{background:#09090b;border:1px solid #27272a;border-radius:8px;padding:16px}.room-sim-panel-title{font-size:15px;font-weight:700;color:#f39c12;margin-bottom:10px}.room-sim-controls{margin-top:10px}.room-sim-controls input[type=range]{width:100%;margin-bottom:6px}
 @media(max-width:768px){.cocoon-carpet-tool{padding:18px}.feature-cards-grid,.explain-grid,.step-flow-grid,.spec-grid,.pile-cards-wrapper,.preview-grid,.grid-2,.room-sim-grid{flex-direction:column}.step-arrow{transform:rotate(90deg);justify-content:center;margin:5px 0}.slider-row{flex-direction:column;align-items:flex-start}.summary-row{align-items:flex-start}.summary-value{text-align:right}.hero-title{font-size:22px!important}.hero-title .highlight{font-size:24px}}
-.cfp-fold{margin:0}
+.cfp-fold{margin:0}.ref-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}.ref-col{background:#09090b;border:1px solid #27272a;border-radius:8px;padding:12px}.ref-col-title{font-size:14px;font-weight:700;color:#f39c12;text-align:center;margin-bottom:10px}.ref-fig{margin:0 0 12px}.ref-fig:last-child{margin-bottom:0}.ref-fig img{width:100%;height:auto;display:block;border-radius:6px;border:1px solid #27272a}.ref-fig figcaption{font-size:12px;color:#d4d4d8;text-align:center;margin-top:5px}.ref-fig figcaption b{color:#fff}@media(max-width:768px){.ref-grid{grid-template-columns:1fr}}
 .cfp-fold-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;-webkit-user-select:none;user-select:none}
 .cfp-fold-summary::-webkit-details-marker{display:none}
 .cfp-fold-summary::marker{content:""}
@@ -216,6 +216,37 @@
     <div class="file-note" id="cc-tile-count" style="text-align:center;margin:-8px 0 18px;">合計カーペット枚数：4枚（横2枚 × 縦2枚）</div>
     <div class="form-group"><label for="cc-region">お届け先地域（送料/箱）</label><select id="cc-region"><option value="honshu" data-shipping="2000">本州 (送料: ¥2,000 / 箱)</option><option value="hokkaido_shikoku_kyushu" data-shipping="2500">北海道・四国・九州 (送料: ¥2,500 / 箱)</option><option value="okinawa" data-shipping="5500">沖縄 (送料: ¥5,500 / 箱)</option></select><small>※ループパイル：1箱＝20枚（5㎡）換算／カットパイル：1箱＝16枚（4㎡）換算で送料を計算します。<br>※配送はヤマト運輸（クロネコヤマト便）にて発送いたします。</small></div>
   </div>
+
+  <!-- ▼▼▼ 仕上がり参考例（元画像／オプションカラー少なめ・多め） ▼▼▼ -->
+  <section class="spec-detail-section ref-section">
+    <details class="cfp-fold" open>
+      <summary class="cfp-fold-summary"><h2 class="section-title-dark">仕上がり参考例（元画像・オプションカラー少なめ／多め）</h2></summary>
+      <div class="cfp-fold-body">
+        <p class="section-lead-text">同じ元画像でも、使うオプションカラーの数で仕上がりが変わります。<strong>オプションカラーを多く使うほど、元画像に近い色・グラデーションを再現</strong>できます（実際のタフテッドカーペットを撮影した参考画像です）。</p>
+        <div class="ref-grid">
+        <div class="ref-col">
+          <div class="ref-col-title">ハート型（カールちゃん）</div>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-heart-original.jpg" alt="ハート型 元画像" loading="lazy"><figcaption><b>元画像</b>（ご入稿データ）</figcaption></figure>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-heart-less.jpg" alt="ハート型 オプションカラー少なめの仕上がり" loading="lazy"><figcaption><b>オプションカラー 少なめ</b>の仕上がり例</figcaption></figure>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-heart-more.jpg" alt="ハート型 オプションカラー多めの仕上がり" loading="lazy"><figcaption><b>オプションカラー 多め</b>の仕上がり例</figcaption></figure>
+        </div>
+        <div class="ref-col">
+          <div class="ref-col-title">ひし形（チロルちゃん）</div>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-diamond-original.jpg" alt="ひし形 元画像" loading="lazy"><figcaption><b>元画像</b>（ご入稿データ）</figcaption></figure>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-diamond-less.jpg" alt="ひし形 オプションカラー少なめの仕上がり" loading="lazy"><figcaption><b>オプションカラー 少なめ</b>の仕上がり例</figcaption></figure>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-diamond-more.jpg" alt="ひし形 オプションカラー多めの仕上がり" loading="lazy"><figcaption><b>オプションカラー 多め</b>の仕上がり例</figcaption></figure>
+        </div>
+        <div class="ref-col">
+          <div class="ref-col-title">フラワー型（ココちゃん）</div>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-flower-original.jpg" alt="フラワー型 元画像" loading="lazy"><figcaption><b>元画像</b>（ご入稿データ）</figcaption></figure>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-flower-less.jpg" alt="フラワー型 オプションカラー少なめの仕上がり" loading="lazy"><figcaption><b>オプションカラー 少なめ</b>の仕上がり例</figcaption></figure>
+          <figure class="ref-fig"><img src="{{CFP_ASSET_URL}}img/ref-flower-more.jpg" alt="フラワー型 オプションカラー多めの仕上がり" loading="lazy"><figcaption><b>オプションカラー 多め</b>の仕上がり例</figcaption></figure>
+        </div>
+        </div>
+        <div class="file-note" style="text-align:center;">※写真はイメージです。実際の色味は、モニターや撮影条件により異なります。お客様のデザインの仕上がりを保証するものではありません。</div>
+      </div>
+    </details>
+  </section>
 
   <!-- ▼▼▼ ① カーペット用デザイン（お見積り・PSD保存・ご注文の対象） ▼▼▼ -->
   <div class="room-sim-panel" style="margin:25px 0; border-color:#22c55e;">
