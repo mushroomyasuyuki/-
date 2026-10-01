@@ -1,0 +1,53 @@
+{
+  "name": "cad-floor-plan-simulator",
+  "version": "1.0.0",
+  "description": "DXF/PDF/JSON CAD data real-time 3D floor plan simulator",
+  "main": "cad-floor-plan.php",
+  "scripts": {
+    "test": "jest",
+    "build": "webpack",
+    "dev": "webpack --watch",
+    "lint": "eslint assets/js/",
+    "start": "python -m http.server 8000"
+  },
+  "keywords": [
+    "cad",
+    "floor-plan",
+    "3d",
+    "simulator",
+    "dxf",
+    "pdf",
+    "json",
+    "three.js",
+    "wordpress",
+    "plugin"
+  ],
+  "author": "Claude Haiku 4.5 <noreply@anthropic.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mushroomyasuyuki/cad-floor-plan-simulator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mushroomyasuyuki/cad-floor-plan-simulator/issues"
+  },
+  "homepage": "https://github.com/mushroomyasuyuki/cad-floor-plan-simulator#readme",
+  "devDependencies": {
+    "webpack": "^5.0.0",
+    "webpack-cli": "^4.0.0",
+    "eslint": "^8.0.0",
+    "@babel/core": "^7.0.0",
+    "@babel/preset-env": "^7.0.0",
+    "babel-loader": "^8.0.0",
+    "jest": "^27.0.0"
+  },
+  "peerDependencies": {
+    "three": "^128.0.0"
+  },
+  "files": [
+    "cad-floor-plan.php",
+    "assets/",
+    "README.md",
+    "LICENSE.txt"
+  ]
+}
