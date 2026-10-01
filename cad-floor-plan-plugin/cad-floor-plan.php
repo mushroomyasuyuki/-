@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.19.0
+ * Version: 2.20.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.19.0');
+define('CFP_VERSION', '2.20.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -381,6 +381,7 @@ final class CAD_Floor_Plan_Plugin {
                   <svg class="cfp-trace-view" data-cfp="trace-svg" role="img" aria-label="図面"></svg>
                 </div>
                 <div class="cfp-drawings" data-cfp="drawings" hidden></div>
+                <p class="cfp-hint cfp-dw-note" data-cfp="dw-note"></p>
                 <div class="cfp-elev" data-cfp="elev" hidden>
                   <div class="cfp-trace-head">
                     <span class="cfp-elev-title">展開図から壁を読み取りました：壁を選ぶと、壁紙のサイズに反映します</span>

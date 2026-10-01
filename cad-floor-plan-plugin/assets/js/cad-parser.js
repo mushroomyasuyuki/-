@@ -333,9 +333,66 @@
       const vp = page.getViewport({ scale: 1 });
       const tc = await page.getTextContent();
       const res = this.elevationsFromText(tc.items, vp.width, vp.height, options.scale || 0);
+      res.keywords = this.drawingKeywords(tc.items.map((i) => i.str));
       res.pageW = vp.width;
       res.pageH = vp.height;
       return res;
+    }
+
+    // Words that tell an elevation sheet (walls) from a floor plan, found in the drawing's text.
+    static drawingKeywords(strings) {
+      // titles are decisive; level marks (▼FL, 天井高) also appear on floor plans and only count as hints
+      const ELEV = /展開図|立面図|姿図|ELEVATION/i;
+      const HINT = /▼\s*FL|FL\s*[±＋+]|天井高|C\.?H\s*[=＝]/i;
+      const PLAN = /平面図|間取|PLAN|配置図|床伏/i;
+      const elev = [], plan = [], hint = [];
+      strings.forEach((raw) => {
+        const s = String(raw || '').trim();
+        if (!s) return;
+        const e = s.match(ELEV), h = s.match(HINT), p = s.match(PLAN);
+        if (e) elev.push(e[0]);
+        if (h) hint.push(h[0]);
+        if (p && !/天井/.test(s)) plan.push(p[0]);
+      });
+      return { elev, plan, hint };
+    }
+
+    // Floor plan or elevation sheet? Returns { type: 'plan' | 'elev', reason, elev, canSwitch }.
+    // PDFs are judged from their text (wall heights "▼FL" with dimensions, titles such as 展開図 / 平面図);
+    // DXF from its texts; pictures and JSON cannot be read and are taken as floor plans.
+    static async classifyDrawing(file, options = {}) {
+      const name = file.name || '';
+      if (/\.pdf$/i.test(name)) {
+        const r = await this.analyzeElevations(file, options);
+        const k = r.keywords || { elev: [], plan: [], hint: [] };
+        const word = (a) => '「' + a[0] + '」';
+        if (r.walls.length) {
+          return { type: 'elev', elev: r, canSwitch: true,
+            reason: '壁の高さの表記（▼FL と天井高）と寸法から、壁を ' + r.walls.length + ' 面読み取れたため' + (k.elev.length ? '（図面の文字 ' + word(k.elev) + '）' : '') };
+        }
+        if (k.elev.length > k.plan.length) {
+          return { type: 'elev', elev: r, canSwitch: true, reason: '図面に ' + word(k.elev) + ' とあるため（壁の自動検出はできませんでした）' };
+        }
+        return { type: 'plan', elev: r, canSwitch: true,
+          reason: k.plan.length ? '図面に ' + word(k.plan) + ' とあるため'
+            : (k.hint.length ? '高さの表記（' + k.hint[0] + '）はありますが、壁の寸法として読み取れず、「展開図」などの表記もないため'
+              : '壁の高さの表記（▼FL と天井高）が見つからないため') };
+      }
+      if (/\.dxf$/i.test(name)) {
+        const text = this._decodeDXF(await file.arrayBuffer());
+        const strs = [];
+        const re = /\n\s*(?:1|3)\r?\n([^\r\n]*)/g;
+        let mm;
+        while ((mm = re.exec(text))) strs.push(this._cleanDxfText(mm[1]));
+        const k = this.drawingKeywords(strs);
+        if (k.elev.length > k.plan.length) {
+          return { type: 'plan', canSwitch: false, warn: true,
+            reason: '図面に「' + k.elev[0] + '」とあり、展開図の可能性があります。DXFの展開図は読み取れないため、PDFで書き出して入れてください' };
+        }
+        return { type: 'plan', canSwitch: false, reason: k.plan.length ? '図面に「' + k.plan[0] + '」とあるため' : 'DXFは平面図として読み取るため' };
+      }
+      if (/\.json$/i.test(name)) return { type: 'plan', canSwitch: false, reason: '間取りデータ（JSON）のため' };
+      return { type: 'plan', canSwitch: false, reason: '画像は中身の文字を読めないため、平面図として扱います' };
     }
 
     static elevationsFromText(items, pageW, pageH, scaleIn) {

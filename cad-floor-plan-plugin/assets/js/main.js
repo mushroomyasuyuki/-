@@ -502,12 +502,13 @@
         }
         let d = null;
         {
-          d = { file: f, type: 'plan', elev: null };
-          if (/\.pdf$/i.test(f.name)) {
-            try {
-              const r = await CADParser.analyzeElevations(f, {});
-              if (r.walls.length) { d.type = 'elev'; d.elev = r; }
-            } catch (err) { console.warn('elevation analysis failed', err); }
+          d = { file: f, type: 'plan', elev: null, reason: '', canSwitch: /\.pdf$/i.test(f.name), warn: false };
+          try {
+            const c = await CADParser.classifyDrawing(f, {});
+            Object.assign(d, { type: c.type, elev: c.elev || null, reason: c.reason, canSwitch: c.canSwitch, warn: !!c.warn });
+          } catch (err) {
+            console.warn('drawing classification failed', err);
+            d.reason = '判別できなかったため、平面図として扱います';
           }
           this.drawings.push(d);
         }
@@ -516,8 +517,12 @@
       if (elev) await this.showElevation(elev);
       if (plan) await this.showPlan(plan);
       this._renderDrawings();
+      // what each new drawing was taken for, and why
+      const judged = files.map((f) => this.drawings.find((x) => x.file === f)).filter(Boolean);
       if (plan && elev) {
         this.status('平面図「' + plan.file.name + '」と展開図「' + elev.file.name + '」を読み込みました。床の部屋はカーペット、壁は壁紙のサイズに反映します。', 'success');
+      } else if (judged.some((d) => d.warn)) {
+        this.status(judged.find((d) => d.warn).reason + '。', 'error');
       }
     }
 
@@ -566,13 +571,17 @@
       try {
         if (!res) { res = await CADParser.analyzeElevations(d.file, {}); d.elev = res; }
         const st = this.elevStates.get(d.file);
+        // no wall found automatically: the scale comes from the "PDFの縮尺" field
+        const typed = parseFloat(this.$('scale').value) || 1;
+        const scaleN = res.walls.length ? res.scale : (typed > 1 ? typed : (res.scale || 1));
         let bd = st && st.backdrop;
-        if (!bd) {
+        if (!bd || bd.scaleN !== scaleN) {
           this.status('展開図を表示しています…', 'loading');
-          bd = await CADParser.renderPdfBackdrop(d.file, { scale: res.scale });
+          bd = await CADParser.renderPdfBackdrop(d.file, { scale: scaleN });
+          bd.scaleN = scaleN;
         }
         this._elevFile = d.file;
-        this.elev = { scale: res.scale, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: st ? st.custom : [] };
+        this.elev = { scale: scaleN, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: st ? st.custom : [] };
         this.elevIndex = st ? st.elevIndex : -1;
         this.$('elev-cloth-only').checked = st ? st.clothOnly : false;
         this.$('elev-note').textContent = '';
@@ -580,7 +589,12 @@
         this._initElevTracer();
         this._renderElevList();
         const nCloth = res.walls.filter((w) => w.cloth).length;
-        this.status('展開図「' + d.file.name + '」を読み取りました（縮尺 1:' + res.scale + '、壁 ' + res.walls.length + ' 面'
+        if (!res.walls.length) {
+          this.status('展開図「' + d.file.name + '」から壁を自動で読み取れませんでした。' + (scaleN > 1
+            ? '縮尺 1:' + scaleN + ' で表示しています。「四角で壁紙の範囲を指定」で壁を囲んでください。'
+            : '「PDFの縮尺（1:N の N）」に図面の縮尺を入れてから、上の図面名をもう一度クリックし、「四角で壁紙の範囲を指定」で壁を囲んでください。'), 'error');
+          this.$('elev-note').textContent = scaleN > 1 ? '' : '縮尺が未設定のため、指定した範囲の大きさは正しくありません。';
+        } else this.status('展開図「' + d.file.name + '」を読み取りました（縮尺 1:' + res.scale + '、壁 ' + res.walls.length + ' 面'
           + (nCloth ? '、うちクロス貼り ' + nCloth + ' 面' : '') + '）。壁を選ぶと、壁紙のサイズに反映します。', 'success');
         if (this.elevIndex >= 0) this.selectWall(this.elevIndex);
       } catch (err) {
@@ -590,7 +604,24 @@
       this._renderDrawings();
     }
 
-    async removeDrawing(d) {
+    // the user says the drawing is the other kind (floor plan <-> elevation sheet)
+    async switchDrawing(d) {
+      if (!d.canSwitch) return;
+      const wasActive = d.type === 'elev' ? this._elevFile === d.file : this.planFile === d.file;
+      if (wasActive) {
+        // take it out of its current slot first, as when it is removed
+        const keep = this.drawings;
+        this.drawings = keep.filter((x) => x !== d);
+        await this.removeDrawing(d, true);
+        this.drawings = keep;
+      }
+      d.type = d.type === 'elev' ? 'plan' : 'elev';
+      d.reason = '手動で' + (d.type === 'elev' ? '展開図（壁）' : '平面図（床）') + 'に切り替え';
+      if (d.type === 'elev') await this.showElevation(d); else await this.showPlan(d);
+      this._renderDrawings();
+    }
+
+    async removeDrawing(d, quiet) {
       this.drawings = this.drawings.filter((x) => x !== d);
       if (d.type === 'elev') {
         this.elevStates.delete(d.file);
@@ -622,14 +653,17 @@
       }
       this._renderDrawings();
       if (this.elev) this._updateWallTotal();
-      this.status('「' + d.file.name + '」を外しました。', 'success');
+      if (!quiet) this.status('「' + d.file.name + '」を外しました。', 'success');
     }
 
     _renderDrawings() {
       const box = this.$('drawings');
       box.textContent = '';
       box.hidden = !this.drawings.length;
-      if (!this.drawings.length) return;
+      if (!this.drawings.length) { this.$('dw-note').textContent = ''; return; }
+      // what each drawing was taken for, and why
+      this.$('dw-note').textContent = this.drawings.map((d) => '「' + d.file.name + '」→ ' + (d.type === 'elev' ? '展開図（壁）' : '平面図（床）') + '：' + d.reason).join('\n')
+        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「⇄」で入れ替えられます。' : '');
       [['plan', '平面図（床 → カーペット）', this.planFile], ['elev', '展開図（壁 → 壁紙）', this._elevFile]].forEach(([type, title, active]) => {
         const row = document.createElement('div');
         row.className = 'cfp-dw-row';
@@ -650,7 +684,7 @@
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = d.file.name;
-          b.title = d.file.name + (type === 'elev' ? '（展開図）' : '（平面図）');
+          b.title = d.file.name + (type === 'elev' ? '（展開図）' : '（平面図）') + (d.reason ? '\n判定: ' + d.reason : '');
           b.addEventListener('click', () => (type === 'elev' ? this.showElevation(d) : this.showPlan(d)));
           const x = document.createElement('button');
           x.type = 'button';
@@ -658,7 +692,16 @@
           x.textContent = '×';
           x.setAttribute('aria-label', d.file.name + ' を外す');
           x.addEventListener('click', () => this.removeDrawing(d));
-          chip.append(b, x);
+          if (d.canSwitch) {
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.className = 'cfp-dw-x cfp-dw-sw';
+            sw.textContent = '⇄';
+            sw.title = type === 'elev' ? '平面図（床）として読み直す' : '展開図（壁）として読み直す';
+            sw.setAttribute('aria-label', d.file.name + ' を' + sw.title);
+            sw.addEventListener('click', () => this.switchDrawing(d));
+            chip.append(b, sw, x);
+          } else chip.append(b, x);
           row.appendChild(chip);
         });
         box.appendChild(row);

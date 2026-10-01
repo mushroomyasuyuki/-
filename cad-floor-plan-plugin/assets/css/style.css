@@ -113,3 +113,5 @@
 .cfp-elev-chk input{width:16px;height:16px;cursor:pointer}
 .cfp-elev-sep{margin-left:8px;color:#a1a1aa}
 .cfp-elev-total{margin:6px 0 4px;padding:8px 10px;background:#1e1b4b;border:1px solid #6d28d9;border-radius:6px;color:#ede9fe;font-size:13px;font-weight:700;line-height:1.6}
+.cfp-dw-note{white-space:pre-line;margin:-6px 0 12px}
+.cfp-dw-chip button.cfp-dw-sw{color:#93c5fd}
