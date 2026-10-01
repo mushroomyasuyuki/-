@@ -310,8 +310,13 @@
 
     <div class="dither-box cw-repeat-box">
       <div class="slider-row"><label for="cw-repeat-mm">柄の大きさ（1リピートの横幅）：<input type="number" id="cw-repeat-mm" value="910" min="50" max="20000" step="10" style="width:110px;min-height:0;padding:6px 8px;display:inline-block;"> mm</label><span>縦は画像の縦横比のまま（変形しません）</span></div>
-      <label class="cw-repeat-check" style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;"><input type="checkbox" id="cw-repeat-on" checked style="width:auto;min-height:auto;"> 壁に柄を繰り返して貼る（外すと、縦横比を変えずに壁いっぱいに1枚で表示します）</label>
-      <div class="slider-row cw-single-row" style="margin-top:10px;"><label for="cw-single-scale">1枚表示の画像の大きさ：<span id="cw-single-scale-val">100</span>%</label><span>100% = 部屋の一番長い壁と壁の高さを覆う大きさ（中央合わせ）</span></div>
+      <div class="slider-row" style="margin-top:10px;"><label for="cw-wall-mode">貼り方：
+        <select id="cw-wall-mode" style="width:auto;min-height:0;padding:6px 8px;display:inline-block;">
+          <option value="repeat" selected>柄を繰り返して貼る（柄の大きさで指定）</option>
+          <option value="center">1枚を壁ごとに中央に貼る</option>
+          <option value="wrap">1枚を部屋を一周して続けて貼る（隣の壁へ途切れずに続く）</option>
+        </select></label></div>
+      <div class="slider-row cw-single-row" style="margin-top:10px;"><label for="cw-single-scale">1枚表示の画像の大きさ：<span id="cw-single-scale-val">100</span>%</label><span>100% = 壁を覆う大きさ（壁ごとに中央：一番長い壁／一周：部屋の壁の合計の長さ）</span></div>
       <input type="range" id="cw-single-scale" min="10" max="300" step="5" value="100">
       <div class="file-note" id="cw-repeat-note" style="margin-top:6px;"></div>
     </div>
@@ -1113,10 +1118,11 @@
   // 1色1ピクセル単位の結果が欲しい場合は targetW/targetH に実寸ピクセル数（1px=1mm）を渡す。
   // ---- 壁紙の柄の繰り返し（縦横比を保ったまま、1リピートの横幅[mm]で敷き詰める） ----
   function getWallRepeat() {
-    const on = $('cw-repeat-on') ? $('cw-repeat-on').checked : true;
+    const mode = $('cw-wall-mode') ? $('cw-wall-mode').value : 'repeat';
+    const on = mode === 'repeat';
     const mm = Math.max(50, parseFloat($('cw-repeat-mm')?.value) || 910);
     const sc = Math.min(300, Math.max(10, parseFloat($('cw-single-scale')?.value) || 100));
-    return { on: on, mm: mm, scale: sc / 100 };
+    return { on: on, mode: mode, mm: mm, scale: sc / 100 };
   }
   window.cfpGetWallRepeat = getWallRepeat;
 
@@ -1169,11 +1175,44 @@
     return out;
   }
 
+  // 部屋を一周して続ける：お部屋パースの「横の壁（奥行）→ 奥の壁（幅）」を1本の帯として画像を貼り、
+  // そのうち奥の壁（幅 w）にあたる部分を返す（縦横比は変えない・中央合わせ・余白は白）
+  function wrapBand(aspect) {
+    const W = parseFloat($('persp-width')?.value) || 3000;
+    const D = parseFloat($('persp-floor-depth')?.value) || 2500;
+    const H = parseFloat($('persp-wall-height')?.value) || 2400;
+    const P = W + D;
+    const iw = Math.max(P, H * aspect) * getWallRepeat().scale;
+    return { W: W, D: D, H: H, P: P, iw: iw, ih: iw / aspect, s0: (P - iw) / 2 };
+  }
+  window.cfpWrapBand = wrapBand;
+
+  function wrapWallCanvas(source, w, h) {
+    const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
+    const b = wrapBand(sw / sh);
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.imageSmoothingQuality = 'high';
+    const k = w / b.W; // 帯[mm] → この壁のピクセル
+    ctx.drawImage(source, (b.s0 - b.D) * k, (h - b.ih * k) / 2, b.iw * k, b.ih * k);
+    return out;
+  }
+
   function updateWallRepeatNote() {
     const note = $('cw-repeat-note');
     const src = $('cw-reduced');
     if (!note) return;
     const r = getWallRepeat();
+    if (r.mode === 'wrap') {
+      if (!src || !src.width) { note.textContent = '1枚を部屋を一周して続けて貼ります。'; return; }
+      const b = wrapBand(src.width / src.height);
+      note.textContent = '1枚を部屋を一周して続けて貼ります（' + Math.round(r.scale * 100) + '%）。画像の大きさ 横 ' + Math.round(b.iw).toLocaleString() + ' × 縦 ' + Math.round(b.ih).toLocaleString() + ' mm。壁の角で途切れず隣の壁へ続きます（縦横比は変えず、余白は白）。壁紙PSD・注文の画像は、奥の壁（幅）の部分です。';
+      return;
+    }
     if (!r.on) {
       if (!src || !src.width) { note.textContent = '壁いっぱいに1枚で表示します。'; return; }
       const iw = singleImageWidthMm(src.width / src.height);
@@ -1500,7 +1539,7 @@
       designCanvas.height = imageH;
       const wallRepeat = getWallRepeat();
       if (wallRepeat.on) designCanvas.getContext('2d').drawImage(tileWallCanvas(canvas, imageW, imageH, wallRepeat.mm), 0, 0);
-      else designCanvas.getContext('2d').drawImage(coverWallCanvas(canvas, imageW, imageH), 0, 0);
+      else designCanvas.getContext('2d').drawImage(wallRepeat.mode === 'wrap' ? wrapWallCanvas(canvas, imageW, imageH) : coverWallCanvas(canvas, imageW, imageH), 0, 0);
 
       // ②裁断ガイド層：透明地に赤色の線
       const guideCanvas = document.createElement('canvas');
@@ -1690,7 +1729,7 @@
         const wallActiveEntries = getWallActivePaletteEntries();
 
         const { imageData: wallReducedData, usedEntries: wallUsedEntries } =
-          getReducedImageData(getWallRepeat().on ? tileWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm, getWallRepeat().mm) : coverWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm),
+          getReducedImageData(getWallRepeat().on ? tileWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm, getWallRepeat().mm) : (getWallRepeat().mode === 'wrap' ? wrapWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm) : coverWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm)),
             wallWidthMm, wallHeightMm, wallDitherFactor, wallActiveEntries);
         cwState.lastUsedColorEntries = wallUsedEntries;
         wallColorsText = getUsedColorsSummaryText(wallUsedEntries);
@@ -1834,13 +1873,13 @@
     // 柄の大きさ・繰り返しの切り替え：お部屋パースとCAD表示（3D）に反映
     if ($('cw-repeat-mm')) $('cw-repeat-mm').addEventListener('input', () => { if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
     const syncSingleUi = () => {
-      const on = $('cw-repeat-on') ? $('cw-repeat-on').checked : true;
+      const on = ($('cw-wall-mode') ? $('cw-wall-mode').value : 'repeat') === 'repeat';
       if ($('cw-single-scale')) $('cw-single-scale').disabled = on;
       if ($('cw-repeat-mm')) $('cw-repeat-mm').disabled = !on;
       if ($('cw-single-scale-val')) $('cw-single-scale-val').textContent = $('cw-single-scale').value;
     };
     syncSingleUi();
-    if ($('cw-repeat-on')) $('cw-repeat-on').addEventListener('change', () => { syncSingleUi(); if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
+    if ($('cw-wall-mode')) $('cw-wall-mode').addEventListener('change', () => { syncSingleUi(); if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
     if ($('cw-single-scale')) $('cw-single-scale').addEventListener('input', () => { syncSingleUi(); if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
     if ($('cc-download-psd')) $('cc-download-psd').onclick = downloadPsd;
     if ($('btn-save-floor-image')) $('btn-save-floor-image').onclick = downloadFloorImagePng;
@@ -1959,25 +1998,36 @@
     sideWall.style.transformOrigin = '0 0';
     sideWall.style.transform = 'rotateY(90deg)';
 
-    // 壁紙の柄：縦横比を保ったまま、1リピートの横幅(mm)を実寸の比率で繰り返す（天井・左端から）
-    const wallRepeat = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : { on: false, mm: 910 };
-    [backWall, sideWall].forEach((el) => {
-      if (wallRepeat.on) {
-        el.style.backgroundColor = '';
-        el.style.backgroundRepeat = 'repeat';
-        el.style.backgroundSize = Math.max(2, wallRepeat.mm * scale) + 'px auto';
-        el.style.backgroundPosition = '0 0';
-      } else {
-        // 1枚表示も縦横比を変えず、奥の壁・横の壁で同じ大きさ（中央合わせ・はみ出しは切り取り）
-        const src = document.getElementById('cw-reduced');
-        const aspect = src && src.width ? src.width / src.height : 1;
-        const iw = window.cfpSingleImageWidthMm ? window.cfpSingleImageWidthMm(aspect) : Math.max(widthMm, floorDepthMm, wallHeightMm * aspect);
-        el.style.backgroundRepeat = 'no-repeat';
-        el.style.backgroundSize = Math.max(2, iw * scale) + 'px auto';
-        el.style.backgroundPosition = 'center';
-        el.style.backgroundColor = src ? '#ffffff' : '';
-      }
-    });
+    // 壁紙の柄（縦横比は常に保つ）。横の壁は、画像を左右反転して渡しているので（applyPlaneImage）、
+    // 室内から見た向きが奥の壁とそろう。要素の左端(x=0)が奥の壁との角。
+    const wallRepeat = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : { on: false, mode: 'center', mm: 910, scale: 1 };
+    const wsrc = document.getElementById('cw-reduced');
+    const aspect = wsrc ? (wsrc.width ? wsrc.width / wsrc.height : 1) : 1;
+    const setBg = (el, size, pos, repeat, white) => {
+      el.style.backgroundSize = size;
+      el.style.backgroundPosition = pos;
+      el.style.backgroundRepeat = repeat;
+      el.style.backgroundColor = white ? '#ffffff' : '';
+    };
+    if (wallRepeat.mode === 'repeat') {
+      // 角を柄の区切りにして、奥の壁は右へ、横の壁は左へ続ける（天井から）
+      const size = Math.max(2, wallRepeat.mm * scale) + 'px auto';
+      setBg(backWall, size, '0 0', 'repeat', false);
+      setBg(sideWall, size, '0 0', 'repeat', false);
+    } else if (wallRepeat.mode === 'wrap') {
+      // 横の壁（奥行 D）→ 奥の壁（幅 W）を1本の帯として、1枚の画像を途切れずに貼る
+      const b = window.cfpWrapBand ? window.cfpWrapBand(aspect) : { D: floorDepthMm, iw: widthMm + floorDepthMm, ih: (widthMm + floorDepthMm) / aspect, s0: 0 };
+      const size = Math.max(2, b.iw * scale) + 'px auto';
+      const y = ((wallHeightMm - b.ih) / 2) * scale + 'px';
+      setBg(backWall, size, ((b.s0 - b.D) * scale) + 'px ' + y, 'no-repeat', !!wsrc);
+      setBg(sideWall, size, ((b.D - b.iw - b.s0) * scale) + 'px ' + y, 'no-repeat', !!wsrc);
+    } else {
+      // 1枚を壁ごとに中央（どの壁でも同じ大きさ）
+      const iw = window.cfpSingleImageWidthMm ? window.cfpSingleImageWidthMm(aspect) : Math.max(widthMm, floorDepthMm, wallHeightMm * aspect);
+      const size = Math.max(2, iw * scale) + 'px auto';
+      setBg(backWall, size, 'center', 'no-repeat', !!wsrc);
+      setBg(sideWall, size, 'center', 'no-repeat', !!wsrc);
+    }
     if (window.cfpUpdateWallRepeatNote) window.cfpUpdateWallRepeatNote();
 
     // ジオメトリ全体（3面）を、部屋の中心点が原点(0,0,0)に来るよう平行移動する。
@@ -1995,7 +2045,18 @@
 
     applyPlaneImage($('persp-floor'), carpetCanvas);
     applyPlaneImage($('persp-back-wall'), wallCanvas);
-    applyPlaneImage($('persp-side-wall'), wallCanvas);
+    // 横の壁は裏側から見える向きに回転しているため、左右反転した画像を貼って室内から正しい向きに見せる
+    let mirrored = null;
+    if (wallCanvas) {
+      mirrored = document.createElement('canvas');
+      mirrored.width = wallCanvas.width;
+      mirrored.height = wallCanvas.height;
+      const mctx = mirrored.getContext('2d');
+      mctx.translate(mirrored.width, 0);
+      mctx.scale(-1, 1);
+      mctx.drawImage(wallCanvas, 0, 0);
+    }
+    applyPlaneImage($('persp-side-wall'), mirrored);
     layoutRoom();
 
     const statusEl = $('persp-status');

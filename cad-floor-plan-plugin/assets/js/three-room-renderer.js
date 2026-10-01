@@ -70,9 +70,14 @@
           minZ = Math.min(minZ, p.y); maxZ = Math.max(maxZ, p.y);
         });
         this._buildFloor(room, pts);
+        // position of every wall along the room's perimeter, so that a pattern can run on round the corners
+        const lens = room.walls.map((w) => pts[w.from].distanceTo(pts[w.to]) / MM);
+        const perimeter = lens.reduce((s, l) => s + l, 0);
+        let along = 0;
         room.walls.forEach((wall, wi) => {
           maxH = Math.max(maxH, (wall.height || 2400) * MM);
-          this._buildWall(room, pts, wall, ri, wi);
+          this._buildWall(room, pts, wall, ri, wi, { along, perimeter });
+          along += lens[wi];
         });
       });
       this.bounds = { minX, minZ, maxX, maxZ, maxH };
@@ -113,7 +118,10 @@
     // aspect: picture width / height, used when not repeating so that one picture covers each wall
     // without distortion (centred, the overflow cut off).
     // singleScale: size of the single picture relative to the size that covers every wall (1 = 100 %)
-    setWallRepeat(w, h, aspect, singleScale) {
+    // mode: 'repeat' (pattern of w x h mm), 'center' (one picture centred on every wall) or
+    // 'wrap' (one picture running on round the room, unbroken at the corners)
+    setWallRepeat(w, h, aspect, singleScale, mode) {
+      this.wallMode = mode || (w > 0 ? 'repeat' : 'center');
       this.wallRepeat = w > 0 && h > 0 ? { w, h } : null;
       this.wallAspect = aspect > 0 ? aspect : null;
       this.wallSingleScale = singleScale > 0 ? singleScale : 1;
@@ -143,7 +151,16 @@
       const lenMm = entry.len / MM, hMm = entry.h / MM;
       for (let i = 0; i < uv.count; i++) {
         const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
-        if (rep) uv.setXY(i, u0 * lenMm / rep.w, 1 - (1 - v0) * hMm / rep.h);
+        const s = (entry.s0 || 0) + u0 * lenMm; // position along the perimeter
+        if (rep) uv.setXY(i, s / rep.w, 1 - (1 - v0) * hMm / rep.h);
+        else if (this.wallAspect && this.wallMode === 'wrap') {
+          // one picture round the room: as wide as the perimeter (and the wall height), times the size setting
+          const P = Math.max(entry.perimeter || lenMm, 1);
+          const imgW = Math.max(P, this._maxWall.h * this.wallAspect) * (this.wallSingleScale || 1);
+          const imgH = imgW / this.wallAspect;
+          const b0 = (P - imgW) / 2;
+          uv.setXY(i, (s - b0) / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
+        }
         else if (this.wallAspect) {
           // one picture, the same size on every wall: big enough to cover the longest wall and the
           // highest wall, centred on each wall (the overflow is cut off)
@@ -222,7 +239,7 @@
       this.floors.push({ mesh });
     }
 
-    _buildWall(room, pts, wall, ri, wi) {
+    _buildWall(room, pts, wall, ri, wi, run = { along: 0, perimeter: 0 }) {
       const a = pts[wall.from], b = pts[wall.to];
       const dx = b.x - a.x, dz = b.y - a.y;
       const len = Math.hypot(dx, dz);
@@ -233,7 +250,8 @@
       // plane front face normal is (sin, cos) after rotation.y = angle; make it face the room interior
       const mx = (a.x + b.x) / 2, mz = (a.y + b.y) / 2;
       const probe = new THREE.Vector2(mx + Math.sin(angle) * 0.02, mz + Math.cos(angle) * 0.02);
-      if (!this._inside(probe, pts)) angle += Math.PI;
+      const flipped = !this._inside(probe, pts);
+      if (flipped) angle += Math.PI;
 
       const geo = new THREE.PlaneGeometry(len, h);
       const mat = new THREE.MeshStandardMaterial({ color: WALL_COLOR, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
@@ -250,7 +268,11 @@
       edges.rotation.copy(mesh.rotation);
       this.scene.add(edges);
 
-      const entry = { mesh, edges, roomIndex: ri, wallIndex: wi, custom: false, len, h };
+      // s0: where the wall's left edge (seen from inside the room) lies along the perimeter, in mm.
+      // A flipped wall runs against the drawing order, so the perimeter is read the other way round.
+      const lenMm = len / MM;
+      const s0 = flipped ? run.perimeter - (run.along + lenMm) : run.along;
+      const entry = { mesh, edges, roomIndex: ri, wallIndex: wi, custom: false, len, h, s0, perimeter: run.perimeter };
       this.walls.push(entry);
       this._measureWalls();
       this.walls.forEach((e) => this._wallUV(e)); // the longest wall may have changed
