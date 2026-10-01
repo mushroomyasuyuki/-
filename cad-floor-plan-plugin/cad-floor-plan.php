@@ -2,8 +2,8 @@
 /**
  * Plugin Name: CAD Floor Plan 3D Simulator
  * Plugin URI: https://github.com/mushroomyasuyuki/-
- * Description: DXF / ベクターPDF / JSON の間取りデータを読み込み、ブラウザ上で3D表示して床・壁の面積を計算します。有効化すると専用の固定ページを自動作成します。
- * Version: 1.2.0
+ * Description: DXF / ベクターPDF / JSON の間取りデータを読み込み、ブラウザ上で3D表示して床・壁の面積を計算します。有効化すると専用の固定ページを自動作成し、無効化すると削除します。
+ * Version: 1.3.1
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '1.2.0');
+define('CFP_VERSION', '1.3.1');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PAGE_SLUG', 'cad-floor-plan');
 define('CFP_SHORTCODE', 'cad_floor_plan');
@@ -66,8 +66,9 @@ final class CAD_Floor_Plan_Plugin {
         }
 
         $existing = get_page_by_path(CFP_PAGE_SLUG);
-        if ($existing && $existing->post_status !== 'trash' && has_shortcode($existing->post_content, CFP_SHORTCODE)) {
+        if ($existing && $existing->post_status !== 'trash' && strpos($existing->post_content, '[' . CFP_SHORTCODE) !== false) {
             update_option('cad_floor_plan_page_id', $existing->ID);
+            update_option('cad_floor_plan_page_created', 0);
             return (int) $existing->ID;
         }
 
@@ -83,7 +84,21 @@ final class CAD_Floor_Plan_Plugin {
             return 0;
         }
         update_option('cad_floor_plan_page_id', $new_id);
+        update_option('cad_floor_plan_page_created', 1);
         return (int) $new_id;
+    }
+
+    /**
+     * Deletes the simulator page if this plugin created it. A pre-existing page that was only
+     * adopted is left alone.
+     */
+    public static function remove_page() {
+        $id = (int) get_option('cad_floor_plan_page_id');
+        if ($id && get_option('cad_floor_plan_page_created') && get_post_type($id) === 'page') {
+            wp_delete_post($id, true);
+        }
+        delete_option('cad_floor_plan_page_id');
+        delete_option('cad_floor_plan_page_created');
     }
 
     public function handle_create_page() {
@@ -241,7 +256,7 @@ final class CAD_Floor_Plan_Plugin {
                     （<?php echo esc_html(get_the_title($page_id)); ?>）
                 </p>
             <?php else : ?>
-                <p>固定ページがありません。下のボタンで作成できます。</p>
+                <p>固定ページがありません。下のボタンで作成できます。プラグインを無効化すると、このページは削除されます。</p>
             <?php endif; ?>
             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                 <input type="hidden" name="action" value="cfp_create_page">
@@ -270,3 +285,5 @@ register_activation_hook(__FILE__, function () {
     update_option('cad_floor_plan_version', CFP_VERSION);
     CAD_Floor_Plan_Plugin::ensure_page();
 });
+
+register_deactivation_hook(__FILE__, ['CAD_Floor_Plan_Plugin', 'remove_page']);

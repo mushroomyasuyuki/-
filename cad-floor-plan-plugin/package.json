@@ -1,6 +1,6 @@
 {
   "name": "cad-floor-plan-simulator",
-  "version": "1.2.0",
+  "version": "1.3.1",
   "description": "DXF / vector PDF / JSON floor plan 3D viewer (WordPress plugin and standalone page)",
   "private": true,
   "license": "MIT",
