@@ -96,3 +96,15 @@
 .cfp-room-btn.is-cloth .cfp-room-num{background:#7e22ce}
 .cfp-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;background:#581c87;color:#f3e8ff;font-size:11px;font-weight:700}
 .cfp-elev .cfp-rooms-body{grid-template-columns:1fr}
+
+.cfp-drawings{display:flex;flex-direction:column;gap:8px;margin:0 0 12px;padding:10px 12px;background:#09090b;border:1px solid #27272a;border-radius:8px;font-size:13px;color:#d4d4d8}
+.cfp-dw-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cfp-dw-label{font-weight:700;min-width:150px}
+.cfp-dw-label.is-plan{color:#4ade80}
+.cfp-dw-label.is-elev{color:#c084fc}
+.cfp-dw-chip{display:inline-flex;align-items:stretch;border:1px solid #3f3f46;border-radius:16px;overflow:hidden;background:#18181b}
+.cfp-dw-chip button{background:none;border:0;color:#e4e4e7;padding:5px 10px;cursor:pointer;font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfp-dw-chip button.cfp-dw-x{padding:5px 9px;color:#fca5a5;border-left:1px solid #3f3f46}
+.cfp-dw-chip.is-active{border-color:#93c5fd;background:#1e3a8a}
+.cfp-dw-chip.is-active button{color:#fff}
+.cfp-dw-none{color:#71717a;font-size:12px}

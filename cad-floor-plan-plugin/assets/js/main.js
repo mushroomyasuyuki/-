@@ -49,6 +49,10 @@
       this.hideAuto = false;
       this.roomKinds = [];     // per room: { manual: bool, mi: index in this.manual }
       this.tracer = null;
+      this.drawings = [];      // every uploaded drawing: { file, type: 'plan' | 'elev', elev }
+      this.planFile = null;    // the floor plan shown in 3D (carpet size)
+      this.planStates = new Map(); // per floor plan: hand-traced rooms, scale, selection...
+      this.elevStates = new Map(); // per elevation sheet: traced areas, selected wall...
       this.elev = null;        // wall elevations read from a PDF sheet: { scale, walls, backdrop }
       this.elevIndex = -1;
       this.elevTracer = null;
@@ -76,10 +80,10 @@
       const drop = this.$('drop');
       const input = this.$('file');
       drop.addEventListener('click', () => input.click());
-      input.addEventListener('change', () => input.files[0] && this.loadFile(input.files[0]));
+      input.addEventListener('change', () => { const fs = [...input.files]; input.value = ''; this.addFiles(fs); });
       ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
       ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('is-over'); }));
-      drop.addEventListener('drop', (e) => e.dataTransfer.files[0] && this.loadFile(e.dataTransfer.files[0]));
+      drop.addEventListener('drop', (e) => this.addFiles([...e.dataTransfer.files]));
 
       const reload = () => this.lastFile && this.loadFile(this.lastFile, { keepRoom: true, keepManual: true });
       const scaleEl = this.$('scale');
@@ -149,6 +153,7 @@
 
     async loadFile(file, opts = {}) {
       this.lastFile = file;
+      this.planFile = file;
       if (!opts.keepManual) {
         // a new drawing: forget hand-traced rooms and the picture of the previous one
         this.manual = [];
@@ -170,9 +175,6 @@
       }
       this._rasterLabels();
       this.status('読み込み中…', 'loading');
-      if (!isImage && /\.pdf$/i.test(file.name)) {
-        if (await this._detectElevations(file, opts)) return; // an elevation sheet: walls, not rooms
-      } else this._hideElev();
       try {
         const scale = parseFloat(this.$('scale').value) || 1;
         const unit = this.$('unit').value;
@@ -183,7 +185,7 @@
           if (this.raster && this.raster.calibrated) options.mmPerPx = this.raster.mmPerPx;
         }
         const data = await CADParser.parseFloorPlan(file, options);
-        this.loadData(data, file.name, { fromFile: true, keepRoom: !!opts.keepRoom });
+        this.loadData(data, file.name, { fromFile: true, keepRoom: !!opts.keepRoom, roomIndex: opts.roomIndex });
       } catch (err) {
         this.status('エラー: ' + err.message, 'error');
         console.error(err);
@@ -239,7 +241,8 @@
           rooms.forEach((r, i) => {
             if (CADParser.calculateArea(r.vertices) > CADParser.calculateArea(rooms[best].vertices)) best = i;
           });
-          if (opts.keepRoom && prevCount === rooms.length && prevIndex < rooms.length) best = prevIndex;
+          if (opts.roomIndex != null && opts.roomIndex < rooms.length) best = opts.roomIndex;
+          else if (opts.keepRoom && prevCount === rooms.length && prevIndex < rooms.length) best = prevIndex;
           this.renderPicker();
           this.selectRoom(best, this.fromFile);
         }
@@ -476,55 +479,184 @@
       this.$('elev').hidden = true;
     }
 
-    // Returns true when the PDF is a sheet of wall elevations (the walls are then listed instead of rooms).
-    async _detectElevations(file, opts = {}) {
-      let res;
+    // ------------------------------------------------------- several drawings
+    // Floor plans (rooms -> carpet) and elevation sheets (walls -> wall paper) can be uploaded together;
+    // one of each is active at a time and the others are kept to switch to.
+    async addFiles(files) {
+      files = files.filter((f) => /\.(dxf|pdf|json|png|jpe?g|webp)$/i.test(f.name));
+      if (!files.length) return;
+      this.status('読み込み中…', 'loading');
+      let plan = null, elev = null;
+      for (const f of files) {
+        // the same drawing again: read it afresh (e.g. after changing the scale)
+        const old = this.drawings.find((x) => x.file.name === f.name && x.file.size === f.size && x.file.lastModified === f.lastModified);
+        if (old) {
+          this.drawings = this.drawings.filter((x) => x !== old);
+          this.planStates.delete(old.file);
+          this.elevStates.delete(old.file);
+        }
+        let d = null;
+        {
+          d = { file: f, type: 'plan', elev: null };
+          if (/\.pdf$/i.test(f.name)) {
+            try {
+              const r = await CADParser.analyzeElevations(f, {});
+              if (r.walls.length) { d.type = 'elev'; d.elev = r; }
+            } catch (err) { console.warn('elevation analysis failed', err); }
+          }
+          this.drawings.push(d);
+        }
+        if (d.type === 'elev') elev = elev || d; else plan = plan || d;
+      }
+      if (elev) await this.showElevation(elev);
+      if (plan) await this.showPlan(plan);
+      this._renderDrawings();
+      if (plan && elev) {
+        this.status('平面図「' + plan.file.name + '」と展開図「' + elev.file.name + '」を読み込みました。床の部屋はカーペット、壁は壁紙のサイズに反映します。', 'success');
+      }
+    }
+
+    _savePlanState() {
+      if (!this.planFile || !this.fromFile) return;
+      this.planStates.set(this.planFile, {
+        manual: this.manual, hideAuto: this.hideAuto, roomIndex: this.roomIndex,
+        scale: this.$('scale').value, backdrop: this.backdrop, backdropFile: this.backdropFile,
+        raster: this.raster ? { calibrated: this.raster.calibrated, mmPerPx: this.raster.mmPerPx } : null,
+        rasterShown: !this.$('raster').hidden,
+        threshold: this.$('threshold').value, gap: this.$('gap').value, calMm: this.$('cal-mm').value,
+      });
+    }
+
+    async showPlan(d) {
+      if (this.planFile === d.file && this.fromFile) { this._renderDrawings(); return; }
+      this._savePlanState();
+      const st = this.planStates.get(d.file);
+      if (st) {
+        this.manual = st.manual;
+        this.hideAuto = st.hideAuto;
+        this.$('hide-auto').checked = st.hideAuto;
+        this.backdrop = st.backdrop;
+        this.backdropFile = st.backdropFile;
+        this.$('scale').value = st.scale;
+        this.$('threshold').value = st.threshold;
+        this.$('gap').value = st.gap;
+        this.$('cal-mm').value = st.calMm;
+        this.raster = st.raster;
+        this.$('raster').hidden = !st.rasterShown;
+        this.$('trace').hidden = true;
+        this._tracerImage = null;
+        await this.loadFile(d.file, { keepRoom: true, keepScale: true, keepManual: true, roomIndex: st.roomIndex });
+      } else {
+        this._tracerImage = null;
+        await this.loadFile(d.file);
+      }
+      this._renderDrawings();
+    }
+
+    async showElevation(d) {
+      if (this.elev && this._elevFile) {
+        this.elevStates.set(this._elevFile, { custom: this.elev.custom, elevIndex: this.elevIndex, clothOnly: this.$('elev-cloth-only').checked, backdrop: this.elev.backdrop });
+      }
+      let res = d.elev;
       try {
-        const typed = parseFloat(this.$('scale').value) || 0;
-        res = await CADParser.analyzeElevations(file, { scale: typed > 1 ? typed : 0 });
+        if (!res) { res = await CADParser.analyzeElevations(d.file, {}); d.elev = res; }
+        const st = this.elevStates.get(d.file);
+        let bd = st && st.backdrop;
+        if (!bd) {
+          this.status('展開図を表示しています…', 'loading');
+          bd = await CADParser.renderPdfBackdrop(d.file, { scale: res.scale });
+        }
+        this._elevFile = d.file;
+        this.elev = { scale: res.scale, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: st ? st.custom : [] };
+        this.elevIndex = st ? st.elevIndex : -1;
+        this.$('elev-cloth-only').checked = st ? st.clothOnly : false;
+        this.$('elev-note').textContent = '';
+        this.$('elev').hidden = false;
+        this._initElevTracer();
+        this._renderElevList();
+        const nCloth = res.walls.filter((w) => w.cloth).length;
+        this.status('展開図「' + d.file.name + '」を読み取りました（縮尺 1:' + res.scale + '、壁 ' + res.walls.length + ' 面'
+          + (nCloth ? '、うちクロス貼り ' + nCloth + ' 面' : '') + '）。壁を選ぶと、壁紙のサイズに反映します。', 'success');
+        if (this.elevIndex >= 0) this.selectWall(this.elevIndex);
       } catch (err) {
-        console.warn('elevation analysis failed', err);
-        this._hideElev();
-        return false;
+        this.status('エラー: ' + err.message, 'error');
+        console.error(err);
       }
-      if (!res.walls.length) { this._hideElev(); return false; }
+      this._renderDrawings();
+    }
 
-      const sameFile = this._elevFile === file;
-      let bd = sameFile && this.elev ? this.elev.backdrop : null;
-      if (!bd || Math.abs(bd.scaleN - res.scale) > 0.001) {
-        this.status('展開図を表示しています…', 'loading');
-        bd = await CADParser.renderPdfBackdrop(file, { scale: res.scale });
-        bd.scaleN = res.scale;
+    async removeDrawing(d) {
+      this.drawings = this.drawings.filter((x) => x !== d);
+      if (d.type === 'elev') {
+        this.elevStates.delete(d.file);
+        if (this._elevFile === d.file) {
+          this.elev = null;
+          this._elevFile = null;
+          const next = this.drawings.find((x) => x.type === 'elev');
+          if (next) await this.showElevation(next); else this._hideElev();
+        }
+      } else {
+        this.planStates.delete(d.file);
+        if (this.planFile === d.file) {
+          this.planFile = null;
+          this.fromFile = false; // nothing to save for the removed drawing
+          const next = this.drawings.find((x) => x.type === 'plan');
+          if (next) await this.showPlan(next);
+          else {
+            this.lastFile = null;
+            this.manual = [];
+            this.backdrop = null;
+            this.raster = null;
+            this.data = { rooms: [], metadata: {} };
+            this.label = '未選択';
+            ['trace', 'raster', 'trace-open'].forEach((k) => { this.$(k).hidden = true; });
+            this._showEmpty();
+            this.$('size-note').textContent = '';
+          }
+        }
       }
-      const keep = sameFile && this.elev && opts.keepRoom ? this.elevIndex : -1;
-      this._elevFile = file;
-      this.lastFile = file;
-      this.elev = { scale: res.scale, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: sameFile && this.elev ? this.elev.custom : [] };
-      this.elev.custom = this.elev.custom || [];
-      this.elevIndex = keep;
-      if (!sameFile) { this.$('elev-note').textContent = ''; this.elev.custom = []; }
-      // the floor-plan side is not used for a sheet of elevations
-      this.fromFile = true;
-      this.label = file.name;
-      this.manual = [];
-      this.hideAuto = false;
-      this.backdrop = null;
-      this.$('trace').hidden = true;
-      this.$('trace-open').hidden = true;
-      this.$('raster').hidden = true;
-      this.raster = null;
-      this._showEmpty();
-      this.$('scale').value = String(res.scale);
+      this._renderDrawings();
+      this.status('「' + d.file.name + '」を外しました。', 'success');
+    }
 
-      this.$('elev').hidden = false;
-      const nCloth = res.walls.filter((w) => w.cloth).length;
-      this.$('elev-cloth-only').checked = nCloth > 0 && sameFile ? this.$('elev-cloth-only').checked : false;
-      this._initElevTracer();
-      this._renderElevList();
-      this._refreshElevTracer();
-      this.status('展開図として読み取りました（縮尺 1:' + res.scale + '、壁 ' + res.walls.length + ' 面' + (nCloth ? '、うちクロス貼り ' + nCloth + ' 面' : '') + '）。壁を選ぶと、壁紙のサイズに反映します。', 'success');
-      this.$('elev').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      return true;
+    _renderDrawings() {
+      const box = this.$('drawings');
+      box.textContent = '';
+      box.hidden = !this.drawings.length;
+      if (!this.drawings.length) return;
+      [['plan', '平面図（床 → カーペット）', this.planFile], ['elev', '展開図（壁 → 壁紙）', this._elevFile]].forEach(([type, title, active]) => {
+        const row = document.createElement('div');
+        row.className = 'cfp-dw-row';
+        const lb = document.createElement('span');
+        lb.className = 'cfp-dw-label is-' + type;
+        lb.textContent = title;
+        row.appendChild(lb);
+        const items = this.drawings.filter((x) => x.type === type);
+        if (!items.length) {
+          const none = document.createElement('span');
+          none.className = 'cfp-dw-none';
+          none.textContent = 'なし';
+          row.appendChild(none);
+        }
+        items.forEach((d) => {
+          const chip = document.createElement('span');
+          chip.className = 'cfp-dw-chip' + (d.file === active && (type === 'elev' || this.fromFile) ? ' is-active' : '');
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = d.file.name;
+          b.title = d.file.name + (type === 'elev' ? '（展開図）' : '（平面図）');
+          b.addEventListener('click', () => (type === 'elev' ? this.showElevation(d) : this.showPlan(d)));
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.className = 'cfp-dw-x';
+          x.textContent = '×';
+          x.setAttribute('aria-label', d.file.name + ' を外す');
+          x.addEventListener('click', () => this.removeDrawing(d));
+          chip.append(b, x);
+          row.appendChild(chip);
+        });
+        box.appendChild(row);
+      });
     }
 
     _elevAll() {
@@ -742,7 +874,9 @@
 
       const wallH = Math.max(...room.walls.map((x) => x.height || CADParser.DEFAULT_WALL_HEIGHT));
       let clamped = false;
-      const persp = { 'persp-width': w, 'persp-floor-depth': h, 'persp-wall-height': wallH };
+      // a wall chosen on an elevation sheet owns the wall paper size (width / height)
+      const wallLocked = !!(this.elev && this.elevIndex >= 0);
+      const persp = wallLocked ? { 'persp-floor-depth': h } : { 'persp-width': w, 'persp-floor-depth': h, 'persp-wall-height': wallH };
       const applied = {};
       Object.keys(persp).forEach((id) => {
         const el = document.getElementById(id);
@@ -757,9 +891,11 @@
       const area = CADParser.calculateArea(room.vertices);
       let text = '図面から「' + (room.name || '部屋') + '」のサイズ ' + fmtMm(w) + '×' + fmtMm(h) + ' mm を読み取り、'
         + 'カーペットを ' + fmtMm(tileW) + '×' + fmtMm(tileH) + ' mm（500mm単位に切り上げ。10mm以下の端数は切り捨て）、'
-        + 'お部屋パース・壁紙のサイズを 幅' + fmtMm(applied['persp-width'] || w)
-        + '／奥行' + fmtMm(applied['persp-floor-depth'] || h)
-        + '／壁の高さ' + fmtMm(applied['persp-wall-height'] || wallH) + ' mm に設定しました。';
+        + (wallLocked
+          ? 'お部屋パースの奥行を ' + fmtMm(applied['persp-floor-depth'] || h) + ' mm に設定しました（壁紙の幅・高さは、展開図で選んだ壁のサイズのままです）。'
+          : 'お部屋パース・壁紙のサイズを 幅' + fmtMm(applied['persp-width'] || w)
+            + '／奥行' + fmtMm(applied['persp-floor-depth'] || h)
+            + '／壁の高さ' + fmtMm(applied['persp-wall-height'] || wallH) + ' mm に設定しました。');
       if (Math.abs(area - w * h) / (w * h) > 0.01) {
         text += ' ※四角でない部屋のため、見積もりは外接する四角（' + fmtArea(tileW * tileH) + '㎡）で計算されます（実際の床面積は ' + fmtArea(area) + '㎡）。';
       }
