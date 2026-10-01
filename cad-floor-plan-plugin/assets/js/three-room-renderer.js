@@ -115,6 +115,7 @@
     setWallRepeat(w, h, aspect) {
       this.wallRepeat = w > 0 && h > 0 ? { w, h } : null;
       this.wallAspect = aspect > 0 ? aspect : null;
+      this._measureWalls();
       this.walls.forEach((e) => this._wallUV(e));
       if (this._textures.wall) {
         const t = this._textures.wall;
@@ -122,6 +123,14 @@
         t.needsUpdate = true;
       }
       this._render();
+    }
+
+    _measureWalls() {
+      this._maxWall = { len: 1, h: 1 };
+      this.walls.forEach((e) => {
+        this._maxWall.len = Math.max(this._maxWall.len, e.len / MM);
+        this._maxWall.h = Math.max(this._maxWall.h, e.h / MM);
+      });
     }
 
     // UVs in "repeats": u = distance along the wall / repeat width, v = height / repeat height.
@@ -134,10 +143,11 @@
         const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
         if (rep) uv.setXY(i, u0 * lenMm / rep.w, 1 - (1 - v0) * hMm / rep.h);
         else if (this.wallAspect) {
-          // cover: show the part of the picture that has the wall's aspect ratio
-          const a = (lenMm / hMm) / this.wallAspect;
-          const su = a < 1 ? a : 1, sv = a < 1 ? 1 : 1 / a;
-          uv.setXY(i, 0.5 + (u0 - 0.5) * su, 0.5 + (v0 - 0.5) * sv);
+          // one picture, the same size on every wall: big enough to cover the longest wall and the
+          // highest wall, centred on each wall (the overflow is cut off)
+          const imgW = Math.max(this._maxWall.len, this._maxWall.h * this.wallAspect);
+          const imgH = imgW / this.wallAspect;
+          uv.setXY(i, 0.5 + (u0 - 0.5) * lenMm / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
         } else uv.setXY(i, u0, v0);
       }
       uv.needsUpdate = true;
@@ -240,7 +250,8 @@
 
       const entry = { mesh, edges, roomIndex: ri, wallIndex: wi, custom: false, len, h };
       this.walls.push(entry);
-      this._wallUV(entry);
+      this._measureWalls();
+      this.walls.forEach((e) => this._wallUV(e)); // the longest wall may have changed
     }
 
     _inside(p, pts) {

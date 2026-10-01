@@ -1139,7 +1139,17 @@
     return out;
   }
 
-  // 壁いっぱいに1枚：縦横比を保ったまま壁を覆う大きさにし（はみ出した分は切り取る）、中央に配置
+  // 壁いっぱいに1枚のときの画像の横幅[mm]：どの壁でも同じ大きさにするため、部屋の壁（幅・奥行）の
+  // 長い方と壁の高さの両方を覆える大きさにする（縦横比は変えない）
+  function singleImageWidthMm(aspect) {
+    const W = parseFloat($('persp-width')?.value) || 3000;
+    const D = parseFloat($('persp-floor-depth')?.value) || 2500;
+    const H = parseFloat($('persp-wall-height')?.value) || 2400;
+    return Math.max(W, D, H * aspect);
+  }
+  window.cfpSingleImageWidthMm = singleImageWidthMm;
+
+  // 壁いっぱいに1枚：縦横比を保ったまま、どの壁でも同じ大きさ（singleImageWidthMm）で中央に配置し、はみ出した分は切り取る
   function coverWallCanvas(source, w, h) {
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const out = document.createElement('canvas');
@@ -1147,7 +1157,7 @@
     out.height = h;
     const ctx = out.getContext('2d');
     ctx.imageSmoothingQuality = 'high';
-    const k = Math.max(w / sw, h / sh);
+    const k = Math.max(w / sw, h / sh, singleImageWidthMm(sw / sh) / sw);
     const dw = sw * k, dh = sh * k;
     ctx.drawImage(source, (w - dw) / 2, (h - dh) / 2, dw, dh);
     return out;
@@ -1158,7 +1168,12 @@
     const src = $('cw-reduced');
     if (!note) return;
     const r = getWallRepeat();
-    if (!r.on) { note.textContent = '壁いっぱいに1枚で表示します（縦横比は変えず、壁からはみ出した部分は切り取ります。中央合わせ）。'; return; }
+    if (!r.on) {
+      if (!src || !src.width) { note.textContent = '壁いっぱいに1枚で表示します。'; return; }
+      const iw = singleImageWidthMm(src.width / src.height);
+      note.textContent = '壁いっぱいに1枚で表示します。縦横比は変えず、どの壁でも同じ大きさ（横 ' + Math.round(iw).toLocaleString() + ' × 縦 ' + Math.round(iw * src.height / src.width).toLocaleString() + ' mm）で、壁ごとに中央に合わせます（はみ出した部分は切り取り）。';
+      return;
+    }
     if (!src || !src.width) { note.textContent = ''; return; }
     const th = Math.round(r.mm * src.height / src.width);
     const wallW = parseFloat($('persp-width')?.value) || 3000;
@@ -1938,9 +1953,12 @@
         el.style.backgroundSize = Math.max(2, wallRepeat.mm * scale) + 'px auto';
         el.style.backgroundPosition = '0 0';
       } else {
-        // 1枚表示も縦横比を変えない（壁を覆う大きさ・中央合わせ）
+        // 1枚表示も縦横比を変えず、奥の壁・横の壁で同じ大きさ（中央合わせ・はみ出しは切り取り）
+        const src = document.getElementById('cw-reduced');
+        const aspect = src && src.width ? src.width / src.height : 1;
+        const iw = window.cfpSingleImageWidthMm ? window.cfpSingleImageWidthMm(aspect) : Math.max(widthMm, floorDepthMm, wallHeightMm * aspect);
         el.style.backgroundRepeat = 'no-repeat';
-        el.style.backgroundSize = 'cover';
+        el.style.backgroundSize = Math.max(2, iw * scale) + 'px auto';
         el.style.backgroundPosition = 'center';
       }
     });
