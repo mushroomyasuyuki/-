@@ -242,7 +242,7 @@
 
     /**
      * Writes the selected room's size into the estimate tool (carpet W x H, rounded up to the
-     * 500 mm tile) and the room perspective (width / floor depth / wall height).
+     * 500 mm tile) and the wallpaper size fields (wall width / wall height).
      */
     reflectSize(room) {
       const note = this.$('size-note');
@@ -261,7 +261,7 @@
 
       const wallH = Math.max(...room.walls.map((x) => x.height || CADParser.DEFAULT_WALL_HEIGHT));
       let clamped = false;
-      const persp = { 'persp-width': w, 'persp-floor-depth': h, 'persp-wall-height': wallH };
+      const persp = { 'persp-width': w, 'persp-wall-height': wallH };
       const applied = {};
       Object.keys(persp).forEach((id) => {
         const el = document.getElementById(id);
@@ -276,12 +276,12 @@
       const area = CADParser.calculateArea(room.vertices);
       let text = '図面から「' + (room.name || '部屋') + '」のサイズ ' + fmtMm(w) + '×' + fmtMm(h) + ' mm を読み取り、'
         + 'カーペットを ' + fmtMm(tileW) + '×' + fmtMm(tileH) + ' mm（500mm単位に切り上げ。10mm以下の端数は切り捨て）、'
-        + 'お部屋パースを 幅' + fmtMm(applied['persp-width'] || w) + '／奥行' + fmtMm(applied['persp-floor-depth'] || h)
-        + '／壁の高さ' + fmtMm(applied['persp-wall-height'] || wallH) + ' mm に設定しました。';
+        + '壁紙のサイズを 幅' + fmtMm(applied['persp-width'] || w)
+        + '／高さ' + fmtMm(applied['persp-wall-height'] || wallH) + ' mm に設定しました。';
       if (Math.abs(area - w * h) / (w * h) > 0.01) {
         text += ' ※四角でない部屋のため、見積もりは外接する四角（' + fmtArea(tileW * tileH) + '㎡）で計算されます（実際の床面積は ' + fmtArea(area) + '㎡）。';
       }
-      if (clamped) text += ' ※パースの寸法は入力欄の上限・下限に丸めました。';
+      if (clamped) text += ' ※壁紙のサイズは入力欄の上限・下限に丸めました。';
       note.textContent = text;
     }
 

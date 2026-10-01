@@ -80,7 +80,7 @@ design-order-mailer/
 | 減色・誤差拡散処理 | Floyd–Steinberg法による誤差拡散を実装。強度は0〜100%でスライダー調整可能 |
 | PSD書き出し | `ag-psd` ライブラリ（CDN経由で動的読み込み）を使用し、25.4 DPI・実寸(1px=1mm)でPSDファイルを生成 |
 | お見積もり自動計算 | パイル形状・面積・オプションカラー数・配送地域から、商品代・送料・消費税・合計金額を自動計算 |
-| お部屋パース（簡易3D） | CSSの3D transformを使い、床・壁それぞれの減色画像を立体的な部屋にプレビュー表示 |
+| お部屋パース（簡易3D） | ※2026年10月に削除。CSSの3D transformによる簡易プレビューだったが、CAD表示（3D）に統合した |
 | 注文送信 | 上記4種のPSDファイルをアップロードし、DOMailerプラグイン経由でメール送信 |
 
 ### window.DOMailer との連携
@@ -114,3 +114,4 @@ await DOMailer.sendOrderEmail([token1, token2, ...], {
 - Design Order Mailer とシミュレーションツールは、プラグイン `cad-floor-plan/`（`cad-floor-plan-plugin/`）に統合した。ツールのHTMLは `templates/wallpaper-carpet-tool.html`、メール送信の処理は `includes/order-mailer/` にある。
 - ツールにはCAD表示（DXF / ベクターPDF / JSON の間取りを3D表示し、床・壁の面積を計算）を追加した。ショートコード `[cad_floor_plan]` の位置に差し込まれる。
 - プラグインを有効化すると、固定ページ「壁紙・カーペットシミュレーション」が自動作成され、無効化すると削除される。詳細は `cad-floor-plan-plugin/README.md`。
+- 2026年10月: 簡易「お部屋パース」を削除。壁紙PSDと注文に使う「壁の幅」「壁の高さ」の入力欄は残し、CADの図面から読み取った部屋のサイズが自動で入る。
