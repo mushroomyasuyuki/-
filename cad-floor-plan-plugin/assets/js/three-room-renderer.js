@@ -105,7 +105,34 @@
     }
 
     setWallCanvas(canvas) {
-      this._setTexture('wall', canvas ? this._canvasTexture(canvas) : null);
+      this._setTexture('wall', canvas ? this._canvasTexture(canvas, true) : null);
+    }
+
+    // Wallpaper pattern size on the walls: one repeat is w x h mm (keep the picture's aspect ratio).
+    // null stretches the picture over each wall.
+    setWallRepeat(w, h) {
+      this.wallRepeat = w > 0 && h > 0 ? { w, h } : null;
+      this.walls.forEach((e) => this._wallUV(e));
+      if (this._textures.wall) {
+        const t = this._textures.wall;
+        t.wrapS = t.wrapT = this.wallRepeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+        t.needsUpdate = true;
+      }
+      this._render();
+    }
+
+    // UVs in "repeats": u = distance along the wall / repeat width, v = height / repeat height.
+    // The pattern starts at the ceiling (top edge) like hung wallpaper.
+    _wallUV(entry) {
+      const uv = entry.mesh.geometry.attributes.uv;
+      const rep = this.wallRepeat;
+      const lenMm = entry.len / MM, hMm = entry.h / MM;
+      for (let i = 0; i < uv.count; i++) {
+        const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
+        if (rep) uv.setXY(i, u0 * lenMm / rep.w, 1 - (1 - v0) * hMm / rep.h);
+        else uv.setXY(i, u0, v0);
+      }
+      uv.needsUpdate = true;
     }
 
     // remove the room (no rooms to show)
@@ -203,7 +230,9 @@
       edges.rotation.copy(mesh.rotation);
       this.scene.add(edges);
 
-      this.walls.push({ mesh, edges, roomIndex: ri, wallIndex: wi, custom: false });
+      const entry = { mesh, edges, roomIndex: ri, wallIndex: wi, custom: false, len, h };
+      this.walls.push(entry);
+      this._wallUV(entry);
     }
 
     _inside(p, pts) {
@@ -229,15 +258,22 @@
       t.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     }
 
-    _canvasTexture(canvas) {
+    _canvasTexture(canvas, repeatable) {
       // copy (max 2048px) so later redraws of the source canvas do not affect it and GPU memory stays bounded
       const max = 2048;
       const k = Math.min(1, max / Math.max(canvas.width, canvas.height));
       const copy = document.createElement('canvas');
       copy.width = Math.max(1, Math.round(canvas.width * k));
       copy.height = Math.max(1, Math.round(canvas.height * k));
+      if (repeatable) {
+        // a repeating texture must be a power of two (WebGL1); the UVs keep the real aspect ratio
+        const pot = (n) => Math.pow(2, Math.round(Math.log2(Math.max(2, n))));
+        copy.width = Math.min(2048, pot(copy.width));
+        copy.height = Math.min(2048, pot(copy.height));
+      }
       copy.getContext('2d').drawImage(canvas, 0, 0, copy.width, copy.height);
       const t = new THREE.CanvasTexture(copy);
+      if (repeatable && this.wallRepeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.minFilter = THREE.LinearFilter;
       t.generateMipmaps = false;
       this._prepareTexture(t);

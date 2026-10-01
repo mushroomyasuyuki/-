@@ -1010,7 +1010,12 @@
       const hasFloor = !!floor && floor.width > 0 && floor.height > 0 && canvasHasContent(floor);
       const hasWall = !!wall && wall.width > 0 && wall.height > 0 && canvasHasContent(wall);
       if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? floor : null);
+      // wallpaper pattern: repeated at its real size, aspect ratio kept (setting of the tool's ② panel)
+      const rep = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : null;
+      if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm, h: rep.mm * wall.height / wall.width };
+      else this.renderer.wallRepeat = null;
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
+      this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0);
       this._thumb('src-floor', hasFloor ? floor : null);
       this._thumb('src-wall', hasWall ? wall : null);
       this.$('src-floor-text').textContent = hasFloor ? '適用中' : '未処理（① でデザイン画像を選ぶと適用されます）';
