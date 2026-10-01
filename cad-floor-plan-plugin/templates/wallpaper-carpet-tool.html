@@ -303,6 +303,11 @@
       <div class="file-note">※カーペットとは別の柄を壁紙シミュレーションに使いたい場合はこちらにアップロードしてください。<br>※元データの解像度が粗い（画素が少ない）場合、文字やラインが潰れてしまう場合がございます。<br>※目安として、10cm角のサイズで画数の多い漢字が表現できる程度の解像度をご用意いただくと安心です。</div>
     </div>
 
+    <div class="dither-box cw-reduce-box">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="cw-reduce-on" style="width:auto;min-height:auto;"> 壁紙を減色する（壁紙はCMYK印刷のため、通常は不要です）</label>
+      <div class="file-note" style="margin-top:4px;">チェックしない場合は、元画像の色のまま（減色なし）でパース表示・保存・注文に使います。</div>
+    </div>
+
     <div class="dither-box">
       <div class="slider-row"><label for="cw-dither">ドットによる階調表現（誤差拡散）量：<span id="cw-dither-val">0</span>%</label><span>0% = メリハリ表現 / 100% = 滑らか表現</span></div>
       <input type="range" id="cw-dither" min="0" max="100" value="0">
@@ -877,11 +882,41 @@
     }
   }
 
+  // 壁紙の減色は任意（既定はしない：CMYK印刷のため）。減色しないときは元画像の色のまま使う
+  function isWallReduceOn() {
+    return $('cw-reduce-on') ? $('cw-reduce-on').checked : false;
+  }
+  // 保存・印刷に使う壁紙の絵：減色しないときは元画像（フル解像度）、するときは減色イメージ
+  function getWallSource() {
+    if (isWallReduceOn()) return $('cw-reduced');
+    return cwState.loadedImg || $('cw-reduced');
+  }
+  function syncWallReduceUi() {
+    const on = isWallReduceOn();
+    const boxes = [$('cw-dither'), $('cw-base-palette-selector'), $('cw-op-palette-selector')].map((el) => el ? el.closest('.dither-box, .palette-box') : null);
+    boxes.forEach((b) => { if (b) b.style.display = on ? '' : 'none'; });
+    const card = $('cw-reduced') ? $('cw-reduced').closest('.preview-card') : null;
+    const h3 = card ? card.querySelector('h3') : null;
+    if (h3) h3.textContent = on ? 'カラーパレット減色イメージ' : '変換後イメージ（減色なし・元画像の色のまま）';
+  }
+
   function reprocessWallReduction() {
     try {
       const original = $('cw-original');
       const reduced = $('cw-reduced');
       if (!original || !reduced || !original.width) return;
+      if (!isWallReduceOn()) {
+        // 減色しない：元画像をそのまま（表示用の大きさで）変換後イメージにする
+        reduced.width = original.width;
+        reduced.height = original.height;
+        reduced.getContext('2d').drawImage(original, 0, 0);
+        cwState.lastUsedColorEntries = [];
+        if ($('cw-used-colors')) $('cw-used-colors').innerHTML = '';
+        if ($('cw-used-colors-text')) $('cw-used-colors-text').textContent = '減色なし（元画像の色のまま・CMYK印刷）';
+        setWallStatus('✅ 壁紙用デザインを読み込みました（減色なし）。');
+        if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated();
+        return;
+      }
 
       const w = original.width;
       const h = original.height;
@@ -1606,8 +1641,8 @@
   // 1巾 = 幅910mm（左右10mmずつ隣の巾と重なる。壁を受け持つのは890mm）× 高さ（壁の高さ + 上下100mmずつ）。
   // 赤枠（別レイヤー）は、その巾が受け持つ壁の範囲（左右の重なり・上下の裁断代の内側）。
   async function downloadWallPrintStrips() {
-    const canvas = $('cw-reduced');
-    if (!canvas || !canvas.width) {
+    const canvas = getWallSource();
+    if (!canvas || !(canvas.naturalWidth || canvas.width)) {
       alert('先に「② 壁紙用デザイン」で画像を処理してください。');
       return;
     }
@@ -1767,8 +1802,8 @@
   }
 
   async function downloadWallImagePsd() {
-    const canvas = $('cw-reduced');
-    if (!canvas || !canvas.width) {
+    const canvas = getWallSource();
+    if (!canvas || !(canvas.naturalWidth || canvas.width)) {
       alert('先に「② 壁紙用デザイン」で画像を処理してください。');
       return;
     }
@@ -1970,11 +2005,19 @@
         const wallDitherFactor = Math.min(1, Math.max(0, wallDitherPct / 100));
         const wallActiveEntries = getWallActivePaletteEntries();
 
-        const { imageData: wallReducedData, usedEntries: wallUsedEntries } =
-          getReducedImageData(getWallRepeat().on ? tileWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm, getWallRepeat().mm) : (getWallRepeat().mode === 'wrap' ? wrapWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm) : coverWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm)),
-            wallWidthMm, wallHeightMm, wallDitherFactor, wallActiveEntries);
-        cwState.lastUsedColorEntries = wallUsedEntries;
-        wallColorsText = getUsedColorsSummaryText(wallUsedEntries);
+        const wallPlaced = getWallRepeat().on ? tileWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm, getWallRepeat().mm) : (getWallRepeat().mode === 'wrap' ? wrapWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm) : coverWallCanvas(cwState.loadedImg, wallWidthMm, wallHeightMm));
+        let wallReducedData;
+        if (isWallReduceOn()) {
+          const res = getReducedImageData(wallPlaced, wallWidthMm, wallHeightMm, wallDitherFactor, wallActiveEntries);
+          wallReducedData = res.imageData;
+          cwState.lastUsedColorEntries = res.usedEntries;
+          wallColorsText = getUsedColorsSummaryText(res.usedEntries);
+        } else {
+          // 減色なし（CMYK印刷）：元画像の色のまま
+          wallReducedData = wallPlaced.getContext('2d').getImageData(0, 0, wallWidthMm, wallHeightMm);
+          wallColorsText = '減色なし（元画像の色のまま・CMYK印刷）';
+          wallDitherPct = 0;
+        }
 
         const wallOriginalCanvas = document.createElement('canvas');
         wallOriginalCanvas.width = cwState.loadedImg.naturalWidth || cwState.loadedImg.width;
@@ -1989,7 +2032,7 @@
         wallOriginalBlob = makeSingleLayerCmykPsdBlob(wallOriginalCanvas, '壁：元画像（オリジナル）');
         wallReducedBlob = makeSingleLayerCmykPsdBlob(wallReducedCanvas, '壁：変換後画像（実寸出力・1px=1mm）');
         wallOriginalFileName = 'wall_original_' + safeName + '_' + stamp + '.psd';
-        wallReducedFileName = 'wall_reduced_' + safeName + '_dither' + wallDitherPct + 'pct_' + stamp + '.psd';
+        wallReducedFileName = (isWallReduceOn() ? 'wall_reduced_' + safeName + '_dither' + wallDitherPct + 'pct_' : 'wall_converted_' + safeName + '_noreduce_') + stamp + '.psd';
       }
 
       // ---- ③ サーバーへアップロード（床2点＋壁2点、壁未設定時は床2点のみ） ----
@@ -2015,7 +2058,7 @@
         '床（カーペット）使用カラー：' + floorColorsText,
         '床（カーペット）階調表現（誤差拡散）：' + floorDitherPct + '%',
         '壁紙 使用カラー：' + wallColorsText,
-        '壁紙 階調表現（誤差拡散）：' + (hasWallDesign ? (wallDitherPct + '%') : '未設定（壁紙用デザイン画像は未アップロード）'),
+        '壁紙 階調表現（誤差拡散）：' + (hasWallDesign ? (isWallReduceOn() ? (wallDitherPct + '%') : '減色なし') : '未設定（壁紙用デザイン画像は未アップロード）'),
         '壁紙の合計（展開図から）：' + (window.cfpWallTotal ? window.cfpWallTotal.text : '未選択'),
         '制作サイズ：' + sizeText,
         tileCountText,
@@ -2111,6 +2154,8 @@
     if ($('cc-height')) $('cc-height').oninput = () => { calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-height')) $('cc-height').onchange = () => { snapSize('cc-height'); calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-dither')) $('cc-dither').oninput = (event) => { if($('cc-dither-val')) $('cc-dither-val').textContent = event.target.value; reprocessReduction(); };
+    if ($('cw-reduce-on')) $('cw-reduce-on').addEventListener('change', () => { syncWallReduceUi(); reprocessWallReduction(); });
+    syncWallReduceUi();
     if ($('cw-dither')) $('cw-dither').oninput = (event) => { if($('cw-dither-val')) $('cw-dither-val').textContent = event.target.value; reprocessWallReduction(); };
     // 柄の大きさ・繰り返しの切り替え：お部屋パースとCAD表示（3D）に反映
     if ($('cw-repeat-mm')) $('cw-repeat-mm').addEventListener('input', () => { if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
