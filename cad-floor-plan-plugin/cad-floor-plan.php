@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.29.0
+ * Version: 2.30.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,13 +15,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.29.0');
+define('CFP_VERSION', '2.30.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
 define('CFP_PAGE_SLUG', '壁紙・カーペットシミュレーション');
 define('CFP_SHORTCODE', 'cad_floor_plan');
 define('CFP_SIM_SHORTCODE', 'wallpaper_carpet_simulator');
+if (!defined('CFP_RESUME_DAYS')) {
+    define('CFP_RESUME_DAYS', 30); // 途中保存した作業の保存日数
+}
 if (!defined('CFP_OM_EXPIRY_DAYS')) {
     define('CFP_OM_EXPIRY_DAYS', 60); // 注文デザインファイルの保存日数
 }
@@ -43,6 +46,8 @@ final class CAD_Floor_Plan_Plugin {
         add_shortcode(CFP_SHORTCODE, [$this, 'render_shortcode']);
         add_shortcode(CFP_SIM_SHORTCODE, [$this, 'render_simulator']);
         $this->load_order_mailer();
+        require_once CFP_PLUGIN_DIR . 'includes/class-cfp-resume.php';
+        CFP_Resume::instance();
         add_action('rest_api_init', [$this, 'register_rest']);
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_post_cfp_create_page', [$this, 'handle_create_page']);
@@ -234,6 +239,9 @@ final class CAD_Floor_Plan_Plugin {
         $this->enqueue_assets();
         // Block themes render the content before wp_enqueue_scripts, so the handle may not be registered yet.
         wp_enqueue_script('domailer-frontend');
+        // 作業の途中保存・再開
+        wp_enqueue_script('cfp-resume', CFP_PLUGIN_URL . 'assets/js/resume.js', ['cfp-main'], CFP_VERSION, true);
+        wp_localize_script('cfp-resume', 'cfpResumeConfig', CFP_Resume::client_config());
         $html = file_get_contents($file);
         $html = str_replace('{{CFP_ASSET_URL}}', esc_url(CFP_PLUGIN_URL . 'assets/'), $html);
         $html = $this->fill_badges($html);
@@ -525,6 +533,8 @@ register_activation_hook(__FILE__, function () {
 
 register_deactivation_hook(__FILE__, function () {
     CAD_Floor_Plan_Plugin::remove_page();
+    require_once CFP_PLUGIN_DIR . 'includes/class-cfp-resume.php';
+    CFP_Resume::unschedule();
     if (!defined('DOMAILER_VERSION')) {
         require_once CFP_PLUGIN_DIR . 'includes/order-mailer/class-domailer.php';
         CFP_Domailer::deactivate();

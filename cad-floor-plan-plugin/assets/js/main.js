@@ -621,6 +621,94 @@
       this._renderDrawings();
     }
 
+    // ------------------------------------------------- save / resume (resume.js)
+    // Everything needed to continue later, except the drawing files themselves (returned separately).
+    exportState() {
+      this._savePlanState();
+      if (this.elev && this._elevFile) {
+        this.elevStates.set(this._elevFile, { custom: this.elev.custom, elevIndex: this.elevIndex, clothOnly: this.$('elev-cloth-only').checked, backdrop: this.elev.backdrop });
+      }
+      const drawings = this.drawings.map((d, i) => {
+        const key = 'cad' + i;
+        const entry = { key, name: d.file.name, type: d.type, reason: d.reason };
+        if (d.type === 'elev') {
+          const st = this.elevStates.get(d.file) || {};
+          entry.elev = {
+            elevIndex: st.elevIndex == null ? -1 : st.elevIndex,
+            clothOnly: !!st.clothOnly,
+            custom: (st.custom || []).map((c) => ({ id: c.id, name: c.name, width: c.width, height: c.height, poly: c.poly, inTotal: !!c.inTotal })),
+            inTotal: d.elev ? d.elev.walls.map((w, wi) => (w.inTotal ? wi : -1)).filter((x) => x >= 0) : [],
+          };
+        } else {
+          const st = this.planStates.get(d.file);
+          if (st) {
+            entry.plan = {
+              manual: st.manual, hideAuto: st.hideAuto, roomIndex: st.roomIndex, scale: st.scale,
+              raster: st.raster, rasterShown: st.rasterShown, threshold: st.threshold, gap: st.gap, calMm: st.calMm,
+            };
+          }
+        }
+        return entry;
+      });
+      return {
+        drawings,
+        activePlan: this.fromFile && this.planFile ? this.planFile.name : null,
+        activeElev: this._elevFile ? this._elevFile.name : null,
+        applySize: this.$('apply-size').checked,
+      };
+    }
+
+    files() {
+      return this.drawings.map((d, i) => ({ key: 'cad' + i, file: d.file }));
+    }
+
+    // filesByKey: { cad0: File, ... }
+    async importState(st, filesByKey) {
+      if (!st || !Array.isArray(st.drawings)) return;
+      this.$('apply-size').checked = st.applySize !== false;
+      this.drawings = [];
+      this.planStates = new Map();
+      this.elevStates = new Map();
+      let activePlan = null, activeElev = null;
+      for (const e of st.drawings) {
+        const file = filesByKey[e.key];
+        if (!file) continue;
+        const d = { file, type: e.type === 'elev' ? 'elev' : 'plan', elev: null, reason: e.reason || '保存した作業から再開', canSwitch: /\.pdf$/i.test(file.name), warn: false };
+        if (d.type === 'elev') {
+          try { d.elev = await CADParser.analyzeElevations(file, {}); } catch (err) { console.warn(err); }
+          if (d.elev && e.elev) {
+            (e.elev.inTotal || []).forEach((wi) => { if (d.elev.walls[wi]) d.elev.walls[wi].inTotal = true; });
+            this.elevStates.set(file, {
+              custom: (e.elev.custom || []).map((c) => Object.assign({ custom: true, cloth: null }, c)),
+              elevIndex: e.elev.elevIndex, clothOnly: e.elev.clothOnly, backdrop: null,
+            });
+          }
+          if (e.name === st.activeElev) activeElev = d;
+        } else {
+          if (e.plan) {
+            let backdrop = null;
+            // hand-traced rooms of a vector PDF are drawn on its rendered page
+            if (e.plan.manual && e.plan.manual.length && /\.pdf$/i.test(file.name) && !e.plan.raster) {
+              try {
+                backdrop = await CADParser.renderPdfBackdrop(file, { scale: parseFloat(e.plan.scale) || 1 });
+              } catch (err) { console.warn(err); }
+            }
+            this.planStates.set(file, Object.assign({}, e.plan, { backdrop, backdropFile: backdrop ? file : null }));
+          }
+          if (e.name === st.activePlan) activePlan = d;
+        }
+        this.drawings.push(d);
+      }
+      this.planFile = null;
+      this.fromFile = false;
+      this._elevFile = null;
+      this.elev = null;
+      if (activeElev) await this.showElevation(activeElev);
+      if (activePlan) await this.showPlan(activePlan);
+      this._renderDrawings();
+      if (this.elev) this._updateWallTotal();
+    }
+
     async removeDrawing(d, quiet) {
       this.drawings = this.drawings.filter((x) => x !== d);
       if (d.type === 'elev') {
