@@ -2,7 +2,7 @@
 
 DXF / ベクターPDF / JSON の間取りデータをブラウザ上で3D表示し、床・壁の面積を計算する WordPress プラグイン（スタンドアロン版もあります）。ファイルの解析はすべてブラウザ内で行われ、サーバーには送信されません。
 
-現在のバージョン: **1.1.0**（変更履歴は [CHANGELOG.md](CHANGELOG.md)）
+現在のバージョン: **1.2.0**（変更履歴は [CHANGELOG.md](CHANGELOG.md)）
 
 ## インストール（WordPress）
 
@@ -20,6 +20,12 @@ DXF / ベクターPDF / JSON の間取りデータをブラウザ上で3D表示�
 | `sample` | default | `none` でサンプル非表示 |
 
 スクリプトは、ショートコードのあるページだけで読み込まれます。
+
+## プラグインなしで使う（埋め込み版）
+
+`dist/cad-floor-plan-embed.html` の中身を全部コピーし、固定ページの「カスタムHTML」ブロックに貼り付けるだけで動きます。プラグインのインストールも、サーバーへのアクセス権も不要です。ただし、固定ページの自動作成はありません。
+
+`build-embed.sh` を実行すると、`assets/` の内容から作り直せます（コードを変更したら実行してください）。
 
 ## スタンドアロン版
 
@@ -72,6 +78,8 @@ PDF.js の読み込み先は、フィルター `cad_floor_plan_pdfjs_url` と `c
 - `cad-floor-plan.php` のヘッダー `Version:`
 - 同ファイルの `CFP_VERSION`
 - `package.json` の `version`
+
+変更後は `./build-embed.sh` で埋め込み版を作り直し、zip も作り直します。
 
 あわせて `CHANGELOG.md` に変更内容を追記します。バージョンを上げると、次回のアクセス時に保存済みバージョンが更新されます（`maybe_upgrade()`）。
 

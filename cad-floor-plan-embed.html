@@ -1,0 +1,738 @@
+<!-- CAD Floor Plan 3D Simulator v1.2.0 (embed) -->
+<style>
+.cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.cad-floor-plan-widget *{box-sizing:border-box}
+.cfp-container{background:#18181b;border:1px solid #27272a;border-radius:8px;padding:22px}
+.cfp-header{text-align:center;margin-bottom:20px;border-bottom:2px solid #27272a;padding-bottom:14px}
+.cfp-header h2{color:#fff;margin:0 0 8px;font-size:22px;border:0;background:none}
+.cfp-header p{color:#d4d4d8;margin:0;font-size:14px}
+.cfp-input-area{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:16px}
+.cfp-drop{background:#09090b;border:2px dashed #3b82f6;border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:background .2s,border-color .2s}
+.cfp-drop:hover,.cfp-drop.is-over{border-color:#60a5fa;background:#0f172a}
+.cfp-drop input{display:none}
+.cfp-drop-title{display:block;font-weight:700;color:#60a5fa;margin-bottom:8px;font-size:15px}
+.cfp-drop-note{font-size:12px;color:#a1a1aa;line-height:1.7}
+.cfp-info-panel{background:#09090b;border:1px solid #27272a;border-radius:8px;padding:12px 15px;font-size:13px}
+.cfp-info-row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #27272a}
+.cfp-info-row:last-child{border-bottom:0}
+.cfp-label{color:#a1a1aa;font-weight:600}
+.cfp-value{color:#fff;font-weight:700;text-align:right;word-break:break-all}
+.cfp-options{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:12px;font-size:13px;color:#d4d4d8}
+.cfp-options label{display:flex;flex-direction:column;gap:4px}
+.cfp-options input[type=number]{width:110px;padding:6px 8px;background:#09090b;color:#fff;border:1px solid #3f3f46;border-radius:6px}
+.cfp-options input[type=file]{max-width:240px;color:#d4d4d8}
+.cfp-status{padding:10px 14px;border-radius:6px;margin:0 0 12px;font-size:13px;display:none}
+.cfp-status-success{display:block;background:#064e3b;border:1px solid #059669;color:#86efac}
+.cfp-status-error{display:block;background:#7f1d1d;border:1px solid #991b1b;color:#fca5a5}
+.cfp-status-loading{display:block;background:#1f2937;border:1px solid #4b5563;color:#e5e7eb}
+.cfp-canvas{width:100%;background:#09090b;border:1px solid #27272a;border-radius:8px;overflow:hidden;cursor:grab}
+.cfp-canvas:active{cursor:grabbing}
+.cfp-hint{font-size:12px;color:#a1a1aa;margin:6px 0 0}
+.cfp-controls{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.cfp-btn{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:9px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:600}
+.cfp-btn:hover{background:#3f3f46;border-color:#60a5fa;color:#60a5fa}
+@media(max-width:768px){.cfp-input-area{grid-template-columns:1fr}.cfp-btn{flex:1}}
+</style>
+<div class="cad-floor-plan-widget" data-height="600" data-sample="default">
+  <div class="cfp-container">
+    <div class="cfp-header">
+      <h2>CADお部屋シミュレーション</h2>
+      <p>DXF / PDF（ベクター）/ JSON の間取りを3D表示し、床・壁の面積を計算します</p>
+    </div>
+    <div class="cfp-input-area">
+      <div class="cfp-drop" data-cfp="drop">
+        <span class="cfp-drop-title">ファイルをドロップ、またはクリックして選択</span>
+        <input type="file" data-cfp="file" accept=".dxf,.pdf,.json">
+        <div class="cfp-drop-note">対応形式: DXF / PDF（ベクター）/ JSON<br>DWGはDXFに書き出してください</div>
+      </div>
+      <div class="cfp-info-panel">
+        <div class="cfp-info-row"><span class="cfp-label">ファイル</span><span class="cfp-value" data-cfp="filename">未選択</span></div>
+        <div class="cfp-info-row"><span class="cfp-label">床面積</span><span class="cfp-value" data-cfp="floor-area">-</span></div>
+        <div class="cfp-info-row"><span class="cfp-label">壁面積</span><span class="cfp-value" data-cfp="wall-area">-</span></div>
+        <div class="cfp-info-row"><span class="cfp-label">部屋数</span><span class="cfp-value" data-cfp="room-count">0</span></div>
+      </div>
+    </div>
+    <div class="cfp-options">
+      <label>PDFの縮尺（1:N の N）<input type="number" data-cfp="scale" min="1" step="1" value="1"></label>
+      <label>床デザイン画像<input type="file" data-cfp="floor-tex" accept="image/*"></label>
+      <label>壁紙デザイン画像<input type="file" data-cfp="wall-tex" accept="image/*"></label>
+    </div>
+    <div class="cfp-status" data-cfp="status"></div>
+    <div class="cfp-canvas" data-cfp="canvas"></div>
+    <p class="cfp-hint">ドラッグで回転、ホイールで拡大縮小</p>
+    <div class="cfp-controls">
+      <button type="button" class="cfp-btn" data-cfp="sample-btn">サンプル</button>
+      <button type="button" class="cfp-btn" data-cfp="reset-btn">視点をリセット</button>
+      <button type="button" class="cfp-btn" data-cfp="save-btn">解析結果をJSON保存</button>
+    </div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/**
+ * CADParser: DXF / vector PDF / JSON floor plan -> normalized room data.
+ * All coordinates in the output are millimetres, CAD convention (Y up).
+ */
+(function (root) {
+  'use strict';
+  const DEFAULT_WALL_HEIGHT = 2400;
+  const MIN_ROOM_AREA_MM2 = 0.5 * 1e6; // loops smaller than 0.5 m2 are treated as noise
+  const SNAP_MM = 2;
+  const PDFJS_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  const PDFJS_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  // DXF $INSUNITS -> mm
+  const INSUNITS_TO_MM = { 1: 25.4, 2: 304.8, 4: 1, 5: 10, 6: 1000 };
+  class CADParser {
+    static async parseFloorPlan(input, options = {}) {
+      if (typeof input === 'string') return this.parseJSON(input);
+      const ext = (input.name.split('.').pop() || '').toLowerCase();
+      switch (ext) {
+        case 'dxf':
+          return this.parseDXF(await input.text(), options);
+        case 'pdf':
+          return this.parsePDF(input, options);
+        case 'json':
+          return this.parseJSON(await input.text());
+        case 'dwg':
+          throw new Error('DWGは直接読み込めません。CADソフトでDXF形式に書き出してからアップロードしてください。');
+        default:
+          throw new Error('未対応の形式です: .' + ext + '（DXF / PDF / JSON に対応）');
+      }
+    }
+    // ---------------------------------------------------------------- DXF
+    static parseDXF(text, options = {}) {
+      const lines = text.split(/\r\n|\r|\n/);
+      const pairs = [];
+      for (let i = 0; i + 1 < lines.length; i += 2) {
+        pairs.push([parseInt(lines[i].trim(), 10), lines[i + 1].trim()]);
+      }
+      // header units
+      let unitScale = options.unitScale || 0;
+      if (!unitScale) {
+        for (let i = 0; i < pairs.length; i++) {
+          if (pairs[i][0] === 9 && pairs[i][1] === '$INSUNITS' && pairs[i + 1]) {
+            unitScale = INSUNITS_TO_MM[parseInt(pairs[i + 1][1], 10)] || 1;
+            break;
+          }
+        }
+      }
+      unitScale = unitScale || 1;
+      // entities section
+      let start = -1;
+      for (let i = 0; i < pairs.length - 1; i++) {
+        if (pairs[i][0] === 0 && pairs[i][1] === 'SECTION' && pairs[i + 1][1] === 'ENTITIES') {
+          start = i + 2;
+          break;
+        }
+      }
+      if (start < 0) throw new Error('DXFのENTITIESセクションが見つかりません。');
+      const closedLoops = [];
+      const openPaths = [];
+      const segments = [];
+      let i = start;
+      const readEntity = () => {
+        const type = pairs[i][1];
+        const data = [];
+        i++;
+        while (i < pairs.length && pairs[i][0] !== 0) data.push(pairs[i++]);
+        return { type, data };
+      };
+      while (i < pairs.length && !(pairs[i][0] === 0 && pairs[i][1] === 'ENDSEC')) {
+        if (pairs[i][0] !== 0) { i++; continue; }
+        const ent = readEntity();
+        if (ent.type === 'LWPOLYLINE') {
+          const pts = [];
+          let closed = false;
+          for (const [code, val] of ent.data) {
+            if (code === 70) closed = (parseInt(val, 10) & 1) === 1;
+            else if (code === 10) pts.push([parseFloat(val), 0]);
+            else if (code === 20 && pts.length) pts[pts.length - 1][1] = parseFloat(val);
+          }
+          this._addPath(pts, closed, closedLoops, openPaths);
+        } else if (ent.type === 'POLYLINE') {
+          let closed = false;
+          for (const [code, val] of ent.data) if (code === 70) closed = (parseInt(val, 10) & 1) === 1;
+          const pts = [];
+          while (i < pairs.length && pairs[i][0] === 0 && pairs[i][1] === 'VERTEX') {
+            const v = readEntity();
+            let x = 0, y = 0;
+            for (const [code, val] of v.data) {
+              if (code === 10) x = parseFloat(val);
+              else if (code === 20) y = parseFloat(val);
+            }
+            pts.push([x, y]);
+          }
+          if (i < pairs.length && pairs[i][1] === 'SEQEND') readEntity();
+          this._addPath(pts, closed, closedLoops, openPaths);
+        } else if (ent.type === 'LINE') {
+          let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+          for (const [code, val] of ent.data) {
+            if (code === 10) x1 = parseFloat(val);
+            else if (code === 20) y1 = parseFloat(val);
+            else if (code === 11) x2 = parseFloat(val);
+            else if (code === 21) y2 = parseFloat(val);
+          }
+          segments.push([[x1, y1], [x2, y2]]);
+        }
+      }
+      const scalePts = (pts) => pts.map(([x, y]) => [x * unitScale, y * unitScale]);
+      const loops = closedLoops.map(scalePts);
+      const edgeList = segments.map((s) => scalePts(s));
+      for (const path of openPaths) {
+        const p = scalePts(path);
+        for (let k = 0; k + 1 < p.length; k++) edgeList.push([p[k], p[k + 1]]);
+      }
+      loops.push(...this._loopsFromSegments(edgeList));
+      return this._buildResult(loops, { source: 'dxf', unitScale });
+    }
+    // ---------------------------------------------------------------- PDF
+    static async parsePDF(file, options = {}) {
+      const pdfjs = await this._ensurePdfJs(options);
+      const data = new Uint8Array(await file.arrayBuffer());
+      const pdf = await pdfjs.getDocument({ data }).promise;
+      const page = await pdf.getPage(options.page || 1);
+      const ops = await page.getOperatorList();
+      const OPS = pdfjs.OPS;
+      // PDF user units are 1/72 inch; options.scale is the drawing scale denominator (1:100 -> 100)
+      const mmPerUnit = (25.4 / 72) * (options.scale || 1);
+      const loops = [];
+      const edges = [];
+      let ctm = [1, 0, 0, 1, 0, 0];
+      const stack = [];
+      const mul = (m, n) => [
+        m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
+        m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
+        m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5],
+      ];
+      const tx = (x, y) => [
+        (ctm[0] * x + ctm[2] * y + ctm[4]) * mmPerUnit,
+        (ctm[1] * x + ctm[3] * y + ctm[5]) * mmPerUnit,
+      ];
+      const addSub = (pts, closed) => {
+        if (pts.length < 2) return;
+        if (closed && pts.length >= 3) loops.push(pts);
+        else for (let k = 0; k + 1 < pts.length; k++) edges.push([pts[k], pts[k + 1]]);
+      };
+      for (let k = 0; k < ops.fnArray.length; k++) {
+        const fn = ops.fnArray[k];
+        const args = ops.argsArray[k];
+        if (fn === OPS.save) stack.push(ctm.slice());
+        else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+        else if (fn === OPS.transform) ctm = mul(ctm, args);
+        else if (fn === OPS.constructPath) {
+          const pathOps = args[0];
+          const c = args[1];
+          let ci = 0;
+          let cur = [];
+          let closed = false;
+          const flush = () => { addSub(cur, closed); cur = []; closed = false; };
+          for (const op of pathOps) {
+            if (op === OPS.moveTo) { flush(); cur.push(tx(c[ci], c[ci + 1])); ci += 2; }
+            else if (op === OPS.lineTo) { cur.push(tx(c[ci], c[ci + 1])); ci += 2; }
+            else if (op === OPS.curveTo) { cur.push(tx(c[ci + 4], c[ci + 5])); ci += 6; }
+            else if (op === OPS.curveTo2 || op === OPS.curveTo3) { cur.push(tx(c[ci + 2], c[ci + 3])); ci += 4; }
+            else if (op === OPS.closePath) { closed = true; }
+            else if (op === OPS.rectangle) {
+              flush();
+              const x = c[ci], y = c[ci + 1], w = c[ci + 2], h = c[ci + 3];
+              ci += 4;
+              addSub([tx(x, y), tx(x + w, y), tx(x + w, y + h), tx(x, y + h)], true);
+            }
+          }
+          flush();
+        }
+      }
+      loops.push(...this._loopsFromSegments(edges));
+      return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 });
+    }
+    static _ensurePdfJs(options) {
+      if (root.pdfjsLib) {
+        this._configureWorker(options);
+        return Promise.resolve(root.pdfjsLib);
+      }
+      const url = options.pdfJsUrl || (root.cadFloorPlanData && root.cadFloorPlanData.pdfJsUrl) || PDFJS_URL;
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.onload = () => { this._configureWorker(options); resolve(root.pdfjsLib); };
+        s.onerror = () => reject(new Error('PDF.jsの読み込みに失敗しました。ネットワーク接続を確認してください。'));
+        document.head.appendChild(s);
+      });
+    }
+    static _configureWorker(options) {
+      const w = options.pdfWorkerUrl || (root.cadFloorPlanData && root.cadFloorPlanData.pdfWorkerUrl) || PDFJS_WORKER_URL;
+      root.pdfjsLib.GlobalWorkerOptions.workerSrc = w;
+    }
+    // --------------------------------------------------------------- JSON
+    static parseJSON(text) {
+      let data;
+      try { data = JSON.parse(text); } catch (e) { throw new Error('JSONの形式が正しくありません: ' + e.message); }
+      const rooms = Array.isArray(data) ? data : data.rooms;
+      if (!Array.isArray(rooms) || !rooms.length) throw new Error('JSONに rooms 配列がありません。');
+      return {
+        rooms: rooms.map((r, idx) => this.normalizeRoom(r, idx)),
+        metadata: Object.assign({ source: 'json' }, data.metadata || {}),
+      };
+    }
+    // ------------------------------------------------------------ helpers
+    static _addPath(pts, closed, closedLoops, openPaths) {
+      if (pts.length < 2) return;
+      const first = pts[0], last = pts[pts.length - 1];
+      const selfClosed = pts.length >= 4 && Math.hypot(first[0] - last[0], first[1] - last[1]) < 1e-6;
+      if ((closed || selfClosed) && pts.length >= 3) closedLoops.push(pts);
+      else openPaths.push(pts);
+    }
+    // Chain segments into simple closed loops (every node must have exactly two segments).
+    static _loopsFromSegments(segments) {
+      const key = (p) => Math.round(p[0] / SNAP_MM) + ',' + Math.round(p[1] / SNAP_MM);
+      const nodes = new Map();
+      const addEdge = (a, b) => {
+        const ka = key(a), kb = key(b);
+        if (ka === kb) return;
+        if (!nodes.has(ka)) nodes.set(ka, { p: a, n: new Set() });
+        if (!nodes.has(kb)) nodes.set(kb, { p: b, n: new Set() });
+        nodes.get(ka).n.add(kb);
+        nodes.get(kb).n.add(ka);
+      };
+      for (const [a, b] of segments) addEdge(a, b);
+      const visited = new Set();
+      const loops = [];
+      for (const [startKey, node] of nodes) {
+        if (visited.has(startKey)) continue;
+        // walk the component; accept only if it is a simple cycle
+        const comp = [];
+        const queue = [startKey];
+        const seen = new Set([startKey]);
+        while (queue.length) {
+          const k = queue.pop();
+          comp.push(k);
+          for (const nb of nodes.get(k).n) if (!seen.has(nb)) { seen.add(nb); queue.push(nb); }
+        }
+        comp.forEach((k) => visited.add(k));
+        if (comp.length < 3 || !comp.every((k) => nodes.get(k).n.size === 2)) continue;
+        const pts = [];
+        let prev = null;
+        let cur = startKey;
+        do {
+          pts.push(nodes.get(cur).p);
+          const next = [...nodes.get(cur).n].find((k) => k !== prev);
+          prev = cur;
+          cur = next;
+        } while (cur !== startKey && pts.length <= comp.length);
+        if (pts.length === comp.length) loops.push(pts);
+      }
+      return loops;
+    }
+    static _buildResult(loops, metadata) {
+      const rooms = [];
+      loops.forEach((pts) => {
+        const room = this.normalizeRoom({ vertices: pts }, rooms.length);
+        if (this.calculateArea(room.vertices) >= MIN_ROOM_AREA_MM2) rooms.push(room);
+      });
+      if (!rooms.length) {
+        throw new Error(
+          '部屋の輪郭（0.5㎡以上の閉じた図形）を検出できませんでした。' +
+          '壁の外形を閉じたポリライン、またはつながった線で描いてください。'
+        );
+      }
+      rooms.forEach((r, i) => { r.id = 'room_' + (i + 1); });
+      return { rooms, metadata };
+    }
+    static normalizeRoom(room, idx) {
+      let v = (room.vertices || []).map((p) => [Number(p[0]), Number(p[1])]);
+      if (v.length > 1) {
+        const a = v[0], b = v[v.length - 1];
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6) v.pop();
+      }
+      if (v.length < 3 || v.some((p) => !isFinite(p[0]) || !isFinite(p[1]))) {
+        throw new Error('部屋 ' + (room.id || idx + 1) + ' の頂点が不正です（3点以上の数値が必要）。');
+      }
+      const walls = Array.isArray(room.walls) && room.walls.length === v.length
+        ? room.walls.map((w, i) => ({
+          from: w.from != null ? w.from : i,
+          to: w.to != null ? w.to : (i + 1) % v.length,
+          height: Number(w.height) || DEFAULT_WALL_HEIGHT,
+          material: w.material || 'wallpaper',
+        }))
+        : v.map((_, i) => ({ from: i, to: (i + 1) % v.length, height: DEFAULT_WALL_HEIGHT, material: 'wallpaper' }));
+      walls.forEach((w) => {
+        const a = v[w.from], b = v[w.to];
+        w.length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      });
+      return {
+        id: room.id || 'room_' + (idx + 1),
+        vertices: v,
+        walls,
+        floor: room.floor || { material: 'carpet' },
+      };
+    }
+    static validate(data) {
+      if (!data || !Array.isArray(data.rooms) || !data.rooms.length) throw new Error('部屋データがありません。');
+      data.rooms.forEach((r, i) => {
+        if (!r.vertices || r.vertices.length < 3) throw new Error('部屋 ' + (r.id || i + 1) + ': 頂点が3点未満です。');
+        if (!Array.isArray(r.walls)) throw new Error('部屋 ' + (r.id || i + 1) + ': walls がありません。');
+      });
+      return true;
+    }
+    static calculateArea(vertices) {
+      let area = 0;
+      for (let i = 0; i < vertices.length; i++) {
+        const [x1, y1] = vertices[i];
+        const [x2, y2] = vertices[(i + 1) % vertices.length];
+        area += x1 * y2 - x2 * y1;
+      }
+      return Math.abs(area) / 2;
+    }
+    static calculateWallArea(walls) {
+      return walls.reduce((sum, w) => sum + w.length * (w.height || DEFAULT_WALL_HEIGHT), 0);
+    }
+  }
+  CADParser.DEFAULT_WALL_HEIGHT = DEFAULT_WALL_HEIGHT;
+  root.CADParser = CADParser;
+  if (typeof module !== 'undefined' && module.exports) module.exports = CADParser;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+/**
+ * ThreeRoomRenderer: draws CADParser room data with Three.js.
+ * Input is millimetres (CAD, Y up); the scene is metres with CAD (x, y) -> world (x, 0, -y).
+ */
+(function (root) {
+  'use strict';
+  const MM = 0.001;
+  class ThreeRoomRenderer {
+    constructor(container, options = {}) {
+      if (typeof THREE === 'undefined') throw new Error('Three.js が読み込まれていません。');
+      this.container = container;
+      this.options = Object.assign({ width: 800, height: 600, backgroundColor: 0x09090b }, options);
+      this.floors = [];
+      this.walls = [];
+      this.rooms = [];
+      this.bounds = null;
+      this._raf = 0;
+      this._textures = { floor: null, wall: null };
+      const w = container.clientWidth || this.options.width;
+      const h = container.clientHeight || this.options.height;
+      this.scene = new THREE.Scene();
+      this.scene.background = new THREE.Color(this.options.backgroundColor);
+      this.camera = new THREE.PerspectiveCamera(45, w / h, 0.05, 500);
+      this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      this.renderer.setSize(w, h);
+      if ('outputColorSpace' in this.renderer) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      else this.renderer.outputEncoding = THREE.sRGBEncoding;
+      const el = this.renderer.domElement;
+      el.style.display = 'block';
+      el.style.width = '100%';
+      el.style.height = '100%';
+      el.style.touchAction = 'none';
+      container.appendChild(el);
+      this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+      const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+      sun.position.set(3, 8, 4);
+      this.scene.add(sun);
+      this.orbit = { target: new THREE.Vector3(0, 0.5, 0), radius: 8, theta: Math.PI / 4, phi: 1.0 };
+      this._bindControls();
+      if (typeof ResizeObserver !== 'undefined') {
+        this._ro = new ResizeObserver(() => this.resize());
+        this._ro.observe(container);
+      }
+      this._updateCamera();
+    }
+    // ------------------------------------------------------------ public API
+    loadFloorPlan(data) {
+      root.CADParser.validate(data);
+      this._clear();
+      this.rooms = data.rooms;
+      let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, maxH = 0;
+      this.rooms.forEach((room, ri) => {
+        const pts = room.vertices.map(([x, y]) => new THREE.Vector2(x * MM, -y * MM)); // (x, z)
+        pts.forEach((p) => {
+          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+          minZ = Math.min(minZ, p.y); maxZ = Math.max(maxZ, p.y);
+        });
+        this._buildFloor(room, pts);
+        room.walls.forEach((wall, wi) => {
+          maxH = Math.max(maxH, (wall.height || 2400) * MM);
+          this._buildWall(room, pts, wall, ri, wi);
+        });
+      });
+      this.bounds = { minX, minZ, maxX, maxZ, maxH };
+      this._applyTextures();
+      this.resetCamera();
+    }
+    setFloorTexture(url) {
+      this._loadTexture(url, (t) => { this._textures.floor = t; this._applyTextures(); });
+    }
+    // index === undefined: apply to every wall
+    setWallTexture(url, index) {
+      this._loadTexture(url, (t) => {
+        if (index == null) {
+          this._textures.wall = t;
+        } else if (this.walls[index]) {
+          this.walls[index].mesh.material.map = t;
+          this.walls[index].mesh.material.color.set(0xffffff);
+          this.walls[index].mesh.material.needsUpdate = true;
+        }
+        this._applyTextures();
+      });
+    }
+    resetCamera() {
+      if (!this.bounds) return;
+      const b = this.bounds;
+      const sizeX = b.maxX - b.minX, sizeZ = b.maxZ - b.minZ;
+      const size = Math.max(sizeX, sizeZ, b.maxH, 1);
+      this.orbit.target.set((b.minX + b.maxX) / 2, b.maxH * 0.3, (b.minZ + b.maxZ) / 2);
+      this.orbit.radius = size * 1.9;
+      this.orbit.theta = Math.PI / 4;
+      this.orbit.phi = 0.95;
+      this._updateCamera();
+    }
+    getAreas() {
+      let floor = 0, wall = 0;
+      this.rooms.forEach((r) => {
+        floor += root.CADParser.calculateArea(r.vertices);
+        wall += root.CADParser.calculateWallArea(r.walls);
+      });
+      return { floorArea: Math.round(floor / 1e4) / 100, wallArea: Math.round(wall / 1e4) / 100 };
+    }
+    resize() {
+      const w = this.container.clientWidth, h = this.container.clientHeight;
+      if (!w || !h) return;
+      this.renderer.setSize(w, h);
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      this._render();
+    }
+    dispose() {
+      cancelAnimationFrame(this._raf);
+      if (this._ro) this._ro.disconnect();
+      this._clear();
+      this.renderer.dispose();
+      if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
+    // -------------------------------------------------------------- geometry
+    _buildFloor(room, pts) {
+      const geo = new THREE.ShapeGeometry(new THREE.Shape(room.vertices.map(([x, y]) => new THREE.Vector2(x * MM, y * MM))));
+      // normalise UVs so one image spans the whole floor (north up)
+      const pos = geo.attributes.position;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        minX = Math.min(minX, pos.getX(i)); maxX = Math.max(maxX, pos.getX(i));
+        minY = Math.min(minY, pos.getY(i)); maxY = Math.max(maxY, pos.getY(i));
+      }
+      const uv = geo.attributes.uv;
+      for (let i = 0; i < pos.count; i++) {
+        uv.setXY(i, (pos.getX(i) - minX) / (maxX - minX || 1), (pos.getY(i) - minY) / (maxY - minY || 1));
+      }
+      geo.rotateX(-Math.PI / 2); // (x, y, 0) -> (x, 0, -y)
+      const mat = new THREE.MeshStandardMaterial({ color: 0x8a7b5e, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      this.scene.add(mesh);
+      this.floors.push({ mesh });
+    }
+    _buildWall(room, pts, wall, ri, wi) {
+      const a = pts[wall.from], b = pts[wall.to];
+      const dx = b.x - a.x, dz = b.y - a.y;
+      const len = Math.hypot(dx, dz);
+      if (len < 1e-6) return;
+      const h = (wall.height || 2400) * MM;
+      let angle = -Math.atan2(dz, dx);
+      // plane front face normal is (sin, cos) after rotation.y = angle; make it face the room interior
+      const mx = (a.x + b.x) / 2, mz = (a.y + b.y) / 2;
+      const probe = new THREE.Vector2(mx + Math.sin(angle) * 0.02, mz + Math.cos(angle) * 0.02);
+      if (!this._inside(probe, pts)) angle += Math.PI;
+      const geo = new THREE.PlaneGeometry(len, h);
+      const mat = new THREE.MeshStandardMaterial({ color: 0xd8d8dc, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(mx, h / 2, mz);
+      mesh.rotation.y = angle;
+      this.scene.add(mesh);
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0x71717a })
+      );
+      edges.position.copy(mesh.position);
+      edges.rotation.copy(mesh.rotation);
+      this.scene.add(edges);
+      this.walls.push({ mesh, edges, roomIndex: ri, wallIndex: wi });
+    }
+    _inside(p, pts) {
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+        if ((yi > p.y) !== (yj > p.y) && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+    // -------------------------------------------------------------- textures
+    _loadTexture(url, cb) {
+      new THREE.TextureLoader().load(url, (t) => {
+        if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
+        else t.encoding = THREE.sRGBEncoding;
+        t.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+        cb(t);
+      });
+    }
+    _applyTextures() {
+      const f = this._textures.floor, w = this._textures.wall;
+      if (f) this.floors.forEach(({ mesh }) => { mesh.material.map = f; mesh.material.color.set(0xffffff); mesh.material.needsUpdate = true; });
+      if (w) this.walls.forEach(({ mesh }) => { if (!mesh.material.map) { mesh.material.map = w; mesh.material.color.set(0xffffff); mesh.material.needsUpdate = true; } });
+      this._render();
+    }
+    // -------------------------------------------------------------- controls
+    _bindControls() {
+      const el = this.renderer.domElement;
+      let last = null;
+      el.addEventListener('pointerdown', (e) => { last = [e.clientX, e.clientY]; el.setPointerCapture(e.pointerId); });
+      el.addEventListener('pointerup', () => { last = null; });
+      el.addEventListener('pointermove', (e) => {
+        if (!last) return;
+        this.orbit.theta -= (e.clientX - last[0]) * 0.008;
+        this.orbit.phi = Math.min(1.5, Math.max(0.1, this.orbit.phi - (e.clientY - last[1]) * 0.008));
+        last = [e.clientX, e.clientY];
+        this._updateCamera();
+      });
+      el.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.orbit.radius = Math.min(200, Math.max(0.5, this.orbit.radius * (e.deltaY > 0 ? 1.1 : 0.9)));
+        this._updateCamera();
+      }, { passive: false });
+    }
+    _updateCamera() {
+      const o = this.orbit;
+      this.camera.position.set(
+        o.target.x + o.radius * Math.sin(o.phi) * Math.sin(o.theta),
+        o.target.y + o.radius * Math.cos(o.phi),
+        o.target.z + o.radius * Math.sin(o.phi) * Math.cos(o.theta)
+      );
+      this.camera.lookAt(o.target);
+      this._render();
+    }
+    _render() {
+      if (this._raf) return;
+      this._raf = requestAnimationFrame(() => {
+        this._raf = 0;
+        this.renderer.render(this.scene, this.camera);
+      });
+    }
+    _clear() {
+      const drop = (obj) => {
+        this.scene.remove(obj);
+        obj.geometry && obj.geometry.dispose();
+        obj.material && obj.material.dispose();
+      };
+      this.floors.forEach(({ mesh }) => drop(mesh));
+      this.walls.forEach(({ mesh, edges }) => { drop(mesh); drop(edges); });
+      this.floors = [];
+      this.walls = [];
+    }
+  }
+  root.ThreeRoomRenderer = ThreeRoomRenderer;
+  if (typeof module !== 'undefined' && module.exports) module.exports = ThreeRoomRenderer;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+/**
+ * CAD Floor Plan widget: wires the shortcode markup to CADParser and ThreeRoomRenderer.
+ * Each widget instance is available as element.cfpWidget (e.g. widget.renderer.setFloorTexture(url)).
+ */
+(function () {
+  'use strict';
+  const SAMPLE = {
+    rooms: [{
+      id: 'sample',
+      vertices: [[0, 0], [6000, 0], [6000, 2500], [3500, 2500], [3500, 5000], [0, 5000]],
+    }],
+    metadata: { source: 'sample' },
+  };
+  class CADFloorPlanWidget {
+    constructor(el) {
+      this.el = el;
+      this.renderer = null;
+      this.data = null;
+      this.lastFile = null;
+      this.$ = (name) => el.querySelector('[data-cfp="' + name + '"]');
+      this.height = parseInt(el.dataset.height, 10) || 600;
+      this.$('canvas').style.height = this.height + 'px';
+      this._bind();
+      if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル（L字の部屋）');
+    }
+    _bind() {
+      const drop = this.$('drop');
+      const input = this.$('file');
+      drop.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => input.files[0] && this.loadFile(input.files[0]));
+      ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
+      ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('is-over'); }));
+      drop.addEventListener('drop', (e) => e.dataTransfer.files[0] && this.loadFile(e.dataTransfer.files[0]));
+      this.$('scale').addEventListener('change', () => this.lastFile && this.loadFile(this.lastFile));
+      this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル（L字の部屋）'));
+      this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
+      this.$('save-btn').addEventListener('click', () => this.saveJSON());
+      this.$('floor-tex').addEventListener('change', (e) => this._texture(e, 'floor'));
+      this.$('wall-tex').addEventListener('change', (e) => this._texture(e, 'wall'));
+    }
+    async loadFile(file) {
+      this.lastFile = file;
+      this.status('読み込み中…', 'loading');
+      try {
+        const scale = parseFloat(this.$('scale').value) || 1;
+        const data = await CADParser.parseFloorPlan(file, { scale });
+        this.loadData(data, file.name);
+      } catch (err) {
+        this.status('エラー: ' + err.message, 'error');
+        console.error(err);
+      }
+    }
+    loadData(data, label) {
+      try {
+        const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: data.metadata };
+        CADParser.validate(normalized);
+        if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
+        this.renderer.loadFloorPlan(normalized);
+        this.data = normalized;
+        const a = this.renderer.getAreas();
+        this.$('filename').textContent = label;
+        this.$('floor-area').textContent = a.floorArea + ' ㎡';
+        this.$('wall-area').textContent = a.wallArea + ' ㎡';
+        this.$('room-count').textContent = normalized.rooms.length;
+        this.status('読み込みました（部屋 ' + normalized.rooms.length + '）', 'success');
+      } catch (err) {
+        this.status('エラー: ' + err.message, 'error');
+        console.error(err);
+      }
+    }
+    _texture(e, kind) {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (!this.renderer) return this.status('先に間取りを読み込んでください。', 'error');
+      const url = URL.createObjectURL(f);
+      if (kind === 'floor') this.renderer.setFloorTexture(url);
+      else this.renderer.setWallTexture(url);
+    }
+    saveJSON() {
+      if (!this.data) return;
+      const blob = new Blob([JSON.stringify(this.data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'floor-plan.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    status(msg, type) {
+      const s = this.$('status');
+      s.textContent = msg;
+      s.className = 'cfp-status cfp-status-' + type;
+    }
+  }
+  function init() {
+    document.querySelectorAll('.cad-floor-plan-widget').forEach((el) => {
+      if (!el.cfpWidget) el.cfpWidget = new CADFloorPlanWidget(el);
+    });
+  }
+  window.initCADFloorPlan = init;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>

@@ -3,7 +3,7 @@
  * Plugin Name: CAD Floor Plan 3D Simulator
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: DXF / ベクターPDF / JSON の間取りデータを読み込み、ブラウザ上で3D表示して床・壁の面積を計算します。有効化すると専用の固定ページを自動作成します。
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '1.1.0');
+define('CFP_VERSION', '1.2.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PAGE_SLUG', 'cad-floor-plan');
 define('CFP_SHORTCODE', 'cad_floor_plan');
