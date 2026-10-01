@@ -375,7 +375,9 @@
   [cad_floor_plan]
 
   <section class="perspective-section" id="perspective-section">
-    <h2 class="section-title-dark" style="margin-top:0;">🏠 お部屋パース（簡易パースプレビュー）</h2>
+    <details class="cfp-fold" id="persp-fold">
+      <summary class="cfp-fold-summary"><h2 class="section-title-dark" style="margin-top:0;">🏠 お部屋パース（簡易パースプレビュー）・壁紙のサイズと保存</h2></summary>
+      <div class="cfp-fold-body">
     <p class="section-lead-text" style="text-align:center;">上で処理した<strong>① カーペット用</strong>・<strong>② 壁紙用</strong>の減色デザインを、簡易的な部屋のパース（透視図）に自動反映します。<br><strong>※あくまで簡易イメージです。実際の仕上がり・見え方とは異なります。</strong></p>
 
     <div class="persp-room" id="persp-room">
@@ -421,6 +423,8 @@
     </div>
     <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは左右10mmずつ重なり（1巾が受け持つ壁は890mm）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
     <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下100mmずつの裁断代」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
+      </div>
+    </details>
   </section>
 
   <!-- 保存ボタン群（通常PSD保存 ＆ 5mmストレッチ保存） -->
@@ -2473,6 +2477,10 @@
         layoutRoom();
       };
     }
+
+    // 折りたたみを開いたときに、表示の大きさを計算し直す（閉じている間は幅が0のため）
+    const fold = $('persp-fold');
+    if (fold) fold.addEventListener('toggle', () => { if (fold.open) layoutRoom(); });
 
     updatePerspectiveRoom();
   }
