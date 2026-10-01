@@ -1115,8 +1115,13 @@
       this._thumb('src-wall', hasWall ? wall : null);
       this.$('src-floor-text').textContent = hasFloor ? '適用中' : '未処理（① でデザイン画像を選ぶと適用されます）';
       this.$('src-wall-text').textContent = hasWall ? '適用中' : '未処理（② でデザイン画像を選ぶと適用されます）';
+      // 壁紙は既定で減色しない（CMYK印刷）。「壁紙を減色する」のときだけ減色イメージと表示する
+      const wallReduced = !!(document.getElementById('cw-reduce-on') || {}).checked;
+      const lbl = this.$('src-wall-label');
+      if (lbl) lbl.textContent = wallReduced ? '② 壁紙用の減色イメージ' : '② 壁紙用のデザイン画像（元画像の色のまま）';
       if (!note) return;
-      note.textContent = hasFloor && hasWall ? '床・壁とも、減色後のイメージ画像を3Dに適用しています。' : '';
+      note.textContent = hasFloor && hasWall
+        ? (wallReduced ? '床・壁とも、減色後のイメージ画像を3Dに適用しています。' : '床は①の減色後のイメージ、壁は②の壁紙用デザイン画像（元画像の色のまま）を3Dに適用しています。') : '';
     }
 
     // small preview of the picture that is applied (nearest-neighbour, so the 1 px pattern stays crisp)

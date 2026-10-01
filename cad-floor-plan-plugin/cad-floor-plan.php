@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.32.0
+ * Version: 2.33.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.32.0');
+define('CFP_VERSION', '2.33.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -354,7 +354,7 @@ final class CAD_Floor_Plan_Plugin {
 
                 <div class="cfp-design-src" data-cfp="design-src" hidden>
                   <div class="cfp-design-item"><canvas data-cfp="src-floor" width="72" height="72"></canvas><div><b>床</b> ← ① カーペット用の減色イメージ<br><span data-cfp="src-floor-text"></span></div></div>
-                  <div class="cfp-design-item"><canvas data-cfp="src-wall" width="72" height="72"></canvas><div><b>壁</b> ← ② 壁紙用の減色イメージ<br><span data-cfp="src-wall-text"></span></div></div>
+                  <div class="cfp-design-item"><canvas data-cfp="src-wall" width="72" height="72"></canvas><div><b>壁</b> ← <span data-cfp="src-wall-label">② 壁紙用のデザイン画像（元画像の色のまま）</span><br><span data-cfp="src-wall-text"></span></div></div>
                 </div>
                 <div class="cfp-raster" data-cfp="raster" hidden>
                   <div class="cfp-raster-title">画像（PNG / JPEG）の図面の読み取り設定</div>
