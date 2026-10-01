@@ -246,6 +246,9 @@
       }
 
       loops.push(...this._loopsFromSegments(edges));
+      const vectorShapes = loops.length + edges.length;
+      const imageOps = [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintJpegXObject].filter((o) => o != null);
+      const hasImage = ops.fnArray.some((f) => imageOps.includes(f));
 
       // text on the page (room names) in the same coordinate space as the paths
       let labels = [];
@@ -256,7 +259,42 @@
           .map((it) => ({ text: it.str.trim(), x: it.transform[4] * mmPerUnit, y: it.transform[5] * mmPerUnit }));
       } catch (e) { /* no text layer: rooms are simply numbered */ }
 
-      return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 }, labels);
+      try {
+        return this._buildResult(loops, { source: 'pdf', pdfScale: options.scale || 1 }, labels);
+      } catch (err) {
+        // a scanned PDF is just a picture: read the rendered page like a PNG
+        if (hasImage && vectorShapes < 20) {
+          const base = page.getViewport({ scale: 1 });
+          const k = 1200 / Math.max(base.width, base.height);
+          const viewport = page.getViewport({ scale: k });
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(viewport.width);
+          cv.height = Math.round(viewport.height);
+          const ctx = cv.getContext('2d', { willReadFrequently: true });
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          const res = this._detectRaster(cv, options);
+          res.metadata.fromPdfImage = true;
+          return res;
+        }
+        if (!loops.length) {
+          throw new Error(
+            'PDFに線は見つかりましたが、閉じた部屋の輪郭になっていません（壁の線が途切れている、または交差で枝分かれしています）。' +
+            '壁の外形を閉じた線で描き直すか、PNG / JPEG に書き出して入稿してください。'
+          );
+        }
+        let w = 0, h = 0, best = 0;
+        loops.forEach((l) => {
+          const b = this.bounds(l), a = this.calculateArea(l);
+          if (a > best) { best = a; w = b.maxX - b.minX; h = b.maxY - b.minY; }
+        });
+        throw new Error(
+          'PDFの図形は読み取れましたが、0.5㎡以上の閉じた部屋が見つかりませんでした。最も大きい閉じた図形は ' +
+          Math.round(w).toLocaleString('ja-JP') + '×' + Math.round(h).toLocaleString('ja-JP') + ' mm です。' +
+          '図面の縮尺が合っていない可能性があります（現在は 1:' + (options.scale || 1) + '）。図面が 1:100 なら「PDFの縮尺」に 100 を入力してください。'
+        );
+      }
     }
 
     static _ensurePdfJs(options) {
@@ -296,7 +334,13 @@
       ctx.fillStyle = '#fff'; // transparent PNG background counts as white
       ctx.fillRect(0, 0, W, H);
       ctx.drawImage(img, 0, 0, W, H);
-      const px = ctx.getImageData(0, 0, W, H).data;
+      return this._detectRaster(cv, options);
+    }
+
+    // Finds the rooms in a drawing that is already on a canvas (also used for scanned PDF pages).
+    static _detectRaster(cv, options = {}) {
+      const W = cv.width, H = cv.height;
+      const px = cv.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
 
       const gray = new Uint8Array(W * H);
       const hist = new Array(256).fill(0);

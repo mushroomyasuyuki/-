@@ -88,9 +88,9 @@
     async loadFile(file, opts = {}) {
       this.lastFile = file;
       const isImage = /\.(png|jpe?g|webp)$/i.test(file.name);
-      this.$('raster').hidden = !isImage;
-      if (!isImage) this.raster = null;
-      else if (!opts.keepScale) {
+      if (isImage) this.$('raster').hidden = false;
+      else if (!opts.keepScale) { this.$('raster').hidden = true; this.raster = null; }
+      if (isImage && !opts.keepScale) {
         // a new image: forget the previous calibration and start from the default detection settings
         this.raster = null;
         this.$('threshold').value = 0;
@@ -103,7 +103,7 @@
         const scale = parseFloat(this.$('scale').value) || 1;
         const unit = this.$('unit').value;
         const options = { scale, unit };
-        if (isImage) {
+        if (!this.$('raster').hidden) {
           options.threshold = parseFloat(this.$('threshold').value) || 0;
           options.gap = parseFloat(this.$('gap').value);
           if (this.raster && this.raster.calibrated) options.mmPerPx = this.raster.mmPerPx;
@@ -122,6 +122,7 @@
         CADParser.validate(normalized);
         if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
         this.raster = (normalized.metadata && normalized.metadata.raster) || null;
+        if (this.raster) this.$('raster').hidden = false; // also for a scanned PDF read as an image
         const prevIndex = this.roomIndex;
         const prevCount = this.data ? this.data.rooms.length : 0;
         this.data = normalized;
