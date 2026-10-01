@@ -1014,9 +1014,10 @@
       const rep = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : null;
       if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm, h: rep.mm * wall.height / wall.width };
       else this.renderer.wallRepeat = null;
+      this.renderer.wallSingle = !!(hasWall && rep && !rep.on);
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
-        hasWall && rep && !rep.on ? wall.width / wall.height : 0);
+        hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1);
       this._thumb('src-floor', hasFloor ? floor : null);
       this._thumb('src-wall', hasWall ? wall : null);
       this.$('src-floor-text').textContent = hasFloor ? '適用中' : '未処理（① でデザイン画像を選ぶと適用されます）';

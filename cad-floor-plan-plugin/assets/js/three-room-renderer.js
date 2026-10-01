@@ -112,9 +112,11 @@
     // null stretches the picture over each wall.
     // aspect: picture width / height, used when not repeating so that one picture covers each wall
     // without distortion (centred, the overflow cut off).
-    setWallRepeat(w, h, aspect) {
+    // singleScale: size of the single picture relative to the size that covers every wall (1 = 100 %)
+    setWallRepeat(w, h, aspect, singleScale) {
       this.wallRepeat = w > 0 && h > 0 ? { w, h } : null;
       this.wallAspect = aspect > 0 ? aspect : null;
+      this.wallSingleScale = singleScale > 0 ? singleScale : 1;
       this._measureWalls();
       this.walls.forEach((e) => this._wallUV(e));
       if (this._textures.wall) {
@@ -145,7 +147,7 @@
         else if (this.wallAspect) {
           // one picture, the same size on every wall: big enough to cover the longest wall and the
           // highest wall, centred on each wall (the overflow is cut off)
-          const imgW = Math.max(this._maxWall.len, this._maxWall.h * this.wallAspect);
+          const imgW = Math.max(this._maxWall.len, this._maxWall.h * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
           uv.setXY(i, 0.5 + (u0 - 0.5) * lenMm / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
         } else uv.setXY(i, u0, v0);
@@ -290,7 +292,13 @@
         copy.width = Math.min(2048, pot(copy.width));
         copy.height = Math.min(2048, pot(copy.height));
       }
-      copy.getContext('2d').drawImage(canvas, 0, 0, copy.width, copy.height);
+      const cx = copy.getContext('2d');
+      if (repeatable && this.wallSingle) {
+        // one picture: a white rim, so that the clamped edge shows white around a smaller picture
+        cx.fillStyle = '#ffffff';
+        cx.fillRect(0, 0, copy.width, copy.height);
+        cx.drawImage(canvas, 2, 2, copy.width - 4, copy.height - 4);
+      } else cx.drawImage(canvas, 0, 0, copy.width, copy.height);
       const t = new THREE.CanvasTexture(copy);
       if (repeatable && this.wallRepeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.minFilter = THREE.LinearFilter;
