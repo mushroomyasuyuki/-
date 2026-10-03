@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.59.0
+ * Version: 2.60.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.59.0');
+define('CFP_VERSION', '2.60.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -491,10 +491,18 @@ final class CAD_Floor_Plan_Plugin {
                   </div>
                   <div class="cfp-wp" data-cfp="wp" hidden>
                     <div class="cfp-layout-title">壁紙の巾の枠（切り分けなし・実寸）</div>
-                    <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下100mmずつ」です。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。マウスホイールか「＋ 拡大／− 縮小」で拡大縮小、「表示を動かす」「画像を移動」「枠を移動」を選ぶと、ドラッグか「← 左／右 →／↑ 上／↓ 下」ボタン（矢印キーも可。画像・枠は10mm、Shiftで100mm）で、表示・壁紙の画像・巾の枠をそれぞれ動かせます。</p>
+                    <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下100mmずつ」です。「壁をつなげる（部屋一周）」にチェックを入れて壁の番号を時計回りの順に入れると、その壁を横に並べ、柄が途切れずに一周つながるように貼ります（高さが違う壁は、下（床）合わせか上（天井）合わせを選べます）。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。マウスホイールか「＋ 拡大／− 縮小」で拡大縮小、「表示を動かす」「画像を移動」「枠を移動」を選ぶと、ドラッグか「← 左／右 →／↑ 上／↓ 下」ボタン（矢印キーも可。画像・枠は10mm、Shiftで100mm）で、表示・壁紙の画像・巾の枠をそれぞれ動かせます。</p>
                     <div class="cfp-wp-ctrl">
                       <label>巾（横幅）<input type="range" data-cfp="wp-roll-r" min="850" max="930" step="1" value="910"> <input type="number" data-cfp="wp-roll" min="850" max="930" step="1" value="910"> mm</label>
                       <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="10"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="10"> mm</label>
+                    </div>
+                    <div class="cfp-wp-join">
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-join"> 壁をつなげる（部屋一周）</label>
+                      <label>壁の番号（時計回りの順）<input type="text" data-cfp="wp-join-list" placeholder="例: 1,2,3,4" inputmode="numeric"></label>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-add" title="展開図の一覧で選んでいる壁の番号を、最後に追加します">＋ 選んでいる壁を追加</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-all" title="一覧のすべての壁を番号順に入れます">全部（番号順）</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-clear">クリア</button>
+                      <label>高さが違うとき <select data-cfp="wp-align"><option value="bottom">下（床）合わせ</option><option value="top">上（天井）合わせ</option></select></label>
                     </div>
                     <div class="cfp-trace-bar">
                       <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="wp-m-view" title="ドラッグで表示を動かす">表示を動かす</button>

@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.59.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.60.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -124,6 +124,8 @@
 .cfp-wp-ctrl{display:flex;flex-wrap:wrap;gap:8px 20px;margin:6px 0 10px;font-size:13px;color:#e4e4e7}
 .cfp-wp-ctrl input[type=number]{width:70px}
 .cfp-wp-view{touch-action:none;outline:none;display:block;width:100%;height:auto;max-height:420px;background:#fff;border-radius:4px}
+.cfp-wp-join{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 10px;padding:8px 10px;border:1px dashed #a855f7;border-radius:6px;font-size:13px;color:#e4e4e7}
+.cfp-wp-join input[type=text]{width:140px}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -2954,6 +2956,25 @@
       link('wp-ov-r', 'wp-ov');
       ['wp-show-cad', 'wp-show-img', 'wp-show-frame', 'wp-right'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
       this.$('wp-save').addEventListener('click', () => this._wpSave());
+      // joining several walls (clockwise, round the room)
+      const jl = this.$('wp-join-list');
+      this.$('wp-join').addEventListener('change', () => this._wpRender());
+      this.$('wp-align').addEventListener('change', () => this._wpRender());
+      jl.addEventListener('input', () => this._wpRender());
+      this.$('wp-join-add').addEventListener('click', () => {
+        if (this.elevIndex < 0) return;
+        const nums = this._wpJoinNums();
+        if (nums.indexOf(this.elevIndex + 1) < 0) nums.push(this.elevIndex + 1);
+        jl.value = nums.join(',');
+        this.$('wp-join').checked = true;
+        this._wpRender();
+      });
+      this.$('wp-join-all').addEventListener('click', () => {
+        jl.value = this._elevAll().map((w, i) => i + 1).filter((n, i) => this._elevVisible(this._elevAll()[i], i)).join(',');
+        this.$('wp-join').checked = true;
+        this._wpRender();
+      });
+      this.$('wp-join-clear').addEventListener('click', () => { jl.value = ''; this._wpRender(); });
       // zoom / pan of the view (a viewBox in mm)
       const svg = this.$('wp-svg');
       this.$('wp-fit').addEventListener('click', () => { this._wpView = null; this._wpRender(); });
@@ -3090,13 +3111,32 @@
       this._wpView = { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
       this._wpApplyView();
     }
+    // the wall numbers typed for joining (1-based, in order, no duplicates, only walls that exist)
+    _wpJoinNums() {
+      const all = this._elevAll(), seen = new Set();
+      return ((this.$('wp-join-list') || {}).value || '').split(/[^0-9]+/).map(Number)
+        .filter((n) => n >= 1 && n <= all.length && !seen.has(n) && seen.add(n));
+    }
+    // the walls shown: the joined walls (clockwise order) or the wall chosen in the list
+    _wpWalls() {
+      const all = this._elevAll();
+      if (this.$('wp-join') && this.$('wp-join').checked) {
+        const nums = this._wpJoinNums();
+        if (nums.length) return nums.map((n) => ({ w: all[n - 1], no: n }));
+      }
+      const w = all[this.elevIndex];
+      return w ? [{ w, no: this.elevIndex + 1 }] : [];
+    }
     _wpGeom() {
-      const wp = window.cfpWallPrint, w = this._elevAll()[this.elevIndex];
-      if (!wp || !w || !this.elev) return null;
-      const W = Math.max(1, Math.round(w.width)), WH = Math.max(1, Math.round(w.height));
+      const wp = window.cfpWallPrint;
+      if (!wp || !this.elev) return null;
+      const walls = this._wpWalls();
+      if (!walls.length) return null;
+      walls.forEach((x) => { x.W = Math.max(1, Math.round(x.w.width)); x.WH = Math.max(1, Math.round(x.w.height)); });
+      const W = walls.reduce((t, x) => t + x.W, 0), WH = Math.max(...walls.map((x) => x.WH));
       const H = WH + wp.TRIM_TOP + wp.TRIM_BOTTOM;
       const N = Math.max(1, Math.ceil((W + wp.OVERLAP - 5) / wp.STEP));
-      return { wp, w, W, WH, H, N, FW: Math.round(N * wp.STEP + wp.OVERLAP) };
+      return { wp, walls, w: walls[0].w, multi: walls.length > 1, W, WH, H, N, FW: Math.round(N * wp.STEP + wp.OVERLAP) };
     }
     // the wall's part of the elevation picture: [x, y, width, height] in picture pixels
     _wpCadBox(w) {
@@ -3105,27 +3145,32 @@
       const x0 = Math.min(...xs), y0 = Math.min(...ys);
       return [x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0];
     }
-    // the outline of a wall drawn as a polygon, in the picture's mm (null for a rectangle)
-    _wpPoly(g, ox) {
-      const w = g.w;
-      if (!w.poly || w.poly.length < 3) return null;
-      const [bx, by, bw, bh] = this._wpCadBox(w);
-      if (!(bw > 0) || !(bh > 0)) return null;
-      const sx = g.W / bw, sy = g.WH / bh;
-      const pts = w.poly.map((q) => [ox + (q[0] - bx) * sx, g.wp.TRIM_TOP + (q[1] - by) * sy]);
-      // a plain rectangle needs no outline
-      const xs = [...new Set(pts.map((q) => Math.round(q[0])))], ys = [...new Set(pts.map((q) => Math.round(q[1])))];
-      return pts.length === 4 && xs.length === 2 && ys.length === 2 ? null : pts;
+    // each wall's place and outline in the picture (mm): the walls side by side from ox, their floors (bottom)
+    // or ceilings (top) lined up; a wall drawn as a polygon keeps its shape
+    _wpShapes(g, ox) {
+      const top = (this.$('wp-align') || {}).value === 'top';
+      let x = ox;
+      return g.walls.map((it) => {
+        const x0 = x, y0 = g.wp.TRIM_TOP + (top ? 0 : g.WH - it.WH);
+        x += it.W;
+        const box = this._wpCadBox(it.w);
+        let pts = [[x0, y0], [x0 + it.W, y0], [x0 + it.W, y0 + it.WH], [x0, y0 + it.WH]];
+        if (it.w.poly && it.w.poly.length >= 3 && box[2] > 0 && box[3] > 0) {
+          const sx = it.W / box[2], sy = it.WH / box[3];
+          pts = it.w.poly.map((q) => [x0 + (q[0] - box[0]) * sx, y0 + (q[1] - box[1]) * sy]);
+        }
+        return { x0, y0, W: it.W, WH: it.WH, box, pts, no: it.no, w: it.w };
+      });
     }
     _wpRender() {
       const panel = this.$('wp');
       if (!panel) return;
-      const g = this.elevIndex >= 0 ? this._wpGeom() : null;
+      const g = this._wpGeom();
       if (!g) { panel.hidden = true; return; }
       panel.hidden = false;
       const { wp, w, W, WH, H, N, FW } = g;
       const svg = this.$('wp-svg');
-      const wid = this.elevIndex + '|' + W + 'x' + WH + '|' + (this._elevFile ? this._elevFile.name : '');
+      const wid = g.walls.map((x) => x.no).join('-') + '|' + W + 'x' + WH + '|' + (this._elevFile ? this._elevFile.name : '');
       if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
       const off = this._wpO();
@@ -3141,10 +3186,12 @@
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
       const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
       const bd = this.elev.backdrop;
+      const shapes = this._wpShapes(g, ox);
       if (showCad && bd) {
-        const [bx, by, bw, bh] = this._wpCadBox(w);
-        const inner = add('svg', { x: ox, y: wp.TRIM_TOP, width: W, height: WH, viewBox: [bx, by, bw, bh].join(' '), preserveAspectRatio: 'none' });
-        add('image', { href: bd.dataUrl, x: 0, y: 0, width: bd.widthPx, height: bd.heightPx }, inner);
+        shapes.forEach((sh) => {
+          const inner = add('svg', { x: sh.x0, y: sh.y0, width: sh.W, height: sh.WH, viewBox: sh.box.join(' '), preserveAspectRatio: 'none' });
+          add('image', { href: bd.dataUrl, x: 0, y: 0, width: bd.widthPx, height: bd.heightPx }, inner);
+        });
       }
       const src = wp.getSource();
       if (showImg && src) {
@@ -3181,17 +3228,23 @@
             stroke: col(i), 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
         }
         const purple = { stroke: '#d000d0', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' };
-        const poly = this._wpPoly(g, ox);
-        if (poly) add('polygon', Object.assign({ points: poly.map((q) => q.join(',')).join(' '), fill: 'none' }, purple));
-        else add('rect', Object.assign({ x: ox, y: wp.TRIM_TOP, width: W, height: WH, fill: 'none' }, purple));
+        shapes.forEach((sh) => {
+          add('polygon', Object.assign({ points: sh.pts.map((q) => q.join(',')).join(' '), fill: 'none' }, purple));
+          if (g.multi) { // the wall's number at its top left
+            const t = add('text', { x: sh.x0 + 40, y: sh.y0 + Math.min(260, sh.WH * 0.12), fill: '#d000d0', 'font-size': Math.min(220, sh.WH * 0.1), 'font-weight': 'bold' });
+            t.textContent = String(sh.no);
+          }
+        });
         // cut lines: in the middle of the overlap of two neighbouring strips, joined to the wall's top and bottom lines
         for (let i = 1; i < N; i++) {
           const cx = (right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x; // the middle of the overlap of two strips
-          (poly ? wp.cutSegments(poly, cx) : [[wp.TRIM_TOP, wp.TRIM_TOP + WH]]).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple)));
+          shapes.forEach((sh) => wp.cutSegments(sh.pts, cx).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple))));
         }
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);
-      this.$('wp-note').textContent = '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → 画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
+      this.$('wp-note').textContent = (g.multi
+        ? '壁 ' + g.walls.map((x) => x.no).join(' → ') + '（時計回りにつなげる・' + ((this.$('wp-align') || {}).value === 'top' ? '上（天井）' : '下（床）') + '合わせ） 幅の合計 ' + fmt(W) + ' × 高さ（最大） ' + fmt(WH) + ' mm → '
+        : '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → ') + '画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
         + '巾 ' + wp.ROLL + ' mm・合わせ代（巾が重なる幅） ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP) + ' mm）の真ん中（' + fmt(wp.OVERLAP / 2) + ' mm）のカット線。'
         + (off.img.x || off.img.y ? ' 画像を動かした量：横 ' + off.img.x + ' mm・縦 ' + off.img.y + ' mm。' : '')
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
@@ -3207,19 +3260,20 @@
       btn.textContent = '作成中…';
       try {
         await new Promise((r) => setTimeout(r, 30));
+        const right = this.$('wp-right').checked;
+        const shapes = this._wpShapes(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP);
         let cad = null;
         const bd = this.elev.backdrop;
         if (bd) {
           const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('図面の画像を読めませんでした')); i.src = bd.dataUrl; });
-          const [bx, by, bw, bh] = this._wpCadBox(w);
           cad = document.createElement('canvas');
-          cad.width = W; cad.height = WH;
+          cad.width = g.FW; cad.height = g.H;
           const cx = cad.getContext('2d');
           cx.imageSmoothingQuality = 'high';
-          cx.drawImage(img, bx, by, bw, bh, 0, 0, W, WH);
+          shapes.forEach((sh) => cx.drawImage(img, sh.box[0], sh.box[1], sh.box[2], sh.box[3], sh.x0, sh.y0, sh.W, sh.WH));
         }
-        const right = this.$('wp-right').checked;
-        const out = wp.buildWhole(cad, W, WH, right, this._wpPoly(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP), this._wpO());
+        const label = g.multi ? '壁 ' + g.walls.map((x) => x.no).join('→') + ' を時計回りにつなげる・幅の合計 ' + W + 'mm' : '壁の範囲 ' + W + '×' + WH + 'mm';
+        const out = wp.buildWhole(cad, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;

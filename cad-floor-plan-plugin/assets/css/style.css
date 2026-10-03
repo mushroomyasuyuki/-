@@ -134,3 +134,5 @@
 .cfp-wp-ctrl{display:flex;flex-wrap:wrap;gap:8px 20px;margin:6px 0 10px;font-size:13px;color:#e4e4e7}
 .cfp-wp-ctrl input[type=number]{width:70px}
 .cfp-wp-view{touch-action:none;outline:none;display:block;width:100%;height:auto;max-height:420px;background:#fff;border-radius:4px}
+.cfp-wp-join{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 10px;padding:8px 10px;border:1px dashed #a855f7;border-radius:6px;font-size:13px;color:#e4e4e7}
+.cfp-wp-join input[type=text]{width:140px}

@@ -2012,11 +2012,12 @@
     for (let i = 0; i + 1 < ys.length; i += 2) out.push([ys[i], ys[i + 1]]);
     return out;
   };
-  // poly: 変形した壁の形（絵の座標、mm）。無ければ四角
-  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right, poly, fo) {
+  // shapes: 壁の形（絵の座標、mm）の配列。壁をつなげたときは複数。無ければ四角1つ
+  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right, shapes, fo) {
     const P = WALL_PRINT;
     fo = fo || { x: 0, y: 0 }; // 枠を動かした量（mm）
     const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
+    if (!shapes || !shapes.length) shapes = [[[ox, P.TRIM_TOP], [ox + W, P.TRIM_TOP], [ox + W, P.TRIM_TOP + WH], [ox, P.TRIM_TOP + WH]]];
     for (let i = 0; i !== N; i++) {
       const x = right ? FW - P.ROLL - i * P.STEP : i * P.STEP;
       fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
@@ -2025,25 +2026,26 @@
     }
     fx.strokeStyle = '#d000d0';
     fx.lineWidth = 2;
-    if (poly) {
+    shapes.forEach((pts) => {
       fx.beginPath();
-      poly.forEach((q, i) => { if (i === 0) fx.moveTo(q[0], q[1]); else fx.lineTo(q[0], q[1]); });
+      pts.forEach((q, i) => { if (i === 0) fx.moveTo(q[0], q[1]); else fx.lineTo(q[0], q[1]); });
       fx.closePath();
       fx.stroke();
-    } else fx.strokeRect(ox, P.TRIM_TOP, W, WH);
-    // カット線：隣り合う巾の重なりの真ん中
+    });
+    // カット線：隣り合う巾の重なりの真ん中。壁の中にある部分だけ
     for (let i = 1; i !== N; i++) {
-      const cx = (right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE) + fo.x; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
-      (poly ? P.cutSegments(poly, cx) : [[P.TRIM_TOP, P.TRIM_TOP + WH]]).forEach((sg) => {
+      const cx = (right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE) + fo.x;
+      shapes.forEach((pts) => P.cutSegments(pts, cx).forEach((sg) => {
         fx.beginPath();
         fx.moveTo(cx, sg[0]);
         fx.lineTo(cx, sg[1]);
         fx.stroke();
-      });
+      }));
     }
   };
+  // cadFull: CAD図面のレイヤー（絵の大きさのcanvas、壁の位置に描いたもの）。W: 壁の幅（つなげたときは合計）、WH: 壁の高さ（最大）
   // off: { img: {x, y}, frame: {x, y} } 画像・枠を動かした量（mm）
-  WALL_PRINT.buildWhole = function (cad, W, WH, right, poly, off) {
+  WALL_PRINT.buildWhole = function (cadFull, W, WH, right, shapes, off, label) {
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
@@ -2052,11 +2054,11 @@
     const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
     const mk = () => { const c = document.createElement('canvas'); c.width = FW; c.height = H; return c; };
     const cadL = mk();
-    if (cad) cadL.getContext('2d').drawImage(cad, ox, P.TRIM_TOP, W, WH);
+    if (cadFull) cadL.getContext('2d').drawImage(cadFull, 0, 0);
     const design = mk();
     P.renderDesign(design, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH);
     const frame = mk();
-    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right, poly, off.frame);
+    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right, shapes, off.frame);
     const comp = mk();
     const cx = comp.getContext('2d');
     cx.fillStyle = '#ffffff';
@@ -2067,7 +2069,7 @@
     return {
       name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + '.psd',
       blob: writeCmykPsd(FW, H, comp, [
-        { name: '①CAD図面（壁の範囲 ' + W + '×' + WH + 'mm）', canvas: cadL },
+        { name: '①CAD図面（' + (label || '壁の範囲 ' + W + '×' + WH + 'mm') + '）', canvas: cadL },
         { name: '②壁紙の画像（切り分けなし・左右の余白と上下' + P.TRIM_TOP + 'mmを含む）', canvas: design },
         { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', canvas: frame }
       ], 25.4),
