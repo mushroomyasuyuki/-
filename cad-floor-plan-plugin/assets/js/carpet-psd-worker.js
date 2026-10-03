@@ -276,6 +276,7 @@
   // On the page (when a worker cannot be started): the same work, a little at a time
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
+      ver: 4,
       run: async (m, progress) => {
         const it = job(m);
         let r = it.next();
@@ -286,7 +287,8 @@
     return;
   }
 
-  self.postMessage({ type: 'ready', offscreen: typeof OffscreenCanvas !== 'undefined' });
+  // ver: 4 = 4レイヤー（CAD画像・部屋・変換画像・割付）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
+  self.postMessage({ type: 'ready', ver: 4, offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
       const it = job(ev.data);

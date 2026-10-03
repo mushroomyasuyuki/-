@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.69.0
+ * Version: 2.69.1
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.69.0');
+define('CFP_VERSION', '2.69.1');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -243,7 +243,7 @@ final class CAD_Floor_Plan_Plugin {
         wp_enqueue_script('cfp-resume', CFP_PLUGIN_URL . 'assets/js/resume.js', ['cfp-main'], CFP_VERSION, true);
         wp_localize_script('cfp-resume', 'cfpResumeConfig', CFP_Resume::client_config());
         $html = file_get_contents($file);
-        $html = str_replace('{{CFP_ASSET_URL}}', esc_url(CFP_PLUGIN_URL . 'assets/'), $html);
+        $html = str_replace(['{{CFP_ASSET_URL}}', '{{CFP_VERSION}}'], [esc_url(CFP_PLUGIN_URL . 'assets/'), CFP_VERSION], $html);
         $html = $this->fill_badges($html);
         $html = $this->fill_photos($html);
         return str_replace('[' . CFP_SHORTCODE . ']', $this->render_shortcode(['height' => '600']), $html);
