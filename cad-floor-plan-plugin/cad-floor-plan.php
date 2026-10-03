@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.63.1
+ * Version: 2.64.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.63.1');
+define('CFP_VERSION', '2.64.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -530,7 +530,7 @@ final class CAD_Floor_Plan_Plugin {
                 </div>
                 <div class="cfp-status" data-cfp="status"></div>
                 <div class="cfp-rooms" data-cfp="rooms" hidden>
-                  <div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div>
+                  <div class="cfp-rooms-head"><div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div><button type="button" class="cfp-btn cfp-btn-sm cfp-room-add" data-cfp="room-add" hidden title="自動で出た部屋とは別に、図面の上で四角・多角形で囲んで床（部屋）を追加します">＋ 床（部屋）を追加（図面の上で囲む）</button></div>
                   <div class="cfp-rooms-body">
                     <svg class="cfp-plan" data-cfp="plan" role="group" aria-label="間取りの平面図"></svg>
                     <div class="cfp-room-list" data-cfp="room-list"></div>

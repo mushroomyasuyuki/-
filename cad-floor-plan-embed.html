@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.63.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.64.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -132,6 +132,9 @@
 .cfp-focus-elev [data-cfp="trace"],.cfp-focus-elev [data-cfp="rooms"],.cfp-focus-elev [data-cfp="layout"],.cfp-focus-elev [data-cfp="raster"]{display:none!important}
 .cfp-dw-chip.is-focus{box-shadow:0 0 0 2px #facc15}
 .cfp-dw-both{margin-top:8px}
+.cfp-rooms-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin:0 0 8px}
+.cfp-rooms-head .cfp-rooms-title{margin:0}
+.cfp-room-add{background:#14532d;border-color:#22c55e}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -249,7 +252,7 @@
     </div>
     <div class="cfp-status" data-cfp="status"></div>
     <div class="cfp-rooms" data-cfp="rooms" hidden>
-      <div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div>
+      <div class="cfp-rooms-head"><div class="cfp-rooms-title">部屋を選択（平面図をクリック、または一覧から選ぶと、その部屋を3Dで表示します）</div><button type="button" class="cfp-btn cfp-btn-sm cfp-room-add" data-cfp="room-add" hidden title="自動で出た部屋とは別に、図面の上で四角・多角形で囲んで床（部屋）を追加します">＋ 床（部屋）を追加（図面の上で囲む）</button></div>
       <div class="cfp-rooms-body">
         <svg class="cfp-plan" data-cfp="plan" role="group" aria-label="間取りの平面図"></svg>
         <div class="cfp-room-list" data-cfp="room-list"></div>
@@ -2307,6 +2310,15 @@
       this.$('cal-btn').addEventListener('click', () => this.calibrate());
       this.$('cal-mm').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.calibrate(); } });
       this.$('trace-open').addEventListener('click', () => this.openTracer());
+      // add a floor (room) of one's own next to the ones found automatically: the tracer opens with the rectangle tool
+      this.$('room-add').addEventListener('click', async () => {
+        await this.openTracer(true);
+        if (this.tracer) {
+          this.tracer.setTool('rect');
+          ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => { const b = this.$('tool-' + t); if (b) b.classList.toggle('is-on', t === 'rect'); });
+        }
+        this.status('図面の上で、追加する床（部屋）を四角（対角の2点をドラッグ）か多角形（角を順にクリック）で囲んでください。', 'success');
+      });
       this.$('trace-close').addEventListener('click', () => { this.$('trace').hidden = true; });
       const tool = (name) => {
         if (!this.tracer) return;
@@ -2454,6 +2466,7 @@
         this.rebuildRooms();
         const rooms = this.data.rooms;
         this.$('trace-open').hidden = !(this.fromFile && (this.raster || /\.pdf$/i.test(label)));
+        this.$('room-add').hidden = this.$('trace-open').hidden;
         if (!rooms.length) {
           this._showEmpty();
         } else {
@@ -2944,7 +2957,7 @@
             this.raster = null;
             this.data = { rooms: [], metadata: {} };
             this.label = '未選択';
-            ['trace', 'raster', 'trace-open'].forEach((k) => { this.$(k).hidden = true; });
+            ['trace', 'raster', 'trace-open', 'room-add'].forEach((k) => { this.$(k).hidden = true; });
             this._showEmpty();
             this.$('size-note').textContent = '';
           }

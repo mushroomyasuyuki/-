@@ -142,3 +142,6 @@
 .cfp-focus-elev [data-cfp="trace"],.cfp-focus-elev [data-cfp="rooms"],.cfp-focus-elev [data-cfp="layout"],.cfp-focus-elev [data-cfp="raster"]{display:none!important}
 .cfp-dw-chip.is-focus{box-shadow:0 0 0 2px #facc15}
 .cfp-dw-both{margin-top:8px}
+.cfp-rooms-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin:0 0 8px}
+.cfp-rooms-head .cfp-rooms-title{margin:0}
+.cfp-room-add{background:#14532d;border-color:#22c55e}

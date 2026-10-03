@@ -175,6 +175,15 @@
       this.$('cal-btn').addEventListener('click', () => this.calibrate());
       this.$('cal-mm').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this.calibrate(); } });
       this.$('trace-open').addEventListener('click', () => this.openTracer());
+      // add a floor (room) of one's own next to the ones found automatically: the tracer opens with the rectangle tool
+      this.$('room-add').addEventListener('click', async () => {
+        await this.openTracer(true);
+        if (this.tracer) {
+          this.tracer.setTool('rect');
+          ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => { const b = this.$('tool-' + t); if (b) b.classList.toggle('is-on', t === 'rect'); });
+        }
+        this.status('図面の上で、追加する床（部屋）を四角（対角の2点をドラッグ）か多角形（角を順にクリック）で囲んでください。', 'success');
+      });
       this.$('trace-close').addEventListener('click', () => { this.$('trace').hidden = true; });
       const tool = (name) => {
         if (!this.tracer) return;
@@ -325,6 +334,7 @@
         const rooms = this.data.rooms;
 
         this.$('trace-open').hidden = !(this.fromFile && (this.raster || /\.pdf$/i.test(label)));
+        this.$('room-add').hidden = this.$('trace-open').hidden;
 
         if (!rooms.length) {
           this._showEmpty();
@@ -843,7 +853,7 @@
             this.raster = null;
             this.data = { rooms: [], metadata: {} };
             this.label = '未選択';
-            ['trace', 'raster', 'trace-open'].forEach((k) => { this.$(k).hidden = true; });
+            ['trace', 'raster', 'trace-open', 'room-add'].forEach((k) => { this.$(k).hidden = true; });
             this._showEmpty();
             this.$('size-note').textContent = '';
           }
