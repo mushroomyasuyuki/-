@@ -1294,14 +1294,17 @@
         const w = r.w, h = r.h;
         const [vx, vy] = view.toV([r.x0, r.y1]);
         let parent = add('g', {});
+        // checked: the image fills the whole tile layout (the carpet that is ordered, red frame, cut tiles included);
+        // unchecked: only the part inside the room's own shape
+        const id = 'cfp-lclip-' + (this._clipSeq = (this._clipSeq || 0) + 1);
+        const cp = add('clipPath', { id }, add('defs', {}));
         if (this.$('layout-clip-box').checked) {
-          // show the image only inside the tile layout (the carpet that is ordered)
-          const id = 'cfp-lclip-' + (this._clipSeq = (this._clipSeq || 0) + 1);
-          const cp = add('clipPath', { id }, add('defs', {}));
           const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
           add('rect', { x: bx, y: by, width: lay.box.x1 - lay.box.x0, height: lay.box.y1 - lay.box.y0 }, cp);
-          parent.setAttribute('clip-path', 'url(#' + id + ')');
+        } else {
+          add('polygon', { points: room.vertices.map((v) => view.toV(v).join(',')).join(' ') }, cp);
         }
+        parent.setAttribute('clip-path', 'url(#' + id + ')');
         add('image', { href: this._designUrl, x: vx, y: vy, width: w, height: h, preserveAspectRatio: 'none',
           opacity: (parseFloat(this.$('layout-dopacity').value) || 80) / 100 }, parent);
       }
@@ -1344,7 +1347,8 @@
     // where the converted carpet image sits (mm, Y up): centred on the tile layout, then shifted / scaled
     _designRect(lay, src, preview) {
       const d = preview || this.design;
-      const w = (lay.box.x1 - lay.box.x0) * d.scale, h = w * src.height / src.width;
+      // the carpet image is stretched to the ordered size (W x H) in the estimate tool, so it covers the whole layout
+      const w = (lay.box.x1 - lay.box.x0) * d.scale, h = (lay.box.y1 - lay.box.y0) * d.scale;
       const cx = (lay.box.x0 + lay.box.x1) / 2 + d.x, cy = (lay.box.y0 + lay.box.y1) / 2 + d.y;
       return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2, w, h };
     }
