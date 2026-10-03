@@ -904,6 +904,31 @@
       link('wp-ov-r', 'wp-ov');
       ['wp-show-cad', 'wp-show-img', 'wp-show-frame'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
       this.$('wp-save').addEventListener('click', () => this._wpSave());
+      // zoom / pan of the view (a viewBox in mm)
+      const svg = this.$('wp-svg');
+      this.$('wp-fit').addEventListener('click', () => { this._wpView = null; this._wpRender(); });
+      this.$('wp-zin').addEventListener('click', () => this._wpZoom(1 / 1.4));
+      this.$('wp-zout').addEventListener('click', () => this._wpZoom(1.4));
+      svg.addEventListener('wheel', (e) => { e.preventDefault(); this._wpZoom(e.deltaY < 0 ? 1 / 1.2 : 1.2, e); }, { passive: false });
+      let drag = null;
+      svg.addEventListener('pointerdown', (e) => {
+        const v = this._wpCurView();
+        if (!v) return;
+        drag = { x: e.clientX, y: e.clientY, v };
+        svg.setPointerCapture(e.pointerId);
+        svg.style.cursor = 'grabbing';
+      });
+      svg.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const r = svg.getBoundingClientRect();
+        const k = Math.max(drag.v.w / r.width, drag.v.h / r.height);
+        this._wpView = { x: drag.v.x - (e.clientX - drag.x) * k, y: drag.v.y - (e.clientY - drag.y) * k, w: drag.v.w, h: drag.v.h };
+        this._wpApplyView();
+      });
+      const end = () => { drag = null; svg.style.cursor = 'grab'; };
+      svg.addEventListener('pointerup', end);
+      svg.addEventListener('pointercancel', end);
+      svg.style.cursor = 'grab';
     }
 
     _wpClamp(name, v) {
@@ -920,6 +945,34 @@
       this._updateWallTotal();
       if (this.hasTool && this.renderer) this.syncDesigns(true);
       this._wpRender();
+    }
+
+    _wpCurView() {
+      const g = this._wpGeom();
+      if (!g) return null;
+      return this._wpView || { x: 0, y: 0, w: g.FW, h: g.H };
+    }
+
+    _wpApplyView() {
+      const v = this._wpCurView();
+      if (v) this.$('wp-svg').setAttribute('viewBox', [v.x, v.y, v.w, v.h].map((n) => Math.round(n * 100) / 100).join(' '));
+    }
+
+    // zoom by factor f (<1 zooms in), around the pointer (or the centre of the view)
+    _wpZoom(f, e) {
+      const g = this._wpGeom();
+      const v = this._wpCurView();
+      if (!g || !v) return;
+      const svg = this.$('wp-svg');
+      const r = svg.getBoundingClientRect();
+      const base = Math.max(g.FW / r.width, g.H / r.height);
+      const nw = Math.min(g.FW * 1.2, Math.max(150, v.w * f));
+      const nh = nw * v.h / v.w;
+      // the point under the pointer stays put
+      const px = e ? (e.clientX - r.left) / r.width : 0.5, py = e ? (e.clientY - r.top) / r.height : 0.5;
+      const ax = v.x + v.w * px, ay = v.y + v.h * py;
+      this._wpView = nw >= g.FW * 1.19 ? null : { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
+      this._wpApplyView();
     }
 
     _wpGeom() {
@@ -947,7 +1000,8 @@
       panel.hidden = false;
       const { wp, w, W, WH, H, N, FW } = g;
       const svg = this.$('wp-svg');
-      svg.setAttribute('viewBox', '0 0 ' + FW + ' ' + H);
+      if (this._wpWall !== w) { this._wpWall = w; this._wpView = null; } // a different wall: back to the whole view
+      this._wpApplyView();
       svg.textContent = '';
       const add = (name, attrs, parent) => {
         const e = document.createElementNS(SVG_NS, name);
