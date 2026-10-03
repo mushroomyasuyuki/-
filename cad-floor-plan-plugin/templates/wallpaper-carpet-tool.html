@@ -2232,7 +2232,8 @@
     }
   };
   // buildWhole と同じ内容を、タイルに分けて作る（大きな壁でも固まらない）。cadDraw(ctx): CAD図面を絵の座標に描く関数
-  WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress) {
+  // split: 幅が 30000mm（PSD の上限）を超えるときは、巾の区切りで 30000mm 以内の PSD に分けて ZIP にまとめる
+  WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress, split) {
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
@@ -2246,11 +2247,44 @@
       else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, FW, H); }
     };
     const frame = (ctx) => P.drawFrames(ctx, W, WH, N, FW, H, right, shapes, off.frame);
-    const blob = await writeCmykPsdTiled(FW, H, [
+    const layerDefs = [
       { name: '①CAD図面（' + (label || '壁の範囲 ' + W + '×' + WH + 'mm') + '）', draw: cadL },
       { name: '②壁紙の画像（切り分けなし・左右の余白と上下' + P.TRIM_TOP + 'mmを含む）', draw: design },
       { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', draw: frame }
-    ], (ctx) => { cadL(ctx); design(ctx); frame(ctx); }, 25.4, onProgress);
+    ];
+    const comp = (ctx) => { cadL(ctx); design(ctx); frame(ctx); };
+    const MAXW = 30000;
+    if (split ? FW > MAXW : false) {
+      // 巾を左から並べ、1ファイルに入る巾の数ずつ区切る（隣のファイルとは、巾の重なり（合わせ代）の分だけ重なる）
+      const xs = [];
+      for (let i = 0; i !== N; i++) xs.push(right ? FW - P.ROLL - i * P.STEP : i * P.STEP);
+      xs.sort((a, b) => a - b);
+      const per = Math.max(1, Math.floor((MAXW - P.ROLL) / P.STEP) + 1);
+      const M = Math.ceil(N / per);
+      const files = [];
+      const stamp = Date.now();
+      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が PSD の上限（30000px）を超えるため、巾の区切りで ' + M + ' 個の PSD に分けました。',
+        '各PSD：CMYK・1px = 1mm・25.4dpi、レイヤーは ①CAD図面 ②壁紙の画像 ③巾の枠。左から順に並べると、元の1枚の絵になります。',
+        '隣り合うPSDは、巾の重なり（合わせ代 ' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
+      for (let k = 0; k !== M; k++) {
+        const first = k * per, last = Math.min(N, (k + 1) * per) - 1;
+        const x0 = Math.max(0, Math.floor(xs[first])), x1 = Math.min(FW, Math.ceil(xs[last] + P.ROLL));
+        const pw = x1 - x0;
+        const sh = (fn) => (ctx) => { ctx.translate(-x0, 0); fn(ctx); };
+        const blob = await writeCmykPsdTiled(pw, H, layerDefs.map((L) => ({ name: L.name, draw: sh(L.draw) })), sh(comp), 25.4,
+          (f) => { if (onProgress) onProgress((k + f) / M); });
+        const name = 'wallpaper_whole_part' + (k + 1) + 'of' + M + '_strips' + (first + 1) + '-' + (last + 1) + '_x' + x0 + '-' + x1 + 'mm_' + pw + 'x' + H + 'mm.psd';
+        files.push({ name, blob });
+        lines.push((k + 1) + '. ' + name + '（' + (first + 1) + '〜' + (last + 1) + '巾目・全体の左から ' + x0 + '〜' + x1 + 'mm）');
+      }
+      files.push({ name: 'README_分けたPSDについて.txt', blob: new Blob([lines.join('\r\n')], { type: 'text/plain' }) });
+      const zip = await makeZip(files);
+      return {
+        name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_' + M + 'files_' + (right ? 'right' : 'left') + '_' + stamp + '.zip',
+        blob: zip, width: FW, height: H, strips: N, split: M
+      };
+    }
+    const blob = await writeCmykPsdTiled(FW, H, layerDefs, comp, 25.4, onProgress);
     return {
       name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + (FW > 30000 || H > 30000 ? '.psb' : '.psd'),
       blob, width: FW, height: H, strips: N, psb: FW > 30000 || H > 30000
