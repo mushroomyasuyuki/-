@@ -21,6 +21,10 @@
       this.svg = svg;
       this.onCommit = opts.onCommit || (() => {});
       this.onMove = opts.onMove || (() => {}); // (key, poly) after a room was dragged with the move tool
+      // tools handled by the caller (e.g. moving a tile layout): (tool, { dx, dy } in picture units, phase)
+      this.customTools = opts.customTools || [];
+      this.onCustomDrag = opts.onCustomDrag || (() => {});
+      this.cdrag = null;
       this.items = [];
       this.move = null;
       this.tool = 'rect';
@@ -38,16 +42,27 @@
       this.roomsLayer = el('g', { 'pointer-events': 'none' });
       this.draft = el('g', { 'pointer-events': 'none' });
       this.handles = el('g', { 'pointer-events': 'none' });
+      this.overlay = el('g', { 'pointer-events': 'none' }); // drawn by the caller (e.g. a tile layout)
       this.edit = null;
-      svg.append(this.image, this.roomsLayer, this.handles, this.draft);
+      svg.append(this.image, this.roomsLayer, this.overlay, this.handles, this.draft);
       svg.setAttribute('tabindex', '0');
       this._bind();
+    }
+
+    // shift of the picture only (fine alignment); the rooms stay where they are
+    setImageOffset(dx, dy) {
+      this.image.setAttribute('x', dx || 0);
+      this.image.setAttribute('y', dy || 0);
+    }
+
+    setImageVisible(on) {
+      this.image.style.display = on ? '' : 'none';
     }
 
     setBackdrop(dataUrl, W, H) {
       this.W = W;
       this.H = H;
-      this.image.setAttribute('href', dataUrl);
+      this.image.setAttribute('href', dataUrl || '');
       this.image.setAttribute('width', W);
       this.image.setAttribute('height', H);
       this.cancel();
@@ -93,6 +108,7 @@
     }
 
     _cursor() {
+      if (this.customTools.indexOf(this.tool) >= 0) return 'move';
       return this.tool === 'pan' ? 'grab' : (this.tool === 'move' ? 'move' : (this.tool === 'edit' ? 'default' : 'crosshair'));
     }
 
@@ -285,6 +301,11 @@
           return;
         }
         if (e.button !== 0) return;
+        if (this.customTools.indexOf(this.tool) >= 0) {
+          this.cdrag = { tool: this.tool, start: this._pt(e) };
+          svg.setPointerCapture(e.pointerId);
+          return;
+        }
         const p = this._clamp(this._pt(e));
         if (this.tool === 'edit') {
           const h = this._handleAt(p);
@@ -328,6 +349,11 @@
           this._applyView();
           return;
         }
+        if (this.cdrag) {
+          const p = this._pt(e);
+          this.onCustomDrag(this.cdrag.tool, { dx: p[0] - this.cdrag.start[0], dy: p[1] - this.cdrag.start[1] }, 'move');
+          return;
+        }
         if (this.edit) {
           const ed = this.edit;
           ed.it.poly[ed.vi] = this._snapCorner(ed.it.poly, ed.vi, this._clamp(this._pt(e)));
@@ -359,6 +385,12 @@
         if (this.pan) {
           this.pan = null;
           svg.style.cursor = this._cursor();
+          return;
+        }
+        if (this.cdrag) {
+          const p = this._pt(e), c = this.cdrag;
+          this.cdrag = null;
+          this.onCustomDrag(c.tool, { dx: p[0] - c.start[0], dy: p[1] - c.start[1] }, 'end');
           return;
         }
         if (this.edit) {
@@ -423,6 +455,14 @@
       });
 
       svg.addEventListener('keydown', (e) => {
+        // arrow keys nudge with a custom tool (10, or 100 with Shift, picture units)
+        const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+        if (arrows[e.key] && this.customTools.indexOf(this.tool) >= 0) {
+          e.preventDefault();
+          const k = e.shiftKey ? 100 : 10;
+          this.onCustomDrag(this.tool, { dx: arrows[e.key][0] * k, dy: arrows[e.key][1] * k }, 'nudge');
+          return;
+        }
         if (e.key === 'Escape') {
           if (this.move) { this.move.it._g.removeAttribute('transform'); this.move = null; }
           if (this.edit) { this.edit.it.poly = this.edit.orig; this._redrawItem(this.edit.it); this.edit = null; }

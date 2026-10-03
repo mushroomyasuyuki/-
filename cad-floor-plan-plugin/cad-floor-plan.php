@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.38.0
+ * Version: 2.39.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.38.0');
+define('CFP_VERSION', '2.39.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -439,6 +439,23 @@ final class CAD_Floor_Plan_Plugin {
                     <svg class="cfp-plan" data-cfp="plan" role="group" aria-label="間取りの平面図"></svg>
                     <div class="cfp-room-list" data-cfp="room-list"></div>
                   </div>
+                </div>
+                <div class="cfp-layout" data-cfp="layout" hidden>
+                  <div class="cfp-layout-title">カーペット割付（50cm × 50cm・部屋の中心から／赤線）</div>
+                  <p class="cfp-hint">選んだ部屋に、50cm角のタイルカーペットを部屋の中心から割り付けた線を、図面の上に赤線で表示します。端で切れるタイルも1枚として数え、見積もり（横幅・縦幅）に反映します（薄い赤＝端で切るタイル）。「割付を移動」でドラッグすると割付全体をずらせます（矢印キーで10mm、Shift+矢印で100mm）。「図面を移動」は図面の表示だけを動かします。</p>
+                  <div class="cfp-trace-bar">
+                    <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="layout-pan">移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-grid">割付を移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-image">図面を移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-center">中心に戻す</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-fit">全体</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-zin" title="図面を拡大">＋ 拡大</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-zout" title="図面を縮小">− 縮小</button>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-img" checked> 図面を表示</label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-grid" checked> 割付を表示</label>
+                  </div>
+                  <p class="cfp-layout-note" data-cfp="layout-note"></p>
+                  <svg class="cfp-elev-view cfp-layout-view" data-cfp="layout-svg" role="img" aria-label="カーペット割付"></svg>
                 </div>
                 <div class="cfp-canvas" data-cfp="canvas"></div>
                 <p class="cfp-hint">ドラッグで回転、ホイールで拡大縮小</p>

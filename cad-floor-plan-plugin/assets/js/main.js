@@ -17,6 +17,39 @@
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const fmtM = (mm) => (mm / 1000).toFixed(1);
   const fmtMm = (mm) => Math.round(mm).toLocaleString('ja-JP');
+  const TILE = 500; // carpet tile (mm)
+
+  // area of a polygon clipped to the rectangle x0..x1 / y0..y1 (Sutherland-Hodgman)
+  function clipArea(poly, x0, y0, x1, y1) {
+    let pts = poly;
+    const edges = [
+      (p) => p[0] >= x0, (p) => p[0] <= x1, (p) => p[1] >= y0, (p) => p[1] <= y1,
+    ];
+    const cross = [
+      (a, b) => [x0, a[1] + (b[1] - a[1]) * (x0 - a[0]) / (b[0] - a[0])],
+      (a, b) => [x1, a[1] + (b[1] - a[1]) * (x1 - a[0]) / (b[0] - a[0])],
+      (a, b) => [a[0] + (b[0] - a[0]) * (y0 - a[1]) / (b[1] - a[1]), y0],
+      (a, b) => [a[0] + (b[0] - a[0]) * (y1 - a[1]) / (b[1] - a[1]), y1],
+    ];
+    for (let k = 0; k < 4 && pts.length; k++) {
+      const out = [];
+      for (let i = 0; i < pts.length; i++) {
+        const cur = pts[i], prev = pts[(i + pts.length - 1) % pts.length];
+        const inC = edges[k](cur), inP = edges[k](prev);
+        if (inC) {
+          if (!inP) out.push(cross[k](prev, cur));
+          out.push(cur);
+        } else if (inP) out.push(cross[k](prev, cur));
+      }
+      pts = out;
+    }
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      a += p[0] * q[1] - q[0] * p[1];
+    }
+    return Math.abs(a) / 2;
+  }
   const fmtArea = (mm2) => (mm2 / 1e6).toFixed(2);
 
   // true when something has been drawn on the canvas (checked on a 16x16 downscale)
@@ -49,6 +82,9 @@
       this.hideAuto = false;
       this.roomKinds = [];     // per room: { manual: bool, mi: index in this.manual }
       this.tracer = null;
+      this.layoutTracer = null; // carpet tile layout view (500 x 500 mm from the room's centre)
+      this.gridOffsets = {};    // per room (index): shift of the tile layout in mm { x, y }
+      this.imgOffset = { x: 0, y: 0 }; // shift of the drawing picture in the layout view (mm)
       this.drawings = [];      // every uploaded drawing: { file, type: 'plan' | 'elev', elev }
       this.planFile = null;    // the floor plan shown in 3D (carpet size)
       this.planStates = new Map(); // per floor plan: hand-traced rooms, scale, selection...
@@ -147,6 +183,23 @@
       this.$('total-all').addEventListener('click', () => setTotal(() => true));
       this.$('total-cloth').addEventListener('click', () => setTotal((w) => !!w.cloth || !!w.custom));
       this.$('total-none').addEventListener('click', () => setTotal(() => false));
+      // carpet tile layout
+      const ltool = (name) => {
+        if (!this.layoutTracer) return;
+        this.layoutTracer.setTool(name);
+        ['pan', 'grid', 'image'].forEach((t) => this.$('layout-' + t).classList.toggle('is-on', t === name));
+      };
+      ['pan', 'grid', 'image'].forEach((t) => this.$('layout-' + t).addEventListener('click', () => ltool(t)));
+      this.$('layout-fit').addEventListener('click', () => this.layoutTracer && this.layoutTracer.fit());
+      this.$('layout-zin').addEventListener('click', () => this.layoutTracer && this.layoutTracer.zoom(0.7));
+      this.$('layout-zout').addEventListener('click', () => this.layoutTracer && this.layoutTracer.zoom(1.4));
+      this.$('layout-center').addEventListener('click', () => {
+        delete this.gridOffsets[this.roomIndex];
+        this.imgOffset = { x: 0, y: 0 };
+        this._layoutCommit();
+      });
+      this.$('layout-show-img').addEventListener('change', () => this._renderLayout());
+      this.$('layout-show-grid').addEventListener('change', () => this._renderLayout());
       this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
@@ -165,6 +218,8 @@
         this.backdrop = null;
         this.backdropFile = null;
         this.$('trace').hidden = true;
+        this.gridOffsets = {};
+        this.imgOffset = { x: 0, y: 0 };
       }
       const isImage = /\.(png|jpe?g|webp)$/i.test(file.name);
       if (isImage) this.$('raster').hidden = false;
@@ -318,6 +373,7 @@
     _showEmpty() {
       if (this.renderer) this.renderer.clear();
       this.$('rooms').hidden = true;
+      this.$('layout').hidden = true;
       ['room-name', 'room-size', 'floor-area', 'wall-area'].forEach((k) => { this.$(k).textContent = '-'; });
       this.$('room-count').textContent = '0';
       this.$('filename').textContent = this.label;
@@ -348,6 +404,7 @@
       if (reflect && !prov && this.$('apply-size').checked) this.reflectSize(room);
       else this.$('size-note').textContent = prov && kind.manual && this.backdrop.kind === 'pdf'
         ? '指定した部屋の大きさは仮です。「PDFの縮尺（1:N の N）」に図面の縮尺（例: 100）を入力してください。' : '';
+      this._renderLayout();
     }
 
     _unitText() {
@@ -533,6 +590,7 @@
         raster: this.raster ? { calibrated: this.raster.calibrated, mmPerPx: this.raster.mmPerPx } : null,
         rasterShown: !this.$('raster').hidden,
         threshold: this.$('threshold').value, gap: this.$('gap').value, calMm: this.$('cal-mm').value,
+        gridOffsets: this.gridOffsets, imgOffset: this.imgOffset,
       });
     }
 
@@ -552,6 +610,8 @@
         this.$('cal-mm').value = st.calMm;
         this.raster = st.raster;
         this.$('raster').hidden = !st.rasterShown;
+        this.gridOffsets = st.gridOffsets || {};
+        this.imgOffset = st.imgOffset || { x: 0, y: 0 };
         this.$('trace').hidden = true;
         this._tracerImage = null;
         await this.loadFile(d.file, { keepRoom: true, keepScale: true, keepManual: true, roomIndex: st.roomIndex });
@@ -644,6 +704,7 @@
             entry.plan = {
               manual: st.manual, hideAuto: st.hideAuto, roomIndex: st.roomIndex, scale: st.scale,
               raster: st.raster, rasterShown: st.rasterShown, threshold: st.threshold, gap: st.gap, calMm: st.calMm,
+              gridOffsets: st.gridOffsets || {}, imgOffset: st.imgOffset || { x: 0, y: 0 },
             };
           }
         }
@@ -1076,10 +1137,10 @@
 
       const b = CADParser.bounds(room.vertices);
       const w = b.maxX - b.minX, h = b.maxY - b.minY;
-      // round up to the 500 mm tile, but ignore drawing noise of up to 10 mm
-      const tiles = (mm) => Math.max(500, Math.ceil((mm - 10) / 500) * 500);
-      const tileW = tiles(w);
-      const tileH = tiles(h);
+      // 500 mm tiles laid from the room's centre: the cut tiles at the edges count as whole tiles
+      const lay = this._tileLayout(room);
+      const tileW = lay.cols * TILE;
+      const tileH = lay.rows * TILE;
       this._setField(ccW, tileW);
       this._setField(ccH, tileH);
 
@@ -1101,7 +1162,7 @@
 
       const area = CADParser.calculateArea(room.vertices);
       let text = '図面から「' + (room.name || '部屋') + '」のサイズ ' + fmtMm(w) + '×' + fmtMm(h) + ' mm を読み取り、'
-        + 'カーペットを ' + fmtMm(tileW) + '×' + fmtMm(tileH) + ' mm（500mm単位に切り上げ。10mm以下の端数は切り捨て）、'
+        + 'カーペットを ' + fmtMm(tileW) + '×' + fmtMm(tileH) + ' mm（50cm角を部屋の中心から割り付け、端の切れる部分も1枚として計算：横' + lay.cols + '枚×縦' + lay.rows + '枚）、'
         + (wallLocked
           ? 'お部屋パースの奥行を ' + fmtMm(applied['persp-floor-depth'] || h) + ' mm に設定しました（壁紙の幅・高さは、展開図で選んだ壁のサイズのままです）。'
           : 'お部屋パース・壁紙のサイズを 幅' + fmtMm(applied['persp-width'] || w)
@@ -1110,8 +1171,139 @@
       if (Math.abs(area - w * h) / (w * h) > 0.01) {
         text += ' ※四角でない部屋のため、見積もりは外接する四角（' + fmtArea(tileW * tileH) + '㎡）で計算されます（実際の床面積は ' + fmtArea(area) + '㎡）。';
       }
+      if (lay.count !== lay.cols * lay.rows) text += ' 部屋に実際に敷く枚数は ' + lay.count + ' 枚（うち端で切る ' + lay.cut + ' 枚）です。';
       if (clamped) text += ' ※お部屋パース・壁紙のサイズは入力欄の上限・下限に丸めました。';
       note.textContent = text;
+    }
+
+    // ----------------------------------------------- carpet tile layout (割付)
+    // 500 x 500 mm tiles centred on the room (plus the layout's shift). Tiles that touch the room count,
+    // the cut ones at the edges as whole tiles. Returns the tiles in mm and the counts.
+    _tileLayout(room, offset) {
+      const b = CADParser.bounds(room.vertices);
+      const off = offset || this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
+      const cx = (b.minX + b.maxX) / 2 + off.x, cy = (b.minY + b.maxY) / 2 + off.y;
+      // a tile edge on the centre line (an even layout around the centre)
+      const ox = cx - Math.ceil((cx - b.minX) / TILE + 1) * TILE, oy = cy - Math.ceil((cy - b.minY) / TILE + 1) * TILE;
+      const nx = Math.ceil((b.maxX - ox) / TILE) + 1, ny = Math.ceil((b.maxY - oy) / TILE) + 1;
+      const area = CADParser.calculateArea(room.vertices);
+      const tiles = [];
+      let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity, cut = 0;
+      for (let i = 0; i < nx; i++) {
+        for (let j = 0; j < ny; j++) {
+          const x = ox + i * TILE, y = oy + j * TILE;
+          const a = clipArea(room.vertices, x, y, x + TILE, y + TILE);
+          if (a < 1) continue; // touches the room by less than 1 mm2
+          const isCut = a < TILE * TILE - 1;
+          tiles.push({ x, y, cut: isCut });
+          if (isCut) cut++;
+          i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j);
+        }
+      }
+      if (!tiles.length) return { tiles, cols: 1, rows: 1, count: 0, cut: 0, cx, cy, box: null, area };
+      return {
+        tiles, cx, cy, area,
+        cols: i1 - i0 + 1, rows: j1 - j0 + 1, count: tiles.length, cut,
+        box: { x0: ox + i0 * TILE, y0: oy + j0 * TILE, x1: ox + (i1 + 1) * TILE, y1: oy + (j1 + 1) * TILE },
+      };
+    }
+
+    // drawing coordinates (mm, Y up) -> layout view (mm, Y down), with the picture when there is one
+    _layoutView() {
+      const bd = this.backdrop;
+      if (bd) {
+        const s = bd.mmPerPx, W = bd.widthPx * s, H = bd.heightPx * s;
+        return { W, H, img: bd.dataUrl, toV: ([x, y]) => [x, H - y] };
+      }
+      const b = CADParser.bounds(this.data.rooms.flatMap((r) => r.vertices));
+      const m = Math.max(b.maxX - b.minX, b.maxY - b.minY) * 0.12 + TILE;
+      return { W: b.maxX - b.minX + m * 2, H: b.maxY - b.minY + m * 2, img: '', toV: ([x, y]) => [x - b.minX + m, b.maxY - y + m] };
+    }
+
+    _renderLayout(previewOffset) {
+      const panel = this.$('layout');
+      const room = this.data && this.data.rooms[this.roomIndex];
+      if (!this.fromFile || !room) { panel.hidden = true; return; }
+      panel.hidden = false;
+      const view = this._layoutView();
+      if (!this.layoutTracer) {
+        this.layoutTracer = new RoomTracer(this.$('layout-svg'), {
+          customTools: ['grid', 'image'],
+          onCustomDrag: (tool, d, phase) => this._layoutDrag(tool, d, phase),
+        });
+        this.layoutTracer.setTool('pan');
+      }
+      const key = view.img + '|' + Math.round(view.W) + 'x' + Math.round(view.H);
+      if (this._layoutKey !== key) {
+        this.layoutTracer.setBackdrop(view.img, view.W, view.H);
+        this._layoutKey = key;
+      }
+      const showImg = this.$('layout-show-img').checked;
+      this.layoutTracer.setImageVisible(showImg && !!view.img);
+      this.layoutTracer.setImageOffset(this.imgOffset.x, this.imgOffset.y);
+      this.layoutTracer.setRooms(this.data.rooms.map((r, i) => ({
+        poly: r.vertices.map(view.toV), label: i === this.roomIndex ? String(i + 1) : '',
+        selected: i === this.roomIndex, color: i === this.roomIndex ? '#2563eb' : '#a1a1aa',
+      })));
+
+      const ov = this.layoutTracer.overlay;
+      ov.textContent = '';
+      const lay = this._tileLayout(room, previewOffset);
+      const showGrid = this.$('layout-show-grid').checked;
+      if (showGrid && lay.box) {
+        const add = (name, attrs) => {
+          const e = document.createElementNS(SVG_NS, name);
+          Object.keys(attrs).forEach((k) => e.setAttribute(k, attrs[k]));
+          ov.appendChild(e);
+          return e;
+        };
+        lay.tiles.forEach((t) => {
+          const [vx, vy] = view.toV([t.x, t.y + TILE]);
+          add('rect', { x: vx, y: vy, width: TILE, height: TILE, fill: t.cut ? '#ef4444' : 'none', 'fill-opacity': t.cut ? 0.14 : 0,
+            stroke: '#ef4444', 'stroke-width': 1.2, 'vector-effect': 'non-scaling-stroke' });
+        });
+        const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
+        add('rect', { x: bx, y: by, width: lay.box.x1 - lay.box.x0, height: lay.box.y1 - lay.box.y0, fill: 'none',
+          stroke: '#dc2626', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
+        // the centre of the layout
+        const [ccx, ccy] = view.toV([lay.cx, lay.cy]);
+        add('path', { d: 'M' + (ccx - 250) + ' ' + ccy + 'H' + (ccx + 250) + 'M' + ccx + ' ' + (ccy - 250) + 'V' + (ccy + 250),
+          stroke: '#dc2626', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke', fill: 'none' });
+      }
+      // while dragging, keep the text as it is (a longer text would push the view down under the pointer)
+      if (previewOffset) return;
+      const off = this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
+      this.$('layout-note').textContent = lay.box
+        ? '割付（50cm角・部屋の中心から）：横 ' + lay.cols + ' 枚 × 縦 ' + lay.rows + ' 枚 ＝ 見積もりサイズ ' + fmtMm(lay.cols * TILE) + ' × ' + fmtMm(lay.rows * TILE) + ' mm'
+          + '。部屋に敷く枚数 ' + lay.count + ' 枚（うち端で切る ' + lay.cut + ' 枚、薄い赤）。'
+          + (off.x || off.y ? '割付のずらし：横 ' + Math.round(off.x) + ' mm・縦 ' + Math.round(off.y) + ' mm。' : '')
+          + (this.imgOffset.x || this.imgOffset.y ? '図面の表示をずらしています（部屋の大きさ・割付には影響しません）。' : '')
+        : '';
+    }
+
+    _layoutDrag(tool, d, phase) {
+      if (tool === 'grid') {
+        const base = this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
+        const next = { x: base.x + d.dx, y: base.y - d.dy }; // the view's Y points down
+        if (phase === 'move') { this._renderLayout(next); return; }
+        this.gridOffsets[this.roomIndex] = next;
+        this._layoutCommit();
+      } else if (tool === 'image') {
+        const next = { x: this.imgOffset.x + d.dx, y: this.imgOffset.y + d.dy };
+        if (phase === 'move') { this.layoutTracer.setImageOffset(next.x, next.y); return; }
+        this.imgOffset = next;
+        this._renderLayout();
+      }
+    }
+
+    // the layout changed: redraw, and update the estimate with the new tile counts
+    _layoutCommit() {
+      const room = this.data && this.data.rooms[this.roomIndex];
+      if (!room) return;
+      const kind = this.roomKinds[this.roomIndex] || {};
+      const prov = kind.manual ? !!this.backdrop && !this.backdrop.calibrated : !!this.raster && !this.raster.calibrated;
+      if (this.fromFile && !prov && this.$('apply-size').checked) this.reflectSize(room);
+      this._renderLayout();
     }
 
     /**
