@@ -1375,9 +1375,9 @@
     const W = parseFloat($('persp-width')?.value) || 3000;
     const D = parseFloat($('persp-floor-depth')?.value) || 2500;
     const H = parseFloat($('persp-wall-height')?.value) || 2400;
-    // 100% のとき、印刷の裁断代（上下100mm）と巾の重なり（左右に合わせ代の半分ずつ）まで画像が入る大きさにする
-    const WP = window.cfpWallPrint || { EDGE: 5, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
-    return Math.max(W + WP.EDGE * 2, D + WP.EDGE * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
+    // 100% のとき、印刷の裁断代（上下100mm）と巾の重なり（左右に合わせ代と同じ幅ずつ）まで画像が入る大きさにする
+    const WP = window.cfpWallPrint || { OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+    return Math.max(W + WP.OVERLAP * 2, D + WP.OVERLAP * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
   }
   window.cfpSingleImageWidthMm = singleImageWidthMm;
 
@@ -1407,9 +1407,9 @@
     const D = parseFloat($('persp-floor-depth')?.value) || 2500;
     const H = parseFloat($('persp-wall-height')?.value) || 2400;
     const P = W + D;
-    const WP = window.cfpWallPrint || { EDGE: 5, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+    const WP = window.cfpWallPrint || { OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
     // 100% のとき、裁断代（上下100mm）と両端の重なり（10mm）まで画像が入る大きさ
-    const iw = Math.max(P + WP.EDGE * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
+    const iw = Math.max(P + WP.OVERLAP * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
     return { W: W, D: D, H: H, P: P, iw: iw, ih: iw / aspect, s0: (P - iw) / 2 };
   }
   window.cfpWrapBand = wrapBand;
@@ -1933,7 +1933,7 @@
   // を使用する。
   // =====================================================================
   // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代。巾（初期910mm）は隣の巾と合わせ代（初期10mm）だけ重なり、
-  // 重なりの真ん中がカット線。壁の両端・各巾のカット線の外側には、合わせ代の半分（EDGE）ずつ余白を取る
+  // 重なりの真ん中がカット線（枠の端から合わせ代の半分＝EDGE）。壁の左右の余白は合わせ代と同じ幅（10mm）
   const WALL_PRINT = { ROLL: 910, OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
   WALL_PRINT.EDGE = WALL_PRINT.OVERLAP / 2; // カット線の外側の余白（合わせ代の半分）
   WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP; // 1巾が受け持つ壁の幅（カット線からカット線まで。900mm）
@@ -2002,7 +2002,7 @@
   // right: true = 右の端から巾を並べる（右寄せスタート）、false = 左の端から（左寄せスタート）
   WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right) {
     const P = WALL_PRINT;
-    const ox = right ? FW - P.EDGE - W : P.EDGE;
+    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
     for (let i = 0; i !== N; i++) {
       const x = right ? FW - P.ROLL - i * P.STEP : i * P.STEP;
       fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
@@ -2024,9 +2024,9 @@
   WALL_PRINT.buildWhole = function (cad, W, WH, right) {
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
-    const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
+    const N = Math.max(1, Math.ceil((W + P.OVERLAP - 5) / P.STEP));
     const FW = Math.round(N * P.STEP + P.OVERLAP);
-    const ox = right ? FW - P.EDGE - W : P.EDGE;
+    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
     const mk = () => { const c = document.createElement('canvas'); c.width = FW; c.height = H; return c; };
     const cadL = mk();
     if (cad) cadL.getContext('2d').drawImage(cad, ox, P.TRIM_TOP, W, WH);
@@ -2114,12 +2114,12 @@
       const W = Math.max(1, Math.round(parseFloat($('persp-width')?.value) || 3000));
       const WH = Math.max(1, Math.round(parseFloat($('persp-wall-height')?.value) || 2400));
       const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
-      const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
-      // 全巾分の絵：壁の左端が x = EDGE、天井が y = TRIM_TOP
+      const N = Math.max(1, Math.ceil((W + P.OVERLAP - 5) / P.STEP));
+      // 全巾分の絵：壁の左端が x = OVERLAP、天井が y = TRIM_TOP
       const full = document.createElement('canvas');
       full.width = N * P.STEP + P.OVERLAP;
       full.height = H;
-      drawWallDesign(full.getContext('2d'), canvas, P.EDGE, P.TRIM_TOP, W, WH);
+      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP, P.TRIM_TOP, W, WH);
 
       const files = [];
       const strips = [];
@@ -2138,8 +2138,10 @@
         const fx = frame.getContext('2d');
         fx.strokeStyle = '#ff0000';
         fx.lineWidth = 2;
-        const fw = Math.min(P.STEP, W - i * P.STEP);
-        fx.strokeRect(P.EDGE + 1, P.TRIM_TOP + 1, Math.max(1, fw - 2), WH - 2);
+        // この巾が受け持つ壁の範囲：壁の範囲と、カット線からカット線（両端の巾は枠の端）の重なり
+        const lo = Math.max(P.OVERLAP - i * P.STEP, i === 0 ? 0 : P.EDGE);
+        const hi = Math.min(P.OVERLAP + W - i * P.STEP, i === N - 1 ? P.ROLL : P.STEP + P.EDGE);
+        fx.strokeRect(lo + 1, P.TRIM_TOP + 1, Math.max(1, hi - lo - 2), WH - 2);
         const comp = document.createElement('canvas');
         comp.width = P.ROLL;
         comp.height = H;
@@ -2165,7 +2167,7 @@
       const ff = fullFrame.getContext('2d');
       ff.strokeStyle = '#ff0000';
       ff.lineWidth = 3;
-      ff.strokeRect(P.EDGE + 1.5, P.TRIM_TOP + 1.5, W - 3, WH - 3);
+      ff.strokeRect(P.OVERLAP + 1.5, P.TRIM_TOP + 1.5, W - 3, WH - 3);
       ff.lineWidth = 2;
       for (let i = 1; i !== N; i++) {
         const lx = P.EDGE + i * P.STEP + 0.5;

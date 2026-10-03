@@ -980,7 +980,7 @@
       if (!wp || !w || !this.elev) return null;
       const W = Math.max(1, Math.round(w.width)), WH = Math.max(1, Math.round(w.height));
       const H = WH + wp.TRIM_TOP + wp.TRIM_BOTTOM;
-      const N = Math.max(1, Math.ceil((W - 5) / wp.STEP));
+      const N = Math.max(1, Math.ceil((W + wp.OVERLAP - 5) / wp.STEP));
       return { wp, w, W, WH, H, N, FW: Math.round(N * wp.STEP + wp.OVERLAP) };
     }
 
@@ -1011,7 +1011,7 @@
         return e;
       };
       const right = this.$('wp-right').checked;
-      const ox = right ? FW - wp.EDGE - W : wp.EDGE; // the wall's left edge in the picture
+      const ox = right ? FW - wp.OVERLAP - W : wp.OVERLAP; // the wall's left edge in the picture
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
       const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
       const bd = this.elev.backdrop;
@@ -1180,8 +1180,8 @@
     // The walls ticked on every loaded elevation sheet: total width, area and wall paper strips (910 mm rolls).
     _updateWallTotal() {
       // 910mm幅のロールを合わせ代10mmだけ重ねて貼る（1巾が受け持つのは900mm）。1巾の長さ = 壁の高さ + 上下100mm
-      const WP = window.cfpWallPrint || { STEP: 900, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
-      const ROLL = WP.STEP, TRIM = WP.TRIM_TOP + WP.TRIM_BOTTOM;
+      const WP = window.cfpWallPrint || { OVERLAP: 10, STEP: 900, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+      const OV = WP.OVERLAP || 10, ROLL = WP.STEP, TRIM = WP.TRIM_TOP + WP.TRIM_BOTTOM;
       const picked = [];
       this.drawings.filter((d) => d.type === 'elev' && d.elev).forEach((d) => {
         const custom = d.file === this._elevFile && this.elev ? this.elev.custom : ((this.elevStates.get(d.file) || {}).custom || []);
@@ -1194,7 +1194,7 @@
         picked.forEach(({ w }) => {
           width += w.width;
           area += w.width * w.height / 1e6;
-          const n = Math.ceil((w.width - 5) / ROLL);
+          const n = Math.ceil((w.width + OV - 5) / ROLL);
           strips += n;
           len += n * (w.height + TRIM) / 1000;
         });
@@ -1780,7 +1780,7 @@
       this.renderer.wallSingle = !!(hasWall && rep && !rep.on);
       // the single picture also covers the print margins (top / bottom trim, side overlaps), as in the saved data
       const wp = window.cfpWallPrint;
-      this.renderer.wallTrim = wp ? { side: wp.EDGE, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
+      this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);
