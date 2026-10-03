@@ -84,7 +84,8 @@
       this.tracer = null;
       this.layoutTracer = null; // carpet tile layout view (500 x 500 mm from the room's centre)
       this.gridOffsets = {};    // per room (index): shift of the tile layout in mm { x, y }
-      this.imgOffset = { x: 0, y: 0 }; // shift of the drawing picture in the layout view (mm)
+      this.imgOffset = { x: 0, y: 0 }; // shift of the drawing picture in the layout view (mm, not used by the UI now)
+      this.design = { x: 0, y: 0, scale: 1 }; // converted carpet image on the layout: shift (mm) and size
       this.drawings = [];      // every uploaded drawing: { file, type: 'plan' | 'elev', elev }
       this.planFile = null;    // the floor plan shown in 3D (carpet size)
       this.planStates = new Map(); // per floor plan: hand-traced rooms, scale, selection...
@@ -187,15 +188,24 @@
       const ltool = (name) => {
         if (!this.layoutTracer) return;
         this.layoutTracer.setTool(name);
-        ['pan', 'grid', 'image'].forEach((t) => this.$('layout-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'grid', 'design'].forEach((t) => this.$('layout-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'grid', 'image'].forEach((t) => this.$('layout-' + t).addEventListener('click', () => ltool(t)));
+      ['pan', 'grid', 'design'].forEach((t) => this.$('layout-' + t).addEventListener('click', () => ltool(t)));
+      this.$('layout-dscale').addEventListener('input', () => {
+        this.design.scale = (parseFloat(this.$('layout-dscale').value) || 100) / 100;
+        this._renderLayout();
+      });
+      this.$('layout-dopacity').addEventListener('input', () => this._renderLayout());
+      ['layout-show-design', 'layout-clip'].forEach((k) => this.$(k).addEventListener('change', () => this._renderLayout()));
+      document.addEventListener('cfp:designs-updated', () => { this._designUrl = null; this._renderLayout(); });
       this.$('layout-fit').addEventListener('click', () => this.layoutTracer && this.layoutTracer.fit());
       this.$('layout-zin').addEventListener('click', () => this.layoutTracer && this.layoutTracer.zoom(0.7));
       this.$('layout-zout').addEventListener('click', () => this.layoutTracer && this.layoutTracer.zoom(1.4));
       this.$('layout-center').addEventListener('click', () => {
         delete this.gridOffsets[this.roomIndex];
         this.imgOffset = { x: 0, y: 0 };
+        this.design = { x: 0, y: 0, scale: 1 };
+        this.$('layout-dscale').value = 100;
         this._layoutCommit();
       });
       this.$('layout-show-img').addEventListener('change', () => this._renderLayout());
@@ -220,6 +230,7 @@
         this.$('trace').hidden = true;
         this.gridOffsets = {};
         this.imgOffset = { x: 0, y: 0 };
+        this.design = { x: 0, y: 0, scale: 1 };
       }
       const isImage = /\.(png|jpe?g|webp)$/i.test(file.name);
       if (isImage) this.$('raster').hidden = false;
@@ -590,7 +601,7 @@
         raster: this.raster ? { calibrated: this.raster.calibrated, mmPerPx: this.raster.mmPerPx } : null,
         rasterShown: !this.$('raster').hidden,
         threshold: this.$('threshold').value, gap: this.$('gap').value, calMm: this.$('cal-mm').value,
-        gridOffsets: this.gridOffsets, imgOffset: this.imgOffset,
+        gridOffsets: this.gridOffsets, imgOffset: this.imgOffset, design: this.design,
       });
     }
 
@@ -612,6 +623,8 @@
         this.$('raster').hidden = !st.rasterShown;
         this.gridOffsets = st.gridOffsets || {};
         this.imgOffset = st.imgOffset || { x: 0, y: 0 };
+        this.design = st.design || { x: 0, y: 0, scale: 1 };
+        this.$('layout-dscale').value = Math.round(this.design.scale * 100);
         this.$('trace').hidden = true;
         this._tracerImage = null;
         await this.loadFile(d.file, { keepRoom: true, keepScale: true, keepManual: true, roomIndex: st.roomIndex });
@@ -704,7 +717,7 @@
             entry.plan = {
               manual: st.manual, hideAuto: st.hideAuto, roomIndex: st.roomIndex, scale: st.scale,
               raster: st.raster, rasterShown: st.rasterShown, threshold: st.threshold, gap: st.gap, calMm: st.calMm,
-              gridOffsets: st.gridOffsets || {}, imgOffset: st.imgOffset || { x: 0, y: 0 },
+              gridOffsets: st.gridOffsets || {}, imgOffset: st.imgOffset || { x: 0, y: 0 }, design: st.design || { x: 0, y: 0, scale: 1 },
             };
           }
         }
@@ -1228,7 +1241,7 @@
       const view = this._layoutView();
       if (!this.layoutTracer) {
         this.layoutTracer = new RoomTracer(this.$('layout-svg'), {
-          customTools: ['grid', 'image'],
+          customTools: ['grid', 'design'],
           onCustomDrag: (tool, d, phase) => this._layoutDrag(tool, d, phase),
         });
         this.layoutTracer.setTool('pan');
@@ -1248,15 +1261,39 @@
 
       const ov = this.layoutTracer.overlay;
       ov.textContent = '';
-      const lay = this._tileLayout(room, previewOffset);
+      const lay = this._tileLayout(room, previewOffset && previewOffset.grid);
+      const add = (name, attrs, parent) => {
+        const e = document.createElementNS(SVG_NS, name);
+        Object.keys(attrs).forEach((k) => e.setAttribute(k, attrs[k]));
+        (parent || ov).appendChild(e);
+        return e;
+      };
+      // the converted carpet image (① reduced colours), laid over the tile layout; size / position adjustable
+      const dsrc = document.getElementById('cc-reduced');
+      const hasDesign = !!(dsrc && dsrc.width && canvasHasContent(dsrc));
+      this.$('layout-design').disabled = !hasDesign;
+      if (hasDesign && lay.box && this.$('layout-show-design').checked) {
+        if (!this._designUrl) this._designUrl = dsrc.toDataURL('image/png');
+        const d = previewOffset && previewOffset.design ? previewOffset.design : this.design;
+        const bw = lay.box.x1 - lay.box.x0;
+        const w = bw * d.scale, h = w * dsrc.height / dsrc.width;
+        const ccx = (lay.box.x0 + lay.box.x1) / 2 + d.x, ccy = (lay.box.y0 + lay.box.y1) / 2 + d.y; // mm, Y up
+        const [vx, vy] = view.toV([ccx - w / 2, ccy + h / 2]);
+        let parent = ov;
+        if (this.$('layout-clip').checked) {
+          const id = 'cfp-clip-' + (this._clipSeq = (this._clipSeq || 0) + 1);
+          const defs = add('defs', {});
+          const cp = add('clipPath', { id }, defs);
+          add('polygon', { points: room.vertices.map(view.toV).map((p) => p.join(',')).join(' ') }, cp);
+          parent = add('g', { 'clip-path': 'url(#' + id + ')' });
+        }
+        add('image', { href: this._designUrl, x: vx, y: vy, width: w, height: h, preserveAspectRatio: 'none',
+          opacity: (parseFloat(this.$('layout-dopacity').value) || 80) / 100 }, parent);
+      }
+      this.$('layout-dscale-val').textContent = this.$('layout-dscale').value;
+      this.$('layout-dopacity-val').textContent = this.$('layout-dopacity').value;
       const showGrid = this.$('layout-show-grid').checked;
       if (showGrid && lay.box) {
-        const add = (name, attrs) => {
-          const e = document.createElementNS(SVG_NS, name);
-          Object.keys(attrs).forEach((k) => e.setAttribute(k, attrs[k]));
-          ov.appendChild(e);
-          return e;
-        };
         lay.tiles.forEach((t) => {
           const [vx, vy] = view.toV([t.x, t.y + TILE]);
           add('rect', { x: vx, y: vy, width: TILE, height: TILE, fill: t.cut ? '#ef4444' : 'none', 'fill-opacity': t.cut ? 0.14 : 0,
@@ -1277,7 +1314,8 @@
         ? '割付（50cm角・部屋の中心から）：横 ' + lay.cols + ' 枚 × 縦 ' + lay.rows + ' 枚 ＝ 見積もりサイズ ' + fmtMm(lay.cols * TILE) + ' × ' + fmtMm(lay.rows * TILE) + ' mm'
           + '。部屋に敷く枚数 ' + lay.count + ' 枚（うち端で切る ' + lay.cut + ' 枚、薄い赤）。'
           + (off.x || off.y ? '割付のずらし：横 ' + Math.round(off.x) + ' mm・縦 ' + Math.round(off.y) + ' mm。' : '')
-          + (this.imgOffset.x || this.imgOffset.y ? '図面の表示をずらしています（部屋の大きさ・割付には影響しません）。' : '')
+          + (hasDesign ? '' : '①でカーペット用のデザイン画像を処理すると、変換画像を重ねて表示します。')
+          + (hasDesign && (this.design.x || this.design.y || this.design.scale !== 1) ? '変換画像：大きさ ' + Math.round(this.design.scale * 100) + '%・ずらし 横 ' + Math.round(this.design.x) + ' mm／縦 ' + Math.round(this.design.y) + ' mm。' : '')
         : '';
     }
 
@@ -1285,13 +1323,13 @@
       if (tool === 'grid') {
         const base = this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
         const next = { x: base.x + d.dx, y: base.y - d.dy }; // the view's Y points down
-        if (phase === 'move') { this._renderLayout(next); return; }
+        if (phase === 'move') { this._renderLayout({ grid: next }); return; }
         this.gridOffsets[this.roomIndex] = next;
         this._layoutCommit();
-      } else if (tool === 'image') {
-        const next = { x: this.imgOffset.x + d.dx, y: this.imgOffset.y + d.dy };
-        if (phase === 'move') { this.layoutTracer.setImageOffset(next.x, next.y); return; }
-        this.imgOffset = next;
+      } else if (tool === 'design') {
+        const next = { x: this.design.x + d.dx, y: this.design.y - d.dy, scale: this.design.scale };
+        if (phase === 'move') { this._renderLayout({ design: next }); return; }
+        this.design = next;
         this._renderLayout();
       }
     }
