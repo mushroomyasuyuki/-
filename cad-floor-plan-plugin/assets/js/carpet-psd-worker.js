@@ -7,7 +7,9 @@
  *
  * The colours are reduced to the palette exactly as on the page (nearest colour, Floyd-Steinberg error diffusion
  * scaled by "dither"), but only two rows of error are kept, so a 6.5 x 7.5 m carpet (1 px = 1 mm) needs little memory.
- * The PSD is RGB, 8 bit, 25.4 dpi, one layer + the composite, RLE (PackBits). Over 30000 px it is written as PSB.
+ * The PSD is RGB, 8 bit, 25.4 dpi, RLE (PackBits), 4 layers: ①CAD画像 (the drawing under the carpet) ②部屋 (room outline)
+ * ③変換画像 (the reduced picture) ④割付 (50 cm tiles, cut ones light red) + the composite. Over 30000 px: PSB.
+ * In (besides the above): info: { cad: { bitmap, sx, sy, sw, sh }, room: [[x, y]...], tiles: [{ x, y, w, h, cut }] } or null.
  */
 /* eslint-env worker */
 (function () {
@@ -61,7 +63,59 @@
     return { R, G, B, used: list };
   }
 
-  function writePsd(w, h, planes, layerName, progress) {
+  // a canvas for drawing one band of a layer: OffscreenCanvas (worker / page) or a page canvas
+  function makeCanvas(w, h) {
+    if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+
+  // the drawn layers, in the carpet's picture (mm = px, Y down). info: { cad, room, tiles } (see main.js carpetPsdInfo)
+  function layerDraws(w, h, info) {
+    const tiles = info ? info.tiles : null;
+    const grid = [];
+    if (tiles ? tiles.length : false) tiles.forEach((t) => grid.push(t));
+    else { // no drawing: 50 cm tiles from the top left of the carpet
+      for (let y = 0; y < h; y += 500) for (let x = 0; x < w; x += 500) grid.push({ x, y, w: 500, h: 500, cut: false });
+    }
+    return {
+      cad: (ctx) => {
+        const c = info ? info.cad : null;
+        if (!c) return;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(c.bitmap, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
+      },
+      room: (ctx) => {
+        const pts = info ? info.room : null;
+        if (!pts) return;
+        if (pts.length < 3) return;
+        ctx.beginPath();
+        pts.forEach((q, i) => { if (i === 0) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]); });
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(37,99,235,0.10)';
+        ctx.fill();
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = 8;
+        ctx.stroke();
+      },
+      grid: (ctx) => {
+        grid.forEach((t) => { if (t.cut) { ctx.fillStyle = 'rgba(239,68,68,0.14)'; ctx.fillRect(t.x, t.y, t.w, t.h); } });
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        grid.forEach((t) => ctx.strokeRect(t.x, t.y, t.w, t.h));
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 8;
+        ctx.strokeRect(2, 2, w - 4, h - 4);
+      },
+    };
+  }
+
+  // the PSD: 4 layers (①CAD画像 ②部屋 ③変換画像 ④割付, bottom to top) + the composite (変換画像 + 割付).
+  // The drawn layers are made 256 rows at a time, so no picture as big as the carpet is held for them.
+  function* writePsd(w, h, planes, info, names) {
     const big = w > 30000 || h > 30000;
     const parts = [];
     const be = (bytes, v) => { const u = new Uint8Array(bytes); for (let i = bytes - 1; i >= 0; i--) { u[i] = v % 256; v = Math.floor(v / 256); } return u; };
@@ -72,74 +126,136 @@
     const ascii = (t) => Uint8Array.from(t.split('').map((c) => c.charCodeAt(0)));
     const concat = (arr) => { const t = arr.reduce((a, b) => a + b.length, 0); const u = new Uint8Array(t); let o = 0; arr.forEach((b) => { u.set(b, o); o += b.length; }); return u; };
     const rowBuf = new Uint8Array(w * 2 + 4);
-    // one channel: RLE row by row -> { counts, data }
-    const rle = (plane) => {
-      const counts = new Uint8Array(h * RB);
-      const chunks = [];
-      let size = 0;
-      for (let y = 0; y < h; y++) {
-        const base = y * w;
-        let i = 0, r = 0;
-        while (i < w) {
-          const v = plane[base + i];
-          let run = 1;
-          while (i + run < w && run < 128 && plane[base + i + run] === v) run++;
-          if (run >= 2) { rowBuf[r++] = 257 - run; rowBuf[r++] = v; i += run; continue; }
-          const start = i; i++;
-          while (i < w && i - start < 128 && !(i + 1 < w && plane[base + i] === plane[base + i + 1])) i++;
-          rowBuf[r++] = i - start - 1;
-          for (let q = start; q < i; q++) rowBuf[r++] = plane[base + q];
-        }
-        counts.set(be(RB, r), y * RB);
-        chunks.push(rowBuf.slice(0, r));
-        size += r;
+    const rleRow = (plane, base) => {
+      let i = 0, r = 0;
+      while (i < w) {
+        const v = plane[base + i];
+        let run = 1;
+        while (i + run < w && run < 128 && plane[base + i + run] === v) run++;
+        if (run >= 2) { rowBuf[r++] = 257 - run; rowBuf[r++] = v; i += run; continue; }
+        const start = i; i++;
+        while (i < w && i - start < 128 && !(i + 1 < w && plane[base + i] === plane[base + i + 1])) i++;
+        rowBuf[r++] = i - start - 1;
+        for (let q = start; q < i; q++) rowBuf[r++] = plane[base + q];
       }
-      return { counts, chunks, size };
+      return rowBuf.slice(0, r);
     };
-    // the layer has the three colour channels only (no transparency channel), as Photoshop / ag-psd write an
-    // opaque layer: every program then reads it as an ordinary layer
-    const enc = [];
-    enc.push(rle(planes.R)); progress(0.88);
-    enc.push(rle(planes.G)); progress(0.92);
-    enc.push(rle(planes.B)); progress(0.96);
+    const newChan = () => ({ counts: new Uint8Array(h * RB), chunks: [], size: 0 });
+    const addRow = (ch, y, row) => { ch.counts.set(be(RB, row.length), y * RB); ch.chunks.push(row); ch.size += row.length; };
     const chanLen = (c) => 2 + c.counts.length + c.size;
+
+    const draws = layerDraws(w, h, info);
+    const TH = 256;
+    const band = makeCanvas(w, TH);
+    const bctx = band.getContext('2d', { willReadFrequently: true });
+    // a drawn layer -> channels A, R, G, B (and, for the grid, kept bands for the composite)
+    const drawn = {};
+    const kinds = ['cad', 'room', 'grid'];
+    let step = 0;
+    const steps = kinds.length * Math.ceil(h / TH);
+    for (const kind of kinds) {
+      const ch = [newChan(), newChan(), newChan(), newChan()];
+      const keep = kind === 'grid' ? [] : null;
+      for (let y0 = 0; y0 < h; y0 += TH) {
+        const bh = Math.min(TH, h - y0);
+        bctx.setTransform(1, 0, 0, 1, 0, 0);
+        bctx.clearRect(0, 0, w, TH);
+        bctx.setTransform(1, 0, 0, 1, 0, -y0);
+        bctx.save(); draws[kind](bctx); bctx.restore();
+        const d = bctx.getImageData(0, 0, w, bh).data;
+        if (keep) keep.push(d);
+        const n = w * bh;
+        const pa = new Uint8Array(n), pr = new Uint8Array(n), pg = new Uint8Array(n), pb = new Uint8Array(n);
+        for (let i = 0, j = 0; i < n; i++, j += 4) { pr[i] = d[j]; pg[i] = d[j + 1]; pb[i] = d[j + 2]; pa[i] = d[j + 3]; }
+        for (let yy = 0; yy < bh; yy++) {
+          addRow(ch[0], y0 + yy, rleRow(pa, yy * w));
+          addRow(ch[1], y0 + yy, rleRow(pr, yy * w));
+          addRow(ch[2], y0 + yy, rleRow(pg, yy * w));
+          addRow(ch[3], y0 + yy, rleRow(pb, yy * w));
+        }
+        step++;
+        yield 0.8 + 0.17 * step / steps;
+      }
+      drawn[kind] = { ch, keep };
+    }
+    // the reduced picture: R, G, B (opaque)
+    const img = [newChan(), newChan(), newChan()];
+    for (let y = 0; y < h; y++) {
+      addRow(img[0], y, rleRow(planes.R, y * w));
+      addRow(img[1], y, rleRow(planes.G, y * w));
+      addRow(img[2], y, rleRow(planes.B, y * w));
+    }
+    // the composite: the reduced picture with the grid over it
+    const comp = [newChan(), newChan(), newChan()];
+    const crow = [new Uint8Array(w), new Uint8Array(w), new Uint8Array(w)];
+    const gk = drawn.grid.keep;
+    for (let y = 0; y < h; y++) {
+      const gd = gk[Math.floor(y / TH)], gy = y % TH;
+      for (let x = 0; x < w; x++) {
+        const o = y * w + x, j = (gy * w + x) * 4, a = gd[j + 3] / 255;
+        crow[0][x] = Math.round(planes.R[o] * (1 - a) + gd[j] * a);
+        crow[1][x] = Math.round(planes.G[o] * (1 - a) + gd[j + 1] * a);
+        crow[2][x] = Math.round(planes.B[o] * (1 - a) + gd[j + 2] * a);
+      }
+      for (let c = 0; c < 3; c++) addRow(comp[c], y, rleRow(crow[c], 0));
+    }
+    yield 0.99;
 
     parts.push(ascii('8BPS'), i16(big ? 2 : 1), new Uint8Array(6), i16(3), i32(h), i32(w), i16(8), i16(3), i32(0));
     const fx = Math.round(25.4 * 65536);
     const res = concat([ascii('8BIM'), i16(1005), i16(0), i32(16), i32(fx), i16(1), i16(1), i32(fx), i16(1), i16(1)]);
     parts.push(i32(res.length), res);
 
-    // layer record
-    // the old style name is ASCII only (Japanese as "?"); the real name is in 'luni' (Unicode)
-    const nameBytes = Uint8Array.from(layerName.split('').map((c) => (c.charCodeAt(0) > 126 ? 63 : c.charCodeAt(0)))).subarray(0, 255);
-    const pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
-    const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
-    const ub = new Uint8Array(layerName.length * 2);
-    for (let i = 0; i < layerName.length; i++) { const c = layerName.charCodeAt(i); ub[i * 2] = c >> 8; ub[i * 2 + 1] = c % 256; }
-    let luniData = concat([i32(layerName.length), ub]);
-    if (luniData.length % 4) luniData = concat([luniData, new Uint8Array(4 - (luniData.length % 4))]);
-    const luni = concat([ascii('8BIM'), ascii('luni'), i32(luniData.length), luniData]);
-    const extra = concat([i32(0), i32(0), pascal, luni]);
-    const ids = [0, 1, 2];
-    const head = [i32(0), i32(0), i32(h), i32(w), i16(3)];
-    ids.forEach((id, k) => { head.push(i16(id)); head.push(len(chanLen(enc[k]))); });
-    // opacity 255, clipping 0, flags 8 (= bit 4 is meaningful; the layer is not hidden), filler 0
-    head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, 8, 0), i32(extra.length), extra);
-    const rec = concat(head);
-    const dataLen = enc.reduce((t, c) => t + chanLen(c), 0);
-    let infoLen = 2 + rec.length + dataLen;
+    const record = (name, chans, ids, flags) => {
+      // the old style name is ASCII only (Japanese as "?"); the real name is in 'luni' (Unicode)
+      const nameBytes = Uint8Array.from(name.split('').map((c) => (c.charCodeAt(0) > 126 ? 63 : c.charCodeAt(0)))).subarray(0, 255);
+      const pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
+      const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
+      const ub = new Uint8Array(name.length * 2);
+      for (let i = 0; i < name.length; i++) { const c = name.charCodeAt(i); ub[i * 2] = c >> 8; ub[i * 2 + 1] = c % 256; }
+      let luniData = concat([i32(name.length), ub]);
+      if (luniData.length % 4) luniData = concat([luniData, new Uint8Array(4 - (luniData.length % 4))]);
+      const luni = concat([ascii('8BIM'), ascii('luni'), i32(luniData.length), luniData]);
+      const extra = concat([i32(0), i32(0), pascal, luni]);
+      const head = [i32(0), i32(0), i32(h), i32(w), i16(chans.length)];
+      ids.forEach((id, k) => { head.push(i16(id)); head.push(len(chanLen(chans[k]))); });
+      head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, flags, 0), i32(extra.length), extra);
+      return concat(head);
+    };
+    const L = [
+      { name: names.cad, chans: drawn.cad.ch, ids: [-1, 0, 1, 2], flags: 8 },
+      { name: names.room, chans: drawn.room.ch, ids: [-1, 0, 1, 2], flags: 8 },
+      { name: names.img, chans: img, ids: [0, 1, 2], flags: 8 },
+      { name: names.grid, chans: drawn.grid.ch, ids: [-1, 0, 1, 2], flags: 8 },
+    ];
+    const recs = L.map((l) => record(l.name, l.chans, l.ids, l.flags));
+    const dataLen = L.reduce((t, l) => t + l.chans.reduce((u, c) => u + chanLen(c), 0), 0);
+    let infoLen = 2 + recs.reduce((t, r) => t + r.length, 0) + dataLen;
     const odd = infoLen % 2;
     infoLen += odd;
-    parts.push(len((big ? 8 : 4) + infoLen + 4), len(infoLen), i16(1), rec);
-    enc.forEach((c) => { parts.push(i16(1), c.counts); c.chunks.forEach((u) => parts.push(u)); });
+    parts.push(len((big ? 8 : 4) + infoLen + 4), len(infoLen), i16(L.length));
+    recs.forEach((r) => parts.push(r));
+    L.forEach((l) => l.chans.forEach((c) => { parts.push(i16(1), c.counts); c.chunks.forEach((u) => parts.push(u)); }));
     if (odd) parts.push(new Uint8Array(1));
     parts.push(i32(0));
 
-    // composite: R, G, B (the same RLE data)
     parts.push(i16(1));
-    enc.forEach((c) => parts.push(c.counts));
-    enc.forEach((c) => c.chunks.forEach((u) => parts.push(u)));
+    comp.forEach((c) => parts.push(c.counts));
+    comp.forEach((c) => c.chunks.forEach((u) => parts.push(u)));
     return parts;
+  }
+
+  // the whole job (a generator: progress values, then { parts, used })
+  function* job(m) {
+    const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither);
+    let r = it.next();
+    while (!r.done) { yield r.value; r = it.next(); }
+    const q = r.value;
+    const names = Object.assign({ cad: '①CAD画像', room: '②部屋', img: '③変換画像（減色・実寸）', grid: '④割付（50cm角）' }, m.names || {});
+    const wt = writePsd(m.width, m.height, q, m.info || null, names);
+    let p = wt.next();
+    while (!p.done) { yield p.value; p = wt.next(); }
+    return { parts: pack(p.value), used: q.used };
   }
 
   // join the small pieces into a few big buffers
@@ -161,29 +277,22 @@
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
       run: async (m, progress) => {
-        const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither);
+        const it = job(m);
         let r = it.next();
         while (!r.done) { progress(r.value); await new Promise((res) => setTimeout(res, 0)); r = it.next(); }
-        const q = r.value;
-        const parts = writePsd(m.width, m.height, q, m.layerName || 'layer', progress);
-        return { parts: pack(parts), used: q.used };
+        return r.value;
       }
     };
     return;
   }
 
-  self.postMessage({ type: 'ready' });
+  self.postMessage({ type: 'ready', offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
-      const m = ev.data;
-      const progress = (v) => self.postMessage({ type: 'progress', value: v });
-      const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither);
+      const it = job(ev.data);
       let r = it.next();
-      while (!r.done) { progress(r.value); r = it.next(); }
-      const q = r.value;
-      const parts = writePsd(m.width, m.height, q, m.layerName || 'layer', progress);
-      const out = pack(parts);
-      self.postMessage({ type: 'done', parts: out, used: q.used }, out);
+      while (!r.done) { self.postMessage({ type: 'progress', value: r.value }); r = it.next(); }
+      self.postMessage({ type: 'done', parts: r.value.parts, used: r.value.used }, r.value.parts);
     } catch (err) {
       self.postMessage({ type: 'error', message: err && err.message ? err.message : String(err) });
     }

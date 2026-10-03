@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.68.2
+ * Version: 2.69.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.68.2');
+define('CFP_VERSION', '2.69.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -509,7 +509,7 @@ final class CAD_Floor_Plan_Plugin {
                       <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
                       <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像を表示</label>
                       <label class="cfp-check"><input type="checkbox" data-cfp="wp-right"> 枠を右寄せスタート（外すと左寄せ）</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-split" checked> 幅が30mを超えるときは30m以内のPSDに分けて保存（ZIP）（外すと1つのPSB）</label>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-split" checked> 幅が20mを超えるときは20m以内のPSDに分けて保存（ZIP）（外すと1つのファイル。30m超はPSB）</label>
                     </div>
                     <div class="cfp-raster-row cfp-layout-sliders cfp-wp-sliders">
                       <label>画像の大きさ <input type="range" data-cfp="wp-dscale" min="20" max="300" step="1" value="100"> <span data-cfp="wp-dscale-val">100</span>%</label>

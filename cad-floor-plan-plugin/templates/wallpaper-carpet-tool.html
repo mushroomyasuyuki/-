@@ -429,7 +429,7 @@
   </section>
 
   <!-- 保存ボタン群（通常PSD保存 ＆ 5mmストレッチ保存） -->
-  <button type="button" id="cc-download-psd" class="btn-submit btn-psd" disabled="">PSDファイルを保存（減色画像 / RGB PSD / 25.4 DPI / 実寸出力）</button>
+  <button type="button" id="cc-download-psd" class="btn-submit btn-psd" disabled="">PSDファイルを保存（CAD画像・部屋・変換画像・割付の4レイヤー / RGB / 25.4 DPI / 実寸）</button>
 
   <div class="estimate-summary">
     <div class="summary-title">お見積もり明細（概算）</div>
@@ -1992,7 +1992,8 @@
       try { wk = new Worker(url); } catch (e) { resolve(null); return; }
       const timer = setTimeout(fail, 8000);
       wk.onerror = () => { clearTimeout(timer); fail(); };
-      wk.onmessage = (ev) => { if (ev.data ? ev.data.type === 'ready' : false) { clearTimeout(timer); resolve(wk); } };
+      // 図を描くための OffscreenCanvas が Worker の中で使えるときだけ使う（使えなければこの画面で作る）
+      wk.onmessage = (ev) => { if (ev.data ? ev.data.type === 'ready' : false) { clearTimeout(timer); if (ev.data.offscreen) resolve(wk); else fail(); } };
     });
   }
   async function getCarpetWorker() {
@@ -2062,8 +2063,13 @@
       let opaque = false;
       for (let i = 3; i < data.length; i += 4096) { if (data[i]) { opaque = true; break; } }
       if (!opaque) throw new Error('画像を実寸に描けませんでした（ブラウザのメモリ不足の可能性があります）。カーペットのサイズを確かめて、もう一度お試しください。');
+      // CAD表示で部屋を選んでいれば、その部屋のカーペット割付（図面・部屋の形・50cm角の割付）もレイヤーに入れる
+      const cadEl = document.querySelector('.cad-floor-plan-widget');
+      let info = null;
+      try { info = cadEl ? (cadEl.cfpWidget ? await cadEl.cfpWidget.carpetPsdInfo(imageW, imageH) : null) : null; } catch (e) { info = null; }
       const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
-        layerName: 'カーペット減色画像 (実寸出力)' }, (v) => { button.textContent = 'PSDを作成中… ' + Math.round(v * 100) + '%'; });
+        info: info, names: { cad: '①CAD画像（図面）', room: '②部屋' + (info ? '（' + info.name + '）' : ''), img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm）', grid: '④割付（50cm角・端で切るタイルは薄い赤）' } },
+        (v) => { button.textContent = 'PSDを作成中… ' + Math.round(v * 100) + '%'; });
       const used = res.used.map((i) => activeEntries[i]);
       state.lastUsedColorEntries = used;
       renderUsedColorsUI(used);
@@ -2232,7 +2238,7 @@
     }
   };
   // buildWhole と同じ内容を、タイルに分けて作る（大きな壁でも固まらない）。cadDraw(ctx): CAD図面を絵の座標に描く関数
-  // split: 幅が 30000mm（PSD の上限）を超えるときは、巾の区切りで 30000mm 以内の PSD に分けて ZIP にまとめる
+  // split: 幅が 20000mm を超えるときは、巾の区切りで 20000mm 以内の PSD に分けて ZIP にまとめる
   WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress, split) {
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
@@ -2253,7 +2259,7 @@
       { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', draw: frame }
     ];
     const comp = (ctx) => { cadL(ctx); design(ctx); frame(ctx); };
-    const MAXW = 30000;
+    const MAXW = 20000; // 分けるときの1ファイルの幅の上限（mm）
     if (split ? FW > MAXW : false) {
       // 巾を左から並べ、1ファイルに入る巾の数ずつ区切る（隣のファイルとは、巾の重なり（合わせ代）の分だけ重なる）
       const xs = [];
@@ -2263,7 +2269,7 @@
       const M = Math.ceil(N / per);
       const files = [];
       const stamp = Date.now();
-      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が PSD の上限（30000px）を超えるため、巾の区切りで ' + M + ' 個の PSD に分けました。',
+      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が 20000mm を超えるため、巾の区切りで ' + M + ' 個の PSD（それぞれ幅 20000mm 以内）に分けました。',
         '各PSD：CMYK・1px = 1mm・25.4dpi、レイヤーは ①CAD図面 ②壁紙の画像 ③巾の枠。左から順に並べると、元の1枚の絵になります。',
         '隣り合うPSDは、巾の重なり（合わせ代 ' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
       for (let k = 0; k !== M; k++) {

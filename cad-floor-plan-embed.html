@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.68.2 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.69.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -3284,6 +3284,32 @@
       this._wpView = { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
       this._wpApplyView();
     }
+    // For the carpet print PSD of the estimate tool: the chosen room's tile layout in the carpet's own picture
+    // (left top = 0, mm, Y down, scaled to W x H): the drawing's part under it, the room outline and the tiles.
+    async carpetPsdInfo(W, H) {
+      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      if (!room) return null;
+      const lay = this._tileLayout(room);
+      if (!lay.box) return null;
+      const bw = lay.box.x1 - lay.box.x0, bh = lay.box.y1 - lay.box.y0;
+      const kx = W / bw, ky = H / bh;
+      const toA = ([x, y]) => [(x - lay.box.x0) * kx, (lay.box.y1 - y) * ky];
+      const info = {
+        room: room.vertices.map(toA),
+        tiles: lay.tiles.map((t) => { const p = toA([t.x, t.y + TILE]); return { x: p[0], y: p[1], w: TILE * kx, h: TILE * ky, cut: !!t.cut }; }),
+        cad: null, name: room.name || '部屋',
+      };
+      const bd = this.backdrop;
+      if (bd && bd.dataUrl && bd.mmPerPx) {
+        try {
+          const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = bd.dataUrl; });
+          const s = bd.mmPerPx;
+          const io = this.imgOffset || { x: 0, y: 0 }; // the drawing moved in the layout view
+          info.cad = { bitmap: await createImageBitmap(img), sx: (lay.box.x0 - io.x) / s, sy: bd.heightPx - (lay.box.y1 + io.y) / s, sw: bw / s, sh: bh / s };
+        } catch (err) { console.warn(err); }
+      }
+      return info;
+    }
     // the wall(s) of the strip frame view shown on the matching walls of the 3D room (the same picture and position)
     _wp3D(g) {
       const r = this.renderer;
@@ -3544,7 +3570,7 @@
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         this.status('壁紙データを保存しました（' + out.width + ' × ' + out.height + ' mm・1px = 1mm・' + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠）。'
-          + (out.split ? '幅が30000mmを超えるため、巾の区切りで ' + out.split + ' 個のPSD（それぞれ30000mm以内）に分け、ZIPにまとめて保存しました。' : '')
+          + (out.split ? '幅が20000mmを超えるため、巾の区切りで ' + out.split + ' 個のPSD（それぞれ20000mm以内）に分け、ZIPにまとめて保存しました。' : '')
           + (out.psb ? '幅が30000mmを超えるため、PhotoshopのPSB形式（大きなドキュメント形式）で保存しました。Photoshopで開けます。' : ''), 'success');
       } catch (err) {
         this.status('エラー: 壁紙データを作成できませんでした（' + err.message + '）', 'error');
