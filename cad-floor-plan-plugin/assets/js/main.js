@@ -1350,8 +1350,13 @@
     // where the converted carpet image sits (mm, Y up): centred on the tile layout, then shifted / scaled
     _designRect(lay, src, preview) {
       const d = preview || this.design;
-      // the carpet image is stretched to the ordered size (W x H) in the estimate tool, so it covers the whole layout
-      const w = (lay.box.x1 - lay.box.x0) * d.scale, h = (lay.box.y1 - lay.box.y0) * d.scale;
+      // the image keeps the aspect ratio of the layout at its home position (no shift) and is only scaled
+      // uniformly so that it always covers the current layout frame: moving the frame never distorts it
+      const room = this.data && this.data.rooms[this.roomIndex];
+      const home = (room && this._tileLayout(room, { x: 0, y: 0 }).box) || lay.box;
+      const hw = home.x1 - home.x0, hh = home.y1 - home.y0;
+      const f = Math.max((lay.box.x1 - lay.box.x0) / hw, (lay.box.y1 - lay.box.y0) / hh);
+      const w = hw * f * d.scale, h = hh * f * d.scale;
       const cx = (lay.box.x0 + lay.box.x1) / 2 + d.x, cy = (lay.box.y0 + lay.box.y1) / 2 + d.y;
       return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2, w, h };
     }
