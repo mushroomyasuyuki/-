@@ -424,7 +424,7 @@
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
       <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（元データ・全体・910mm幅の連続データ・ZIP）</button>
     </div>
-    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは左右10mmずつ重なり（1巾が受け持つ壁は890mm）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
+    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは合わせ代（初期10mm）だけ重なり（1巾が受け持つ壁は初期900mm。重なりの真ん中がカット線）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
     <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下100mmずつの裁断代」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
       </div>
     </details>
@@ -1375,9 +1375,9 @@
     const W = parseFloat($('persp-width')?.value) || 3000;
     const D = parseFloat($('persp-floor-depth')?.value) || 2500;
     const H = parseFloat($('persp-wall-height')?.value) || 2400;
-    // 100% のとき、印刷の裁断代（上下100mm）と巾の重なり（左右10mm）まで画像が入る大きさにする
-    const WP = window.cfpWallPrint || { OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
-    return Math.max(W + WP.OVERLAP * 2, D + WP.OVERLAP * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
+    // 100% のとき、印刷の裁断代（上下100mm）と巾の重なり（左右に合わせ代の半分ずつ）まで画像が入る大きさにする
+    const WP = window.cfpWallPrint || { EDGE: 5, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+    return Math.max(W + WP.EDGE * 2, D + WP.EDGE * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
   }
   window.cfpSingleImageWidthMm = singleImageWidthMm;
 
@@ -1407,9 +1407,9 @@
     const D = parseFloat($('persp-floor-depth')?.value) || 2500;
     const H = parseFloat($('persp-wall-height')?.value) || 2400;
     const P = W + D;
-    const WP = window.cfpWallPrint || { OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+    const WP = window.cfpWallPrint || { EDGE: 5, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
     // 100% のとき、裁断代（上下100mm）と両端の重なり（10mm）まで画像が入る大きさ
-    const iw = Math.max(P + WP.OVERLAP * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
+    const iw = Math.max(P + WP.EDGE * 2, (H + WP.TRIM_TOP + WP.TRIM_BOTTOM) * aspect) * getWallRepeat().scale;
     return { W: W, D: D, H: H, P: P, iw: iw, ih: iw / aspect, s0: (P - iw) / 2 };
   }
   window.cfpWrapBand = wrapBand;
@@ -1932,16 +1932,19 @@
   //   高さ = お部屋パースの「壁の高さ」(mm) + 200mm（裁断代）
   // を使用する。
   // =====================================================================
-  // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代、巾は910mm幅で左右10mmずつ重ねる
+  // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代。巾（初期910mm）は隣の巾と合わせ代（初期10mm）だけ重なり、
+  // 重なりの真ん中がカット線。壁の両端・各巾のカット線の外側には、合わせ代の半分（EDGE）ずつ余白を取る
   const WALL_PRINT = { ROLL: 910, OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
-  WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP * 2; // 1巾が受け持つ壁の幅（890mm）
-  // 巾（横幅）は850〜930mm、合わせ代（左右それぞれ重ねる幅）は6〜15mmを0.5mm刻みで調整できる
+  WALL_PRINT.EDGE = WALL_PRINT.OVERLAP / 2; // カット線の外側の余白（合わせ代の半分）
+  WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP; // 1巾が受け持つ壁の幅（カット線からカット線まで。900mm）
+  // 巾（横幅）は850〜930mm、合わせ代（隣の巾と重なる幅）は6〜15mmを0.5mm刻みで調整できる
   WALL_PRINT.set = function (roll, overlap) {
     const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
     const o = Math.min(15, Math.max(6, Math.round((parseFloat(overlap) || 10) * 2) / 2));
     this.ROLL = r;
     this.OVERLAP = o;
-    this.STEP = r - o * 2;
+    this.EDGE = o / 2;
+    this.STEP = r - o;
   };
   window.cfpWallPrint = WALL_PRINT;
 
@@ -1978,7 +1981,7 @@
     ctx.drawImage(source, ox + (wallW - iw) / 2, oy + (wallH - ih) / 2, iw, ih);
   }
 
-  // 壁のデザインを切り分けず1枚に（左右の合わせ代・上下100mmの裁断代を含む）、3レイヤーのCMYK PSDにする。
+  // 壁のデザインを切り分けず1枚に（左右の余白・上下100mmの裁断代を含む）、3レイヤーのCMYK PSDにする。
   //   ①CAD図面（展開図の壁の範囲）／②壁紙の画像（切り分けなし）／③巾の枠（赤・各巾の幅×高さ）
   // cad: 展開図から切り出した壁の絵（壁の範囲の大きさ、1枚のcanvas）。無ければ空のレイヤー
   WALL_PRINT.getSource = function () {
@@ -1999,7 +2002,7 @@
   // right: true = 右の端から巾を並べる（右寄せスタート）、false = 左の端から（左寄せスタート）
   WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right) {
     const P = WALL_PRINT;
-    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
+    const ox = right ? FW - P.EDGE - W : P.EDGE;
     for (let i = 0; i !== N; i++) {
       const x = right ? FW - P.ROLL - i * P.STEP : i * P.STEP;
       fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
@@ -2011,7 +2014,7 @@
     fx.strokeRect(ox, P.TRIM_TOP, W, WH);
     // カット線：隣り合う巾の重なりの真ん中
     for (let i = 1; i !== N; i++) {
-      const cx = right ? FW - i * P.STEP - P.OVERLAP : i * P.STEP + P.OVERLAP; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
+      const cx = right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
       fx.beginPath();
       fx.moveTo(cx, P.TRIM_TOP);
       fx.lineTo(cx, P.TRIM_TOP + WH);
@@ -2022,8 +2025,8 @@
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
     const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
-    const FW = Math.round(N * P.STEP + P.OVERLAP * 2);
-    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
+    const FW = Math.round(N * P.STEP + P.OVERLAP);
+    const ox = right ? FW - P.EDGE - W : P.EDGE;
     const mk = () => { const c = document.createElement('canvas'); c.width = FW; c.height = H; return c; };
     const cadL = mk();
     if (cad) cadL.getContext('2d').drawImage(cad, ox, P.TRIM_TOP, W, WH);
@@ -2042,7 +2045,7 @@
       name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + '.psd',
       blob: writeCmykPsd(FW, H, comp, [
         { name: '①CAD図面（壁の範囲 ' + W + '×' + WH + 'mm）', canvas: cadL },
-        { name: '②壁紙の画像（切り分けなし・左右の合わせ代と上下' + P.TRIM_TOP + 'mmを含む）', canvas: design },
+        { name: '②壁紙の画像（切り分けなし・左右の余白と上下' + P.TRIM_TOP + 'mmを含む）', canvas: design },
         { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', canvas: frame }
       ], 25.4),
       width: FW, height: H, strips: N
@@ -2095,7 +2098,7 @@
   }
 
   // ---- 壁紙への印刷用：910mm幅（ロール幅）の巾に分割したCMYK PSDを、ZIPにまとめて保存 ----
-  // 1巾 = 幅910mm（左右10mmずつ隣の巾と重なる。壁を受け持つのは890mm）× 高さ（壁の高さ + 上下100mmずつ）。
+  // 1巾 = 幅910mm（隣の巾と合わせ代10mmだけ重なる。壁を受け持つのはカット線からカット線までの900mm）× 高さ（壁の高さ + 上下100mmずつ）。
   // 赤枠（別レイヤー）は、その巾が受け持つ壁の範囲（左右の重なり・上下の裁断代の内側）。
   async function downloadWallPrintStrips() {
     const canvas = getWallSource();
@@ -2112,11 +2115,11 @@
       const WH = Math.max(1, Math.round(parseFloat($('persp-wall-height')?.value) || 2400));
       const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
       const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
-      // 全巾分の絵：壁の左端が x = OVERLAP、天井が y = TRIM_TOP
+      // 全巾分の絵：壁の左端が x = EDGE、天井が y = TRIM_TOP
       const full = document.createElement('canvas');
-      full.width = N * P.STEP + P.OVERLAP * 2;
+      full.width = N * P.STEP + P.OVERLAP;
       full.height = H;
-      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP, P.TRIM_TOP, W, WH);
+      drawWallDesign(full.getContext('2d'), canvas, P.EDGE, P.TRIM_TOP, W, WH);
 
       const files = [];
       const strips = [];
@@ -2136,7 +2139,7 @@
         fx.strokeStyle = '#ff0000';
         fx.lineWidth = 2;
         const fw = Math.min(P.STEP, W - i * P.STEP);
-        fx.strokeRect(P.OVERLAP + 1, P.TRIM_TOP + 1, Math.max(1, fw - 2), WH - 2);
+        fx.strokeRect(P.EDGE + 1, P.TRIM_TOP + 1, Math.max(1, fw - 2), WH - 2);
         const comp = document.createElement('canvas');
         comp.width = P.ROLL;
         comp.height = H;
@@ -2162,10 +2165,10 @@
       const ff = fullFrame.getContext('2d');
       ff.strokeStyle = '#ff0000';
       ff.lineWidth = 3;
-      ff.strokeRect(P.OVERLAP + 1.5, P.TRIM_TOP + 1.5, W - 3, WH - 3);
+      ff.strokeRect(P.EDGE + 1.5, P.TRIM_TOP + 1.5, W - 3, WH - 3);
       ff.lineWidth = 2;
       for (let i = 1; i !== N; i++) {
-        const lx = P.OVERLAP + i * P.STEP + 0.5;
+        const lx = P.EDGE + i * P.STEP + 0.5;
         ff.beginPath(); ff.moveTo(lx, 0); ff.lineTo(lx, H); ff.stroke();
       }
       const fullComp = document.createElement('canvas');
@@ -2231,7 +2234,7 @@
         '',
         '壁のサイズ（図面）：幅 ' + W + ' mm × 高さ ' + WH + ' mm',
         '1巾のサイズ：幅 ' + P.ROLL + ' mm × 高さ ' + H + ' mm（壁の高さ + 上下 ' + P.TRIM_TOP + ' mm ずつの裁断代）',
-        '巾の重なり：左右 ' + P.OVERLAP + ' mm ずつ（隣の巾と柄が重なります）。1巾が受け持つ壁の幅は ' + P.STEP + ' mm',
+        '巾の重なり（合わせ代）：' + P.OVERLAP + ' mm（隣の巾と柄が重なります。重なりの真ん中がカット線）。1巾が受け持つ壁の幅は ' + P.STEP + ' mm',
         '巾数：' + N + ' 巾（左から順に 01, 02, …）',
         '赤枠：各巾が受け持つ壁の範囲（別レイヤー「②赤枠」。印刷しない場合はレイヤーを非表示にしてください）',
         '形式：CMYK・8bit・PSD・25.4dpi（1px = 1mm）。RGBからの単純変換のため、印刷色は校正してください。',
@@ -2283,7 +2286,7 @@
       designCanvas.height = imageH;
       drawWallDesign(designCanvas.getContext('2d'), canvas, 0, P.TRIM_TOP, imageW, WH);
 
-      // ②裁断ガイド層：赤枠（壁の範囲）と、巾の境目（890mmごと）の縦線
+      // ②裁断ガイド層：赤枠（壁の範囲）と、巾の境目（カット線の間隔ごと）の縦線
       const guideCanvas = document.createElement('canvas');
       guideCanvas.width = imageW;
       guideCanvas.height = imageH;
@@ -2310,7 +2313,7 @@
       // 壁紙は CMYK で保存（ガイド線は C0 M100 Y100 K0 の赤）
       const blob = writeCmykPsd(imageW, imageH, compositeCanvas, [
         { name: '①壁紙デザイン（実寸・幅' + imageW + 'mm×高さ' + imageH + 'mm）', canvas: designCanvas },
-        { name: '②裁断ガイド（赤枠＝壁の範囲・上下100mmの裁断代／縦線＝巾の境目 890mmごと）', canvas: guideCanvas }
+        { name: '②裁断ガイド（赤枠＝壁の範囲・上下100mmの裁断代／縦線＝巾の境目 ' + P.STEP + 'mmごと）', canvas: guideCanvas }
       ], 25.4);
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
