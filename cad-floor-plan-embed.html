@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.33.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.34.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -165,6 +165,7 @@
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-pan">移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="tool-rect">四角</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-poly">多角形</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-move" title="手で指定した部屋（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">部屋を移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="undo-pt">1点戻す</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-in" aria-label="拡大">＋</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-out" aria-label="縮小">－</button>
@@ -185,6 +186,7 @@
       <div class="cfp-trace-bar">
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角で壁紙の範囲を指定</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-move" title="四角で指定した範囲（緑の枠）をドラッグして動かします">範囲を移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
         <label class="cfp-check"><input type="checkbox" data-cfp="elev-cloth-only"> クロス貼りの壁だけ表示</label>
         <span class="cfp-elev-sep">この図面の壁を合計に：</span>
@@ -1576,7 +1578,8 @@
 /**
  * RoomTracer: draw rooms by hand on top of a drawing picture (SVG, coordinates = picture pixels).
  * Tools: pan (drag), rect (drag two corners), poly (click corners; click the first point or
- * double-click to finish). Mouse wheel zooms around the pointer.
+ * double-click to finish), move (drag a room drawn by hand to another place; the picture stays).
+ * Mouse wheel zooms around the pointer.
  */
 (function (root) {
   'use strict';
@@ -1590,6 +1593,9 @@
     constructor(svg, opts = {}) {
       this.svg = svg;
       this.onCommit = opts.onCommit || (() => {});
+      this.onMove = opts.onMove || (() => {}); // (key, poly) after a room was dragged with the move tool
+      this.items = [];
+      this.move = null;
       this.tool = 'rect';
       this.ortho = true;
       this.W = 1;
@@ -1617,12 +1623,15 @@
       this.fit();
     }
     // items: [{ poly: [[x, y]...], label, manual, selected }]
+    // movable: true for rooms that the move tool may drag; key is passed back to onMove
     setRooms(items) {
       this.roomsLayer.textContent = '';
       this.labels = [];
+      this.items = items;
       items.forEach((it) => {
         const g = el('g');
         const color = it.color || (it.selected ? '#2563eb' : (it.manual ? '#16a34a' : '#a1a1aa'));
+        it._g = g;
         g.appendChild(el('polygon', {
           points: it.poly.map((p) => p[0] + ',' + p[1]).join(' '),
           fill: color, 'fill-opacity': it.selected ? 0.35 : 0.22,
@@ -1644,7 +1653,24 @@
     setTool(tool) {
       this.tool = tool;
       this.cancel();
-      this.svg.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
+      this.svg.style.cursor = this._cursor();
+    }
+    _cursor() {
+      return this.tool === 'pan' ? 'grab' : (this.tool === 'move' ? 'move' : 'crosshair');
+    }
+    // the topmost movable room under a picture point
+    _hit(p) {
+      for (let i = this.items.length - 1; i >= 0; i--) {
+        const it = this.items[i];
+        if (!it.movable) continue;
+        let inside = false;
+        const v = it.poly;
+        for (let a = 0, b = v.length - 1; a < v.length; b = a++) {
+          if ((v[a][1] > p[1]) !== (v[b][1] > p[1]) && p[0] < ((v[b][0] - v[a][0]) * (p[1] - v[a][1])) / (v[b][1] - v[a][1]) + v[a][0]) inside = !inside;
+        }
+        if (inside) return it;
+      }
+      return null;
     }
     cancel() {
       this.pts = [];
@@ -1740,6 +1766,15 @@
         }
         if (e.button !== 0) return;
         const p = this._clamp(this._pt(e));
+        if (this.tool === 'move') {
+          const it = this._hit(p);
+          if (!it) return;
+          const xs = it.poly.map((q) => q[0]), ys = it.poly.map((q) => q[1]);
+          this.move = { it, start: p, orig: it.poly.map((q) => [q[0], q[1]]), dx: 0, dy: 0,
+            minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+          svg.setPointerCapture(e.pointerId);
+          return;
+        }
         if (this.tool === 'rect') {
           this.drag = { start: p, cur: null, sx: e.clientX, sy: e.clientY };
           svg.setPointerCapture(e.pointerId);
@@ -1756,6 +1791,14 @@
           this._applyView();
           return;
         }
+        if (this.move) {
+          const m = this.move, p = this._pt(e);
+          // keep the room inside the picture
+          m.dx = Math.min(this.W - m.maxX, Math.max(-m.minX, p[0] - m.start[0]));
+          m.dy = Math.min(this.H - m.maxY, Math.max(-m.minY, p[1] - m.start[1]));
+          m.it._g.setAttribute('transform', 'translate(' + m.dx + ',' + m.dy + ')');
+          return;
+        }
         if (this.drag) {
           this.drag.cur = this._clamp(this._pt(e));
           this._drawDraft();
@@ -1767,7 +1810,14 @@
       svg.addEventListener('pointerup', (e) => {
         if (this.pan) {
           this.pan = null;
-          svg.style.cursor = this.tool === 'pan' ? 'grab' : 'crosshair';
+          svg.style.cursor = this._cursor();
+          return;
+        }
+        if (this.move) {
+          const m = this.move;
+          this.move = null;
+          if (Math.abs(m.dx) < 0.5 && Math.abs(m.dy) < 0.5) { m.it._g.removeAttribute('transform'); return; }
+          this.onMove(m.it.key, m.orig.map((q) => [q[0] + m.dx, q[1] + m.dy]));
           return;
         }
         if (this.drag) {
@@ -1807,7 +1857,10 @@
         this._finishPoly();
       });
       svg.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') this.cancel();
+        if (e.key === 'Escape') {
+          if (this.move) { this.move.it._g.removeAttribute('transform'); this.move = null; }
+          this.cancel();
+        }
         else if (e.key === 'Backspace') { e.preventDefault(); this.undoPoint(); }
         else if (e.key === 'Enter') this._finishPoly();
       });
@@ -1937,9 +1990,9 @@
       const tool = (name) => {
         if (!this.tracer) return;
         this.tracer.setTool(name);
-        ['pan', 'rect', 'poly'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'move'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'poly'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
+      ['pan', 'rect', 'poly', 'move'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
       this.$('zoom-in').addEventListener('click', () => this.tracer && this.tracer.zoom(0.7));
       this.$('zoom-out').addEventListener('click', () => this.tracer && this.tracer.zoom(1.4));
       this.$('zoom-fit').addEventListener('click', () => this.tracer && this.tracer.fit());
@@ -1952,9 +2005,9 @@
       const etool = (name) => {
         if (!this.elevTracer) return;
         this.elevTracer.setTool(name);
-        ['pan', 'rect'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'move'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      ['pan', 'rect', 'move'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
       const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
@@ -2582,7 +2635,7 @@
     _initElevTracer() {
       const bd = this.elev.backdrop;
       if (!this.elevTracer) {
-        this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly) });
+        this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly), onMove: (i, poly) => this._moveElevRect(i, poly) });
         this.elevTracer.ortho = false;
       }
       if (this._elevImage !== bd.dataUrl) {
@@ -2606,7 +2659,7 @@
         let poly;
         if (w.poly) poly = w.poly;
         else poly = this._wallPoly(w);
-        items.push({ poly, label: String(i + 1), manual: !!w.custom, selected: sel, color: sel ? '#2563eb' : (w.custom ? '#16a34a' : (w.cloth ? '#a855f7' : '#a1a1aa')) });
+        items.push({ poly, label: String(i + 1), manual: !!w.custom, movable: !!w.custom, key: i, selected: sel, color: sel ? '#2563eb' : (w.custom ? '#16a34a' : (w.cloth ? '#a855f7' : '#a1a1aa')) });
       });
       this.elevTracer.setRooms(items);
     }
@@ -2698,6 +2751,14 @@
       this.$('elev-note').textContent = msg;
       this.status('壁を選びました。', 'success');
     }
+    // a wall paper area drawn by hand, dragged to another place (the size stays the same)
+    _moveElevRect(i, poly) {
+      const w = this._elevAll()[i];
+      if (!w || !w.custom) return;
+      w.poly = poly;
+      this._renderElevList();
+      this.status('「' + w.name + '」を移動しました。', 'success');
+    }
     // a rectangle drawn on the elevation: the wall paper area of that wall
     _commitElevRect(poly) {
       const bd = this.elev.backdrop, s = bd.mmPerPx;
@@ -2730,7 +2791,7 @@
         }
       }
       if (!this.tracer) {
-        this.tracer = new RoomTracer(this.$('trace-svg'), { onCommit: (poly) => this._commitManual(poly) });
+        this.tracer = new RoomTracer(this.$('trace-svg'), { onCommit: (poly) => this._commitManual(poly), onMove: (i, poly) => this._moveManual(i, poly) });
         this.$('tool-rect').classList.add('is-on');
       }
       this.tracer.ortho = this.$('ortho').checked;
@@ -2750,6 +2811,8 @@
         poly: r.vertices.map(([x, y]) => [x / s, H - y / s]),
         label: String(i + 1),
         manual: !!(this.roomKinds[i] && this.roomKinds[i].manual),
+        movable: !!(this.roomKinds[i] && this.roomKinds[i].manual),
+        key: i,
         selected: i === this.roomIndex,
       })));
     }
@@ -2758,6 +2821,14 @@
       this._afterRoomsChanged(this.roomKinds.length); // the new room is last
       const n = this.data.rooms.length;
       this.status('部屋を追加しました（部屋 ' + n + '）。続けて指定するか、一覧から部屋を選んでください。', 'success');
+    }
+    // a hand-traced room dragged to another place with the move tool (only the outline moves)
+    _moveManual(i, poly) {
+      const kind = this.roomKinds[i];
+      if (!kind || !kind.manual) return;
+      this.manual[kind.mi].poly = poly;
+      this._afterRoomsChanged(i);
+      this.status('「' + (this.data.rooms[i].name || '指定した部屋') + '」を移動しました。', 'success');
     }
     _removeManual(mi) {
       this.manual.splice(mi, 1);

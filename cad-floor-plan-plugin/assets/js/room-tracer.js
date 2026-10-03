@@ -1,7 +1,8 @@
 /**
  * RoomTracer: draw rooms by hand on top of a drawing picture (SVG, coordinates = picture pixels).
  * Tools: pan (drag), rect (drag two corners), poly (click corners; click the first point or
- * double-click to finish). Mouse wheel zooms around the pointer.
+ * double-click to finish), move (drag a room drawn by hand to another place; the picture stays).
+ * Mouse wheel zooms around the pointer.
  */
 (function (root) {
   'use strict';
@@ -17,6 +18,9 @@
     constructor(svg, opts = {}) {
       this.svg = svg;
       this.onCommit = opts.onCommit || (() => {});
+      this.onMove = opts.onMove || (() => {}); // (key, poly) after a room was dragged with the move tool
+      this.items = [];
+      this.move = null;
       this.tool = 'rect';
       this.ortho = true;
       this.W = 1;
@@ -47,12 +51,15 @@
     }
 
     // items: [{ poly: [[x, y]...], label, manual, selected }]
+    // movable: true for rooms that the move tool may drag; key is passed back to onMove
     setRooms(items) {
       this.roomsLayer.textContent = '';
       this.labels = [];
+      this.items = items;
       items.forEach((it) => {
         const g = el('g');
         const color = it.color || (it.selected ? '#2563eb' : (it.manual ? '#16a34a' : '#a1a1aa'));
+        it._g = g;
         g.appendChild(el('polygon', {
           points: it.poly.map((p) => p[0] + ',' + p[1]).join(' '),
           fill: color, 'fill-opacity': it.selected ? 0.35 : 0.22,
@@ -75,7 +82,26 @@
     setTool(tool) {
       this.tool = tool;
       this.cancel();
-      this.svg.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
+      this.svg.style.cursor = this._cursor();
+    }
+
+    _cursor() {
+      return this.tool === 'pan' ? 'grab' : (this.tool === 'move' ? 'move' : 'crosshair');
+    }
+
+    // the topmost movable room under a picture point
+    _hit(p) {
+      for (let i = this.items.length - 1; i >= 0; i--) {
+        const it = this.items[i];
+        if (!it.movable) continue;
+        let inside = false;
+        const v = it.poly;
+        for (let a = 0, b = v.length - 1; a < v.length; b = a++) {
+          if ((v[a][1] > p[1]) !== (v[b][1] > p[1]) && p[0] < ((v[b][0] - v[a][0]) * (p[1] - v[a][1])) / (v[b][1] - v[a][1]) + v[a][0]) inside = !inside;
+        }
+        if (inside) return it;
+      }
+      return null;
     }
 
     cancel() {
@@ -186,6 +212,15 @@
         }
         if (e.button !== 0) return;
         const p = this._clamp(this._pt(e));
+        if (this.tool === 'move') {
+          const it = this._hit(p);
+          if (!it) return;
+          const xs = it.poly.map((q) => q[0]), ys = it.poly.map((q) => q[1]);
+          this.move = { it, start: p, orig: it.poly.map((q) => [q[0], q[1]]), dx: 0, dy: 0,
+            minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+          svg.setPointerCapture(e.pointerId);
+          return;
+        }
         if (this.tool === 'rect') {
           this.drag = { start: p, cur: null, sx: e.clientX, sy: e.clientY };
           svg.setPointerCapture(e.pointerId);
@@ -203,6 +238,14 @@
           this._applyView();
           return;
         }
+        if (this.move) {
+          const m = this.move, p = this._pt(e);
+          // keep the room inside the picture
+          m.dx = Math.min(this.W - m.maxX, Math.max(-m.minX, p[0] - m.start[0]));
+          m.dy = Math.min(this.H - m.maxY, Math.max(-m.minY, p[1] - m.start[1]));
+          m.it._g.setAttribute('transform', 'translate(' + m.dx + ',' + m.dy + ')');
+          return;
+        }
         if (this.drag) {
           this.drag.cur = this._clamp(this._pt(e));
           this._drawDraft();
@@ -215,7 +258,14 @@
       svg.addEventListener('pointerup', (e) => {
         if (this.pan) {
           this.pan = null;
-          svg.style.cursor = this.tool === 'pan' ? 'grab' : 'crosshair';
+          svg.style.cursor = this._cursor();
+          return;
+        }
+        if (this.move) {
+          const m = this.move;
+          this.move = null;
+          if (Math.abs(m.dx) < 0.5 && Math.abs(m.dy) < 0.5) { m.it._g.removeAttribute('transform'); return; }
+          this.onMove(m.it.key, m.orig.map((q) => [q[0] + m.dx, q[1] + m.dy]));
           return;
         }
         if (this.drag) {
@@ -257,7 +307,10 @@
       });
 
       svg.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') this.cancel();
+        if (e.key === 'Escape') {
+          if (this.move) { this.move.it._g.removeAttribute('transform'); this.move = null; }
+          this.cancel();
+        }
         else if (e.key === 'Backspace') { e.preventDefault(); this.undoPoint(); }
         else if (e.key === 'Enter') this._finishPoly();
       });

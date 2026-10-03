@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.33.0
+ * Version: 2.34.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.33.0');
+define('CFP_VERSION', '2.34.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -379,6 +379,7 @@ final class CAD_Floor_Plan_Plugin {
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-pan">移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="tool-rect">四角</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-poly">多角形</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-move" title="手で指定した部屋（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">部屋を移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="undo-pt">1点戻す</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-in" aria-label="拡大">＋</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-out" aria-label="縮小">－</button>
@@ -399,6 +400,7 @@ final class CAD_Floor_Plan_Plugin {
                   <div class="cfp-trace-bar">
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角で壁紙の範囲を指定</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-move" title="四角で指定した範囲（緑の枠）をドラッグして動かします">範囲を移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
                     <label class="cfp-check"><input type="checkbox" data-cfp="elev-cloth-only"> クロス貼りの壁だけ表示</label>
                     <span class="cfp-elev-sep">この図面の壁を合計に：</span>

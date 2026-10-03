@@ -124,9 +124,9 @@
       const tool = (name) => {
         if (!this.tracer) return;
         this.tracer.setTool(name);
-        ['pan', 'rect', 'poly'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'move'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'poly'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
+      ['pan', 'rect', 'poly', 'move'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
       this.$('zoom-in').addEventListener('click', () => this.tracer && this.tracer.zoom(0.7));
       this.$('zoom-out').addEventListener('click', () => this.tracer && this.tracer.zoom(1.4));
       this.$('zoom-fit').addEventListener('click', () => this.tracer && this.tracer.fit());
@@ -139,9 +139,9 @@
       const etool = (name) => {
         if (!this.elevTracer) return;
         this.elevTracer.setTool(name);
-        ['pan', 'rect'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'move'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      ['pan', 'rect', 'move'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
       const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
@@ -803,7 +803,7 @@
     _initElevTracer() {
       const bd = this.elev.backdrop;
       if (!this.elevTracer) {
-        this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly) });
+        this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly), onMove: (i, poly) => this._moveElevRect(i, poly) });
         this.elevTracer.ortho = false;
       }
       if (this._elevImage !== bd.dataUrl) {
@@ -829,7 +829,7 @@
         let poly;
         if (w.poly) poly = w.poly;
         else poly = this._wallPoly(w);
-        items.push({ poly, label: String(i + 1), manual: !!w.custom, selected: sel, color: sel ? '#2563eb' : (w.custom ? '#16a34a' : (w.cloth ? '#a855f7' : '#a1a1aa')) });
+        items.push({ poly, label: String(i + 1), manual: !!w.custom, movable: !!w.custom, key: i, selected: sel, color: sel ? '#2563eb' : (w.custom ? '#16a34a' : (w.cloth ? '#a855f7' : '#a1a1aa')) });
       });
       this.elevTracer.setRooms(items);
     }
@@ -926,6 +926,15 @@
       this.status('壁を選びました。', 'success');
     }
 
+    // a wall paper area drawn by hand, dragged to another place (the size stays the same)
+    _moveElevRect(i, poly) {
+      const w = this._elevAll()[i];
+      if (!w || !w.custom) return;
+      w.poly = poly;
+      this._renderElevList();
+      this.status('「' + w.name + '」を移動しました。', 'success');
+    }
+
     // a rectangle drawn on the elevation: the wall paper area of that wall
     _commitElevRect(poly) {
       const bd = this.elev.backdrop, s = bd.mmPerPx;
@@ -959,7 +968,7 @@
         }
       }
       if (!this.tracer) {
-        this.tracer = new RoomTracer(this.$('trace-svg'), { onCommit: (poly) => this._commitManual(poly) });
+        this.tracer = new RoomTracer(this.$('trace-svg'), { onCommit: (poly) => this._commitManual(poly), onMove: (i, poly) => this._moveManual(i, poly) });
         this.$('tool-rect').classList.add('is-on');
       }
       this.tracer.ortho = this.$('ortho').checked;
@@ -980,6 +989,8 @@
         poly: r.vertices.map(([x, y]) => [x / s, H - y / s]),
         label: String(i + 1),
         manual: !!(this.roomKinds[i] && this.roomKinds[i].manual),
+        movable: !!(this.roomKinds[i] && this.roomKinds[i].manual),
+        key: i,
         selected: i === this.roomIndex,
       })));
     }
@@ -989,6 +1000,15 @@
       this._afterRoomsChanged(this.roomKinds.length); // the new room is last
       const n = this.data.rooms.length;
       this.status('部屋を追加しました（部屋 ' + n + '）。続けて指定するか、一覧から部屋を選んでください。', 'success');
+    }
+
+    // a hand-traced room dragged to another place with the move tool (only the outline moves)
+    _moveManual(i, poly) {
+      const kind = this.roomKinds[i];
+      if (!kind || !kind.manual) return;
+      this.manual[kind.mi].poly = poly;
+      this._afterRoomsChanged(i);
+      this.status('「' + (this.data.rooms[i].name || '指定した部屋') + '」を移動しました。', 'success');
     }
 
     _removeManual(mi) {
