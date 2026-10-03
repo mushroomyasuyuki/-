@@ -909,26 +909,62 @@
       this.$('wp-fit').addEventListener('click', () => { this._wpView = null; this._wpRender(); });
       this.$('wp-zin').addEventListener('click', () => this._wpZoom(1 / 1.4));
       this.$('wp-zout').addEventListener('click', () => this._wpZoom(1.4));
-      svg.addEventListener('wheel', (e) => { e.preventDefault(); this._wpZoom(e.deltaY < 0 ? 1 / 1.2 : 1.2, e); }, { passive: false });
+      svg.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.deltaX !== 0 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { // a sideways wheel / trackpad swipe moves the view
+          const v = this._wpCurView();
+          if (v) { this._wpView = { x: v.x + Math.sign(e.deltaX) * v.w * 0.1, y: v.y, w: v.w, h: v.h }; this._wpApplyView(); }
+          return;
+        }
+        this._wpZoom(e.deltaY < 0 ? 1 / 1.2 : 1.2, e);
+      }, { passive: false });
+      // drag: followed on the window, so it goes on outside the picture and the page's edge
       let drag = null;
-      svg.addEventListener('pointerdown', (e) => {
-        const v = this._wpCurView();
-        if (!v) return;
-        drag = { x: e.clientX, y: e.clientY, v };
-        svg.setPointerCapture(e.pointerId);
-        svg.style.cursor = 'grabbing';
-      });
-      svg.addEventListener('pointermove', (e) => {
+      const onMove = (e) => {
         if (!drag) return;
         const r = svg.getBoundingClientRect();
         const k = Math.max(drag.v.w / r.width, drag.v.h / r.height);
         this._wpView = { x: drag.v.x - (e.clientX - drag.x) * k, y: drag.v.y - (e.clientY - drag.y) * k, w: drag.v.w, h: drag.v.h };
         this._wpApplyView();
+      };
+      const onEnd = () => {
+        drag = null;
+        svg.style.cursor = 'grab';
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+      };
+      svg.addEventListener('pointerdown', (e) => {
+        const v = this._wpCurView();
+        if (!v || e.button > 0) return;
+        e.preventDefault();
+        svg.focus({ preventScroll: true });
+        drag = { x: e.clientX, y: e.clientY, v };
+        svg.style.cursor = 'grabbing';
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onEnd);
+        window.addEventListener('pointercancel', onEnd);
       });
-      const end = () => { drag = null; svg.style.cursor = 'grab'; };
-      svg.addEventListener('pointerup', end);
-      svg.addEventListener('pointercancel', end);
       svg.style.cursor = 'grab';
+      // pan buttons and arrow keys (a quarter of the view; Shift = a whole view)
+      const pan = (dx, dy, big) => {
+        const v = this._wpCurView();
+        if (!v) return;
+        const k = big ? 1 : 0.25;
+        this._wpView = { x: v.x + dx * v.w * k, y: v.y + dy * v.h * k, w: v.w, h: v.h };
+        this._wpApplyView();
+      };
+      this.$('wp-pl').addEventListener('click', () => pan(-1, 0));
+      this.$('wp-pr').addEventListener('click', () => pan(1, 0));
+      this.$('wp-pu').addEventListener('click', () => pan(0, -1));
+      this.$('wp-pd').addEventListener('click', () => pan(0, 1));
+      svg.setAttribute('tabindex', '0');
+      svg.addEventListener('keydown', (e) => {
+        const m = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+        if (!m) return;
+        e.preventDefault();
+        pan(m[0], m[1], e.shiftKey);
+      });
     }
 
     _wpClamp(name, v) {
