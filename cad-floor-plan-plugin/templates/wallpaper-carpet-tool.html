@@ -1980,14 +1980,64 @@
   }
 
 
+  // 大きなカーペット（例：6.5m×7.5m＝約4,900万画素）でも画面が固まらないよう、減色とPSD作成を
+  // 別のスレッド（Web Worker：assets/js/carpet-psd-worker.js）で行い、進み具合をボタンに表示する
+  function downloadPsdInWorker(imageW, imageH, ditherFactor, activeEntries, button, ditherPct) {
+    return new Promise((resolve, reject) => {
+      const off = document.createElement('canvas');
+      off.width = imageW;
+      off.height = imageH;
+      const octx = off.getContext('2d', { willReadFrequently: true });
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      octx.drawImage(state.loadedImg, 0, 0, imageW, imageH);
+      const data = octx.getImageData(0, 0, imageW, imageH).data;
+      off.width = 1; off.height = 1; // メモリを空ける
+      const wk = new Worker('{{CFP_ASSET_URL}}js/carpet-psd-worker.js');
+      wk.onmessage = (ev) => {
+        const m = ev.data;
+        if (m.type === 'progress') { button.textContent = 'PSDを作成中… ' + Math.round(m.value * 100) + '%'; return; }
+        wk.terminate();
+        if (m.type !== 'done') { reject(new Error(m.message || 'PSDを作成できませんでした')); return; }
+        const used = m.used.map((i) => activeEntries[i]);
+        state.lastUsedColorEntries = used;
+        renderUsedColorsUI(used);
+        const blob = new Blob(m.parts, { type: 'image/vnd.adobe.photoshop' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'carpet_print_indexed_25.4dpi_dither' + ditherPct + 'pct_' + Date.now() + (imageW > 30000 ? '.psb' : (imageH > 30000 ? '.psb' : '.psd'));
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+        resolve();
+      };
+      wk.onerror = (e) => { wk.terminate(); reject(new Error((e ? e.message : '') || 'Worker を使えませんでした')); };
+      wk.postMessage({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
+        layerName: 'カーペット減色画像 (実寸出力)' }, [data.buffer]);
+    });
+  }
+
   async function downloadPsd() {
     if (!state.loadedImg) {
       alert('先に画像を選択してください。');
       return;
     }
     const button = $('cc-download-psd');
+    const buttonLabel = button.textContent;
     button.disabled = true;
+    button.textContent = 'PSDを作成中…';
     try {
+      // まず別スレッドで作る（使えないブラウザ・環境では、これまでどおりこの画面で作る）
+      const ditherW = Math.min(1, Math.max(0, (parseFloat(($('cc-dither') || {}).value) || 0) / 100));
+      const workerUrl = '{{CFP_ASSET_URL}}';
+      if (window.Worker ? workerUrl.indexOf('{{') !== 0 : false) {
+        try {
+          await downloadPsdInWorker(Math.max(1, Math.round(parseFloat($('cc-width').value) || 1000)), Math.max(1, Math.round(parseFloat($('cc-height').value) || 1000)),
+            ditherW, getActivePaletteEntries(), button, Math.round(ditherW * 100));
+          return;
+        } catch (err) {
+          console.warn('PSD worker:', err);
+        }
+      }
       const agPsd = await loadAgPsd();
       const wMm = parseFloat($('cc-width').value) || 1000;
       const hMm = parseFloat($('cc-height').value) || 1000;
@@ -2035,6 +2085,7 @@
       alert('PSDファイルの生成中にエラーが発生しました。\n' + error.message);
     } finally {
       button.disabled = false;
+      button.textContent = buttonLabel;
     }
   }
 
