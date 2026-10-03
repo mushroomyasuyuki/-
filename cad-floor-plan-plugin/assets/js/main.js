@@ -130,7 +130,6 @@
       this.$('zoom-in').addEventListener('click', () => this.tracer && this.tracer.zoom(0.7));
       this.$('zoom-out').addEventListener('click', () => this.tracer && this.tracer.zoom(1.4));
       this.$('zoom-fit').addEventListener('click', () => this.tracer && this.tracer.fit());
-      this.$('undo-pt').addEventListener('click', () => this.tracer && this.tracer.undoPoint());
       this.$('ortho').addEventListener('change', () => { if (this.tracer) this.tracer.ortho = this.$('ortho').checked; });
       this.$('hide-auto').addEventListener('change', () => {
         this.hideAuto = this.$('hide-auto').checked;

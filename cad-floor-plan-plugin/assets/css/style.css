@@ -115,3 +115,10 @@
 .cfp-elev-total{margin:6px 0 4px;padding:8px 10px;background:#1e1b4b;border:1px solid #6d28d9;border-radius:6px;color:#ede9fe;font-size:13px;font-weight:700;line-height:1.6}
 .cfp-dw-note{white-space:pre-line;margin:-6px 0 12px}
 .cfp-dw-chip button.cfp-dw-sw{color:#93c5fd}
+
+.cfp-edit-help{margin:0 0 10px;font-size:12px;color:#d4d4d8}
+.cfp-edit-help summary{cursor:pointer;color:#4ade80;font-weight:700}
+.cfp-edit-table{border-collapse:collapse;margin-top:6px;width:100%}
+.cfp-edit-table th,.cfp-edit-table td{border:1px solid #27272a;padding:5px 8px;text-align:left;font-size:12px;background:#18181b}
+.cfp-edit-table th{color:#fff;white-space:nowrap;width:1%}
+.cfp-edit-table td{color:#d4d4d8}
