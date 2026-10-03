@@ -147,7 +147,7 @@
         scaleApplied = scaleEl.value;
         // an elevation sheet without walls found automatically takes its scale from this field too
         const ed = this.elev && !this.elev.walls.length ? this.drawings.find((x) => x.file === this._elevFile) : null;
-        if (ed) { ed.elevScale = parseFloat(scaleEl.value) || 1; this.showElevation(ed); }
+        if (ed) { ed.elevScale = parseFloat(scaleEl.value) || 1; ed.rescale = true; this.showElevation(ed); }
         if (this.viewFocus !== 'elev' || !ed) reload(); // looking at the elevation only: leave the floor plan as it is
       };
       scaleEl.addEventListener('input', () => {
@@ -681,7 +681,8 @@
         const st = this.elevStates.get(d.file);
         // no wall found automatically: the scale comes from the "PDFの縮尺" field
         // (the scale typed for this sheet is kept with it: the field changes with the floor plan shown)
-        const typed = d.elevScale > 1 ? d.elevScale : (parseFloat(this.$('scale').value) || 1);
+        const drawnWith = st ? (st.custom || []).map((c) => c.scaleN || 0).find((v) => v > 1) : 0;
+        const typed = d.elevScale > 1 ? d.elevScale : (drawnWith > 1 ? drawnWith : (parseFloat(this.$('scale').value) || 1));
         const scaleN = res.walls.length ? res.scale : (typed > 1 ? typed : (res.scale || 1));
         if (!res.walls.length) d.elevScale = scaleN;
         let bd = st && st.backdrop;
@@ -692,9 +693,13 @@
         }
         this._elevFile = d.file;
         this.elev = { scale: scaleN, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: st ? st.custom : [] };
-        // ranges drawn by hand: their size follows the scale (the outline is kept in picture pixels)
+        // ranges drawn by hand: their size follows the scale only when the scale was changed on purpose
+        // (「PDFの縮尺」を変えたとき)。ほかのとき（図面の切り替え・再開など）は、指定したときの大きさのまま
+        const rescale = !!d.rescale;
+        d.rescale = false;
         this.elev.custom.forEach((c) => {
-          if (!c.poly) return;
+          if (!c.poly || !rescale) return;
+          c.scaleN = scaleN;
           const xs = c.poly.map((q) => q[0]), ys = c.poly.map((q) => q[1]);
           c.width = Math.round((Math.max(...xs) - Math.min(...xs)) * bd.mmPerPx);
           c.height = Math.round((Math.max(...ys) - Math.min(...ys)) * bd.mmPerPx);
@@ -755,7 +760,8 @@
           entry.elev = {
             elevIndex: st.elevIndex == null ? -1 : st.elevIndex,
             clothOnly: !!st.clothOnly,
-            custom: (st.custom || []).map((c) => ({ id: c.id, name: c.name, width: c.width, height: c.height, poly: c.poly, inTotal: !!c.inTotal })),
+            custom: (st.custom || []).map((c) => ({ id: c.id, name: c.name, width: c.width, height: c.height, poly: c.poly, inTotal: !!c.inTotal, scaleN: c.scaleN })),
+            scale: d.elevScale || null,
             inTotal: d.elev ? d.elev.walls.map((w, wi) => (w.inTotal ? wi : -1)).filter((x) => x >= 0) : [],
           };
         } else {
@@ -796,6 +802,7 @@
         const d = { file, type: e.type === 'elev' ? 'elev' : 'plan', elev: null, reason: e.reason || '保存した作業から再開', canSwitch: /\.pdf$/i.test(file.name), warn: false };
         if (d.type === 'elev') {
           try { d.elev = await CADParser.analyzeElevations(file, {}); } catch (err) { console.warn(err); }
+          if (e.elev && e.elev.scale > 1) d.elevScale = e.elev.scale;
           if (d.elev && e.elev) {
             (e.elev.inTotal || []).forEach((wi) => { if (d.elev.walls[wi]) d.elev.walls[wi].inTotal = true; });
             this.elevStates.set(file, {
@@ -1380,6 +1387,7 @@
         + (off.img.x || off.img.y ? ' 画像を動かした量：横 ' + off.img.x + ' mm・縦 ' + off.img.y + ' mm。' : '')
         + ((off.scale || 1) !== 1 ? ' 画像の大きさ ' + Math.round(off.scale * 100) + '%。' : '')
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
+        + (g.walls.some((x) => x.W < 300) ? ' ⚠️ 幅が300mmより小さい壁があります。展開図の縮尺が合っていない（1:1 など）可能性があります。展開図だけを表示して「PDFの縮尺」に展開図の縮尺（例: 30、50）を入れると、指定した範囲の大きさも計算し直します。' : '')
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
       this._wpCheckRoom(g);
       if (!this._wpDragging) this._wp3D(g);
@@ -1586,7 +1594,7 @@
         return;
       }
       const n = this.elev.custom.length + 1;
-      this.elev.custom.push({ id: 'custom_' + n, name: '指定した壁紙の範囲 ' + n, width: Math.round(wmm), height: Math.round(hmm), custom: true, poly, cloth: null });
+      this.elev.custom.push({ id: 'custom_' + n, name: '指定した壁紙の範囲 ' + n, width: Math.round(wmm), height: Math.round(hmm), custom: true, poly, cloth: null, scaleN: this.elev.scale });
       this._renderElevList();
       this.selectWall(this._elevAll().length - 1);
     }
