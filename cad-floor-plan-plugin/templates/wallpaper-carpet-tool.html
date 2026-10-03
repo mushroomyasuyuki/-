@@ -2009,9 +2009,9 @@
     fx.strokeStyle = '#d000d0';
     fx.lineWidth = 2;
     fx.strokeRect(ox, P.TRIM_TOP, W, WH);
-    // カット線：隣の巾の左端（右寄せなら右端）から、合わせ代の半分の位置
+    // カット線：隣り合う巾の重なりの真ん中
     for (let i = 1; i !== N; i++) {
-      const cx = right ? FW - i * P.STEP - P.OVERLAP / 2 : i * P.STEP + P.OVERLAP / 2;
+      const cx = right ? FW - i * P.STEP - P.OVERLAP : i * P.STEP + P.OVERLAP; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
       fx.beginPath();
       fx.moveTo(cx, P.TRIM_TOP);
       fx.lineTo(cx, P.TRIM_TOP + WH);

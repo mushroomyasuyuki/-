@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.56.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.56.1 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -3033,7 +3033,8 @@
       panel.hidden = false;
       const { wp, w, W, WH, H, N, FW } = g;
       const svg = this.$('wp-svg');
-      if (this._wpWall !== w) { this._wpWall = w; this._wpView = null; } // a different wall: back to the whole view
+      const wid = this.elevIndex + '|' + W + 'x' + WH + '|' + (this._elevFile ? this._elevFile.name : '');
+      if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
       svg.textContent = '';
       const add = (name, attrs, parent) => {
@@ -3083,15 +3084,15 @@
         }
         const purple = { stroke: '#d000d0', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' };
         add('rect', Object.assign({ x: ox, y: wp.TRIM_TOP, width: W, height: WH, fill: 'none' }, purple));
-        // cut lines: half of the overlap margin inside the next strip's edge, joined to the wall's top and bottom lines
+        // cut lines: in the middle of the overlap of two neighbouring strips, joined to the wall's top and bottom lines
         for (let i = 1; i < N; i++) {
-          const cx = right ? FW - i * wp.STEP - wp.OVERLAP / 2 : i * wp.STEP + wp.OVERLAP / 2;
+          const cx = right ? FW - i * wp.STEP - wp.OVERLAP : i * wp.STEP + wp.OVERLAP; // the middle of the overlap of two strips
           add('line', Object.assign({ x1: cx, y1: wp.TRIM_TOP, x2: cx, y2: wp.TRIM_TOP + WH }, purple));
         }
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);
       this.$('wp-note').textContent = '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → 画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
-        + '巾 ' + wp.ROLL + ' mm・合わせ代 左右 ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、合わせ代の半分（' + fmt(wp.OVERLAP / 2) + ' mm）の位置のカット線。'
+        + '巾 ' + wp.ROLL + ' mm・合わせ代 左右 ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP * 2) + ' mm）の真ん中のカット線。'
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
     }
     async _wpSave() {
