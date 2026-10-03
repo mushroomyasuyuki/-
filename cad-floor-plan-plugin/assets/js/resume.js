@@ -14,7 +14,7 @@
   const $ = (id) => document.getElementById(id);
   const TOOL = '.cocoon-carpet-tool';
   // 保存しない入力欄（ファイル選択、著作権の確認、CAD表示の中、途中保存欄そのもの）
-  const SKIP = (el) => el.type === 'file' || el.id === 'cc-copyright-ok' || el.id === 'cfp-resume-email'
+  const SKIP = (el) => el.type === 'file' || el.id === 'cc-copyright-ok' || el.id === 'cc-quality-ok' || el.id === 'cfp-resume-email'
     || !!el.closest('.cad-floor-plan-widget') || !el.id;
   let resumeToken = '';
 
