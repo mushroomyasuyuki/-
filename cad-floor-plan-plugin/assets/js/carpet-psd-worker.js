@@ -96,9 +96,9 @@
       }
       return { counts, chunks, size };
     };
-    const alpha = new Uint8Array(w * h).fill(255);
-    const enc = [rle(alpha)];
-    progress(0.84);
+    // the layer has the three colour channels only (no transparency channel), as Photoshop / ag-psd write an
+    // opaque layer: every program then reads it as an ordinary layer
+    const enc = [];
     enc.push(rle(planes.R)); progress(0.88);
     enc.push(rle(planes.G)); progress(0.92);
     enc.push(rle(planes.B)); progress(0.96);
@@ -120,10 +120,11 @@
     if (luniData.length % 4) luniData = concat([luniData, new Uint8Array(4 - (luniData.length % 4))]);
     const luni = concat([ascii('8BIM'), ascii('luni'), i32(luniData.length), luniData]);
     const extra = concat([i32(0), i32(0), pascal, luni]);
-    const ids = [-1, 0, 1, 2];
-    const head = [i32(0), i32(0), i32(h), i32(w), i16(4)];
+    const ids = [0, 1, 2];
+    const head = [i32(0), i32(0), i32(h), i32(w), i16(3)];
     ids.forEach((id, k) => { head.push(i16(id)); head.push(len(chanLen(enc[k]))); });
-    head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, 0, 0), i32(extra.length), extra);
+    // opacity 255, clipping 0, flags 8 (= bit 4 is meaningful; the layer is not hidden), filler 0
+    head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, 8, 0), i32(extra.length), extra);
     const rec = concat(head);
     const dataLen = enc.reduce((t, c) => t + chanLen(c), 0);
     let infoLen = 2 + rec.length + dataLen;
@@ -136,8 +137,8 @@
 
     // composite: R, G, B (the same RLE data)
     parts.push(i16(1));
-    enc.slice(1).forEach((c) => parts.push(c.counts));
-    enc.slice(1).forEach((c) => c.chunks.forEach((u) => parts.push(u)));
+    enc.forEach((c) => parts.push(c.counts));
+    enc.forEach((c) => c.chunks.forEach((u) => parts.push(u)));
     return parts;
   }
 
