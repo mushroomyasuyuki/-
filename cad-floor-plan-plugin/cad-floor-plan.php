@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.53.3
+ * Version: 2.54.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.53.3');
+define('CFP_VERSION', '2.54.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -495,7 +495,7 @@ final class CAD_Floor_Plan_Plugin {
                 </div>
                 <div class="cfp-layout" data-cfp="layout" hidden>
                   <div class="cfp-layout-title">カーペット割付（50cm × 50cm・部屋の中心から／赤線）</div>
-                  <p class="cfp-hint">選んだ部屋に、50cm角のタイルカーペットを部屋の中心から割り付けた線を、図面の上に赤線で表示します。端で切れるタイルも1枚として数え、見積もり（横幅・縦幅）に反映します（薄い赤＝端で切るタイル）。「割付を移動」でドラッグすると割付全体をずらせます（矢印キーで10mm、Shift+矢印で100mm）。変換画像（①カーペット用の減色イメージ）を割付の上に重ねて表示し、「画像を移動」のドラッグ（矢印キーで10mm）と「画像の大きさ」で位置・大きさを微調整できます。</p>
+                  <p class="cfp-hint">選んだ部屋に、50cm角のタイルカーペットを部屋の中心（赤い「センター」印）にタイル1枚の中心を合わせて割り付けた線を、図面の上に赤線で表示します。端で切れるタイルも1枚として数え、見積もり（横幅・縦幅）に反映します（薄い赤＝端で切るタイル）。「割付を移動」でドラッグすると割付全体をずらせます（250mm＝タイル半分ずつ動きます。矢印キーで250mm、Shift+矢印で500mm）。変換画像（①カーペット用の減色イメージ）を割付の上に重ねて表示し、「画像を移動」のドラッグ（矢印キーで10mm）と「画像の大きさ」で位置・大きさを微調整できます。</p>
                   <div class="cfp-trace-bar">
                     <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="layout-pan">移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-grid">割付を移動</button>

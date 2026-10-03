@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.53.3 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.54.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -240,7 +240,7 @@
     </div>
     <div class="cfp-layout" data-cfp="layout" hidden>
       <div class="cfp-layout-title">カーペット割付（50cm × 50cm・部屋の中心から／赤線）</div>
-      <p class="cfp-hint">選んだ部屋に、50cm角のタイルカーペットを部屋の中心から割り付けた線を、図面の上に赤線で表示します。端で切れるタイルも1枚として数え、見積もり（横幅・縦幅）に反映します（薄い赤＝端で切るタイル）。「割付を移動」でドラッグすると割付全体をずらせます（矢印キーで10mm、Shift+矢印で100mm）。変換画像（①カーペット用の減色イメージ）を割付の上に重ねて表示し、「画像を移動」のドラッグ（矢印キーで10mm）と「画像の大きさ」で位置・大きさを微調整できます。</p>
+      <p class="cfp-hint">選んだ部屋に、50cm角のタイルカーペットを部屋の中心（赤い「センター」印）にタイル1枚の中心を合わせて割り付けた線を、図面の上に赤線で表示します。端で切れるタイルも1枚として数え、見積もり（横幅・縦幅）に反映します（薄い赤＝端で切るタイル）。「割付を移動」でドラッグすると割付全体をずらせます（250mm＝タイル半分ずつ動きます。矢印キーで250mm、Shift+矢印で500mm）。変換画像（①カーペット用の減色イメージ）を割付の上に重ねて表示し、「画像を移動」のドラッグ（矢印キーで10mm）と「画像の大きさ」で位置・大きさを微調整できます。</p>
       <div class="cfp-trace-bar">
         <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="layout-pan">移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-grid">割付を移動</button>
@@ -3226,8 +3226,9 @@
       const b = CADParser.bounds(room.vertices);
       const off = offset || this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
       const cx = (b.minX + b.maxX) / 2 + off.x, cy = (b.minY + b.maxY) / 2 + off.y;
-      // a tile edge on the centre line (an even layout around the centre)
-      const ox = cx - Math.ceil((cx - b.minX) / TILE + 1) * TILE, oy = cy - Math.ceil((cy - b.minY) / TILE + 1) * TILE;
+      // one tile centred on the room centre (a tile edge is on the centre line after a 250 mm shift)
+      const tx = cx - TILE / 2, ty = cy - TILE / 2;
+      const ox = tx - Math.ceil((tx - b.minX) / TILE + 1) * TILE, oy = ty - Math.ceil((ty - b.minY) / TILE + 1) * TILE;
       const nx = Math.ceil((b.maxX - ox) / TILE) + 1, ny = Math.ceil((b.maxY - oy) / TILE) + 1;
       const area = CADParser.calculateArea(room.vertices);
       const tiles = [];
@@ -3360,14 +3361,12 @@
     // where the converted carpet image sits (mm, Y up): centred on the tile layout, then shifted / scaled
     _designRect(lay, src, preview) {
       const d = preview || this.design;
-      // the image keeps the aspect ratio of the layout at its home position (no shift) and is only scaled
-      // uniformly so that it always covers the current layout frame: moving the frame never distorts it
+      // sized and placed from the layout at its home position (no shift): moving the layout frame
+      // never changes the image's size, aspect ratio or position
       const room = this.data && this.data.rooms[this.roomIndex];
       const home = (room && this._tileLayout(room, { x: 0, y: 0 }).box) || lay.box;
-      const hw = home.x1 - home.x0, hh = home.y1 - home.y0;
-      const f = Math.max((lay.box.x1 - lay.box.x0) / hw, (lay.box.y1 - lay.box.y0) / hh);
-      const w = hw * f * d.scale, h = hh * f * d.scale;
-      const cx = (lay.box.x0 + lay.box.x1) / 2 + d.x, cy = (lay.box.y0 + lay.box.y1) / 2 + d.y;
+      const w = (home.x1 - home.x0) * d.scale, h = (home.y1 - home.y0) * d.scale;
+      const cx = (home.x0 + home.x1) / 2 + d.x, cy = (home.y0 + home.y1) / 2 + d.y;
       return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2, w, h };
     }
     // Saves the layout as a layered PSD: 元図面 / 部屋 / 画像 / 割付 (RGB, the real size in mm).
@@ -3521,8 +3520,16 @@
     }
     _layoutDrag(tool, d, phase) {
       if (tool === 'grid') {
+        // the layout moves in 250 mm steps (half a tile) around the room centre
+        const STEP = TILE / 2;
         const base = this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
-        const next = { x: base.x + d.dx, y: base.y - d.dy }; // the view's Y points down
+        let next;
+        if (phase === 'nudge') {
+          const k = Math.abs(d.dx || d.dy) >= 100 ? 2 : 1; // Shift: 500 mm
+          next = { x: base.x + Math.sign(d.dx) * STEP * k, y: base.y - Math.sign(d.dy) * STEP * k };
+        } else {
+          next = { x: Math.round((base.x + d.dx) / STEP) * STEP, y: Math.round((base.y - d.dy) / STEP) * STEP }; // the view's Y points down
+        }
         if (phase === 'move') { this._renderLayout({ grid: next }); return; }
         this.gridOffsets[this.roomIndex] = next;
         this._layoutCommit();
