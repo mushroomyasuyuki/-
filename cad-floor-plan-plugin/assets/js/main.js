@@ -960,16 +960,21 @@
         if (!drag) return;
         const r = svg.getBoundingClientRect();
         const k = Math.max(drag.v.w / r.width, drag.v.h / r.height);
-        if (drag.mode !== 'view') { // the picture / the frames: shifted in mm
-          this._wpO()[drag.mode] = { x: Math.round(drag.o.x + (e.clientX - drag.x) * k), y: Math.round(drag.o.y + (e.clientY - drag.y) * k) };
-          this._wpRender();
+        if (drag.mode !== 'view') { // the picture / the frames: shifted in mm; while dragging only the layer moves
+          const o = { x: Math.round(drag.o.x + (e.clientX - drag.x) * k), y: Math.round(drag.o.y + (e.clientY - drag.y) * k) };
+          this._wpO()[drag.mode] = o;
+          const layer = svg.querySelector('[data-wp="' + drag.mode + '"]'), r0 = (this._wpRendered || {})[drag.mode] || { x: 0, y: 0 };
+          if (layer) layer.setAttribute('transform', 'translate(' + (o.x - r0.x) + ' ' + (o.y - r0.y) + ')');
           return;
         }
         this._wpView = { x: drag.v.x - (e.clientX - drag.x) * k, y: drag.v.y - (e.clientY - drag.y) * k, w: drag.v.w, h: drag.v.h };
         this._wpApplyView();
       };
       const onEnd = () => {
+        const moved = drag && drag.mode !== 'view';
         drag = null;
+        this._wpDragging = false;
+        if (moved) this._wpRender(); // the cut lines, the note, the picture and the perspective follow now
         svg.style.cursor = this._wpMode === 'view' ? 'grab' : 'move';
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onEnd);
@@ -981,6 +986,7 @@
         e.preventDefault();
         svg.focus({ preventScroll: true });
         const mode = this._wpMode || 'view';
+        this._wpDragging = mode !== 'view';
         drag = { x: e.clientX, y: e.clientY, v, mode, o: mode === 'view' ? null : Object.assign({}, this._wpO()[mode]) };
         svg.style.cursor = mode === 'view' ? 'grabbing' : 'move';
         window.addEventListener('pointermove', onMove);
@@ -1194,7 +1200,7 @@
       if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
       const off = this._wpO();
-      this._wpShare(off.img);
+      if (!this._wpDragging) this._wpShare(off.img);
       svg.textContent = '';
       const add = (name, attrs, parent) => {
         const e = document.createElementNS(SVG_NS, name);
@@ -1209,11 +1215,23 @@
       const bd = this.elev.backdrop;
       const shapes = this._wpShapes(g, ox);
       if (showCad && bd) {
+        // one blob URL for the elevation picture (a long data URL set on every element again is slow)
+        if (this._wpCadSrc !== bd.dataUrl) {
+          this._wpCadSrc = bd.dataUrl;
+          if (this._wpCadUrl) URL.revokeObjectURL(this._wpCadUrl);
+          try {
+            const bin = atob(bd.dataUrl.split(',')[1]), u8 = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+            this._wpCadUrl = URL.createObjectURL(new Blob([u8], { type: (bd.dataUrl.match(/^data:([^;,]+)/) || [])[1] || 'image/jpeg' }));
+          } catch (err) { this._wpCadUrl = bd.dataUrl; }
+        }
         shapes.forEach((sh) => {
           const inner = add('svg', { x: sh.x0, y: sh.y0, width: sh.W, height: sh.WH, viewBox: sh.box.join(' '), preserveAspectRatio: 'none' });
-          add('image', { href: bd.dataUrl, x: 0, y: 0, width: bd.widthPx, height: bd.heightPx }, inner);
+          add('image', { href: this._wpCadUrl, x: 0, y: 0, width: bd.widthPx, height: bd.heightPx }, inner);
         });
       }
+      const gImg = add('g', { 'data-wp': 'img' });
+      this._wpRendered = { img: { x: off.img.x, y: off.img.y }, frame: { x: off.frame.x, y: off.frame.y } };
       const src = wp.getSource();
       if (showImg && src) {
         const key = [src.width, src.height, W, WH, wp.ROLL, wp.OVERLAP, right ? 'R' : 'L', JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
@@ -1221,19 +1239,17 @@
         const same = this._wpKey === key && this._wpUrl;
         if (same) {
           // the picture as it was built, moved by what was moved since (a new one is built a moment later)
-          add('image', { href: this._wpUrl, x: off.img.x - uo.x, y: off.img.y - uo.y, width: FW, height: H, preserveAspectRatio: 'none', opacity: showCad ? 0.7 : 1 });
+          add('image', { href: this._wpUrl, x: off.img.x - uo.x, y: off.img.y - uo.y, width: FW, height: H, preserveAspectRatio: 'none', opacity: showCad ? 0.7 : 1 }, gImg);
         }
-        if (!same || uo.x !== off.img.x || uo.y !== off.img.y) {
+        if (!this._wpDragging && (!same || uo.x !== off.img.x || uo.y !== off.img.y)) {
           clearTimeout(this._wpTimer);
           this._wpTimer = setTimeout(() => {
-            const k = Math.min(1, 2400 / FW);
-            const full = document.createElement('canvas');
-            full.width = FW; full.height = H;
-            wp.renderDesign(full, ox + off.img.x, wp.TRIM_TOP + off.img.y, W, WH);
+            // drawn straight at the screen size (not the full 1px = 1mm picture): much lighter for long walls
+            const k = Math.min(1, 3000 / Math.max(FW, H));
             const small = document.createElement('canvas');
             small.width = Math.max(1, Math.round(FW * k)); small.height = Math.max(1, Math.round(H * k));
-            small.getContext('2d').drawImage(full, 0, 0, small.width, small.height);
-            this._wpUrl = small.toDataURL('image/png');
+            wp.renderDesign(small, ox + off.img.x, wp.TRIM_TOP + off.img.y, W, WH, k);
+            this._wpUrl = small.toDataURL('image/jpeg', 0.85);
             this._wpUrlOff = { x: off.img.x, y: off.img.y };
             this._wpKey = key;
             this._wpRender();
@@ -1241,12 +1257,13 @@
         }
       }
       if (showFrame) {
+        const gFrame = add('g', { 'data-wp': 'frame' });
         const col = (i) => (i % 2 ? '#ff7a00' : '#ff0000');
         for (let i = 0; i < N; i++) {
           const odd = i % 2;
           const x = right ? FW - wp.ROLL - i * wp.STEP : i * wp.STEP;
           add('rect', { x: x + off.frame.x + 1.5, y: off.frame.y + 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
-            stroke: col(i), 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
+            stroke: col(i), 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' }, gFrame);
         }
         const purple = { stroke: '#d000d0', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' };
         shapes.forEach((sh) => {
@@ -1259,7 +1276,7 @@
         // cut lines: in the middle of the overlap of two neighbouring strips, joined to the wall's top and bottom lines
         for (let i = 1; i < N; i++) {
           const cx = (right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x; // the middle of the overlap of two strips
-          shapes.forEach((sh) => wp.cutSegments(sh.pts, cx).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple))));
+          shapes.forEach((sh) => wp.cutSegments(sh.pts, cx).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple), gFrame)));
         }
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);

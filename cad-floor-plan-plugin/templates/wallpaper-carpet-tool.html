@@ -1950,10 +1950,13 @@
 
   // 壁の左上が (ox, oy) にある壁（wallW × wallH、1px=1mm）として、貼り方どおりにデザインを描く。
   // 壁の外（裁断代・重なり）にも、柄・画像の続きを描く（1枚の画像の外は白）
-  function drawWallDesign(ctx, source, ox, oy, wallW, wallH) {
+  // k: 1mm を何pxで描くか（省略時 1。画面表示用に小さく描くとき 1 未満）
+  function drawWallDesign(ctx, source, ox, oy, wallW, wallH, k) {
+    k = k || 1;
+    ctx.setTransform(k, 0, 0, k, 0, 0);
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const r = getWallRepeat();
-    const cw = ctx.canvas.width, chh = ctx.canvas.height;
+    const cw = ctx.canvas.width / k, chh = ctx.canvas.height / k;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, chh);
     ctx.imageSmoothingQuality = 'high';
@@ -1988,9 +1991,9 @@
     const c = getWallSource();
     return c ? ((c.naturalWidth || c.width) ? c : null) : null;
   };
-  WALL_PRINT.renderDesign = function (canvas, ox, oy, wallW, wallH) {
+  WALL_PRINT.renderDesign = function (canvas, ox, oy, wallW, wallH, k) {
     const src = WALL_PRINT.getSource();
-    if (src) drawWallDesign(canvas.getContext('2d'), src, ox, oy, wallW, wallH);
+    if (src) drawWallDesign(canvas.getContext('2d'), src, ox, oy, wallW, wallH, k);
     else {
       const x = canvas.getContext('2d');
       x.fillStyle = '#ffffff';
