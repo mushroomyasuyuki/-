@@ -135,41 +135,67 @@
       this._render();
     }
 
-    // Joined walls of the strip frame view ("壁をつなげる"): one band picture (widths[i] mm wide walls side by
-    // side, WH mm high) laid round the room, each wall of the band on the matching wall of the room. null: off.
-    // band: { widths: [mm...], WH, top } (top: ceilings lined up, else floors)
-    setWallBand(band) {
+    // The wall(s) of the strip frame view ("壁紙の巾の枠"): one band picture (widths[i] mm wide walls side by
+    // side, WH mm high) put on the matching walls of the room, so that they look exactly as in that view.
+    // The other walls keep the usual wall paper. band: { widths: [mm...], WH, top } or null; canvas: the picture.
+    setWallBand(band, canvas) {
       this.wallBand = band || null;
+      if (this._bandTex) { this._bandTex.dispose(); this._bandTex = null; }
+      if (band && canvas) {
+        const t = new THREE.CanvasTexture(canvas);
+        t.minFilter = THREE.LinearFilter;
+        t.generateMipmaps = false;
+        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+        this._prepareTexture(t);
+        this._bandTex = t;
+      }
+      this._bandKey = null;
       this.walls.forEach((e) => this._wallUV(e));
-      this._render();
+      this._applyTextures();
     }
 
-    _bandUV(entry, uv) {
+    // which room walls get which part of the band: { entry -> { b0, bw } } (by length, in the band's order)
+    _bandMatch(entry) {
       const band = this.wallBand;
-      const ws = band.widths, m = ws.length;
-      const B = [];
-      let Wsum = 0;
-      ws.forEach((w) => { B.push(Wsum); Wsum += w; });
-      // the room's walls in the order of the band (left to right seen from inside = growing s0)
-      const same = this.walls.filter((e) => e.roomIndex === entry.roomIndex).sort((a, b) => a.s0 - b.s0);
-      const n = same.length, p = same.indexOf(entry);
-      const lenMm = entry.len / MM, hMm = entry.h / MM;
-      let map = null;
-      if (n === m) {
-        // start on the room wall that makes the lengths agree best
-        let best = 0, bestErr = Infinity;
-        for (let k = 0; k < n; k++) {
-          const err = ws.reduce((t, w, i) => t + Math.abs(w - same[(i + k) % n].len / MM), 0);
-          if (err < bestErr) { bestErr = err; best = k; }
+      const key = this.walls.length + '|' + band.widths.join(',') + '|' + entry.roomIndex;
+      if (this._bandKey !== key) {
+        this._bandKey = key;
+        this._bandMap = new Map();
+        const ws = band.widths, m = ws.length;
+        const B = [];
+        let acc = 0;
+        ws.forEach((w) => { B.push(acc); acc += w; });
+        // the room's walls left to right seen from inside (growing s0)
+        const same = this.walls.filter((e) => e.roomIndex === entry.roomIndex).sort((a, b) => a.s0 - b.s0);
+        const n = same.length;
+        if (m <= n) {
+          // the run of m walls (round the room) whose lengths agree best
+          let best = 0, bestErr = Infinity;
+          for (let k = 0; k < n; k++) {
+            const err = ws.reduce((t, w, i) => t + Math.abs(w - same[(i + k) % n].len / MM), 0);
+            if (err < bestErr) { bestErr = err; best = k; }
+          }
+          ws.forEach((w, i) => this._bandMap.set(same[(i + best) % n], { b0: B[i], bw: w }));
+        } else {
+          // more band walls than room walls: lay the band along the perimeter at its real size
+          same.forEach((e) => this._bandMap.set(e, { b0: e.s0 || 0, bw: e.len / MM, along: true }));
         }
-        const i = (p - best + n) % n;
-        map = { b0: B[i], bw: ws[i] };
+        this._bandW = acc;
       }
+      return this._bandMap.get(entry) || null;
+    }
+
+    _bandUV(entry, uv, map) {
+      const band = this.wallBand;
+      const hMm = entry.h / MM;
       for (let j = 0; j < uv.count; j++) {
         const u0 = j % 2, v0 = j < 2 ? 1 : 0;
-        const b = map ? map.b0 + u0 * map.bw : (entry.s0 || 0) + u0 * lenMm; // position in the band (mm)
+        // position in the band (mm), at its real size: the band wall centred on the room wall (never stretched)
+        const L = entry.len / MM;
+        const b = map.along ? map.b0 + u0 * map.bw : map.b0 + map.bw / 2 + (u0 - 0.5) * L;
         const v = band.top ? 1 - (1 - v0) * hMm / band.WH : v0 * hMm / band.WH;
-        uv.setXY(j, b / Wsum, v);
+        const pu = band.pu || 0, pv = band.pv || 0; // the picture sits inside a thin white rim of the texture
+        uv.setXY(j, pu + (b / this._bandW) * (1 - 2 * pu), pv + v * (1 - 2 * pv));
       }
       uv.needsUpdate = true;
     }
@@ -193,7 +219,11 @@
     // The pattern starts at the ceiling (top edge) like hung wallpaper.
     _wallUV(entry) {
       const uv = entry.mesh.geometry.attributes.uv;
-      if (this.wallBand) { this._bandUV(entry, uv); return; }
+      entry.band = false;
+      if (this.wallBand) {
+        const map = this._bandMatch(entry);
+        if (map) { entry.band = true; this._bandUV(entry, uv, map); return; }
+      }
       const rep = this.wallRepeat;
       const lenMm = entry.len / MM, hMm = entry.h / MM;
       const shx = (this.wallShift || {}).x || 0, shy = (this.wallShift || {}).y || 0;
@@ -393,7 +423,10 @@
         mat.needsUpdate = true;
       };
       this.floors.forEach(({ mesh }) => apply(mesh.material, f, FLOOR_COLOR));
-      this.walls.forEach((entry) => { if (!entry.custom) apply(entry.mesh.material, w, WALL_COLOR); });
+      this.walls.forEach((entry) => {
+        if (entry.band && this._bandTex) apply(entry.mesh.material, this._bandTex, WALL_COLOR);
+        else if (!entry.custom) apply(entry.mesh.material, w, WALL_COLOR);
+      });
       this._render();
     }
 

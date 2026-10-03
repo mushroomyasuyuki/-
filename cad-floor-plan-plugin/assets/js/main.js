@@ -1149,14 +1149,14 @@
       this._wpApplyView();
     }
 
-    // the joined walls shown on the 3D room as one band (the same picture and position as in the strip frame view)
+    // the wall(s) of the strip frame view shown on the matching walls of the 3D room (the same picture and position)
     _wp3D(g) {
       const r = this.renderer;
       if (!r || !r.setWallBand) return;
       const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
       const src = g ? g.wp.getSource() : null;
-      if (!g || !g.multi || !room || !src) {
-        if (this._wpBand) { this._wpBand = null; this._wpBandKey = null; r.setWallBand(null); this.syncDesigns(true); }
+      if (!g || !room || !src) {
+        if (this._wpBand) { this._wpBand = null; this._wpBandKey = null; r.setWallBand(null); }
         return;
       }
       const off = this._wpO(), top = (this.$('wp-align') || {}).value === 'top';
@@ -1167,14 +1167,17 @@
       clearTimeout(this._wpBandTimer);
       this._wpBandTimer = setTimeout(() => {
         const k = Math.min(1, 2048 / Math.max(g.W, g.WH));
+        const inner = document.createElement('canvas');
+        inner.width = Math.max(1, Math.round(g.W * k)); inner.height = Math.max(1, Math.round(g.WH * k));
+        g.wp.renderDesign(inner, off.img.x, off.img.y, g.W, g.WH, k, off.scale || 1); // the walls only (no margins), as placed in the view
+        // a white rim: where a room wall is longer than the band, the rest of it shows white (not a smeared edge)
         const c = document.createElement('canvas');
-        c.width = Math.max(1, Math.round(g.W * k)); c.height = Math.max(1, Math.round(g.WH * k));
-        g.wp.renderDesign(c, off.img.x, off.img.y, g.W, g.WH, k, off.scale || 1); // the walls only (no margins), as placed in the view
-        this._wpBand = { widths: g.walls.map((x) => x.W), WH: g.WH, top };
-        r.wallSingle = false;
-        r.wallRepeat = null;
-        r.setWallCanvas(c);
-        r.setWallBand(this._wpBand);
+        c.width = inner.width + 4; c.height = inner.height + 4;
+        const cx = c.getContext('2d');
+        cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, c.width, c.height);
+        cx.drawImage(inner, 2, 2);
+        this._wpBand = { widths: g.walls.map((x) => x.W), WH: g.WH, top, pu: 2 / c.width, pv: 2 / c.height };
+        r.setWallBand(this._wpBand, c); // only the matching walls of the room; the others keep the usual wall paper
       }, 250);
     }
 
@@ -2129,8 +2132,7 @@
       const wp = window.cfpWallPrint;
       this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
       this.renderer.wallShift = window.cfpWallShift || { x: 0, y: 0 };
-      if (this._wpBand) { /* the joined walls' band picture stays on the walls (see _wp3D) */ }
-      else if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
+      if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);
       this._thumb('src-floor', hasFloor ? floor : null);
