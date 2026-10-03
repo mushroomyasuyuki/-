@@ -135,6 +135,13 @@
       this._render();
     }
 
+    // the wall paper picture moved by x (right) / y (down) mm (the strip frame view's "画像を移動")
+    setWallShift(x, y) {
+      this.wallShift = { x: x || 0, y: y || 0 };
+      this.walls.forEach((e) => this._wallUV(e));
+      this._render();
+    }
+
     _measureWalls() {
       this._maxWall = { len: 1, h: 1 };
       this.walls.forEach((e) => {
@@ -149,10 +156,11 @@
       const uv = entry.mesh.geometry.attributes.uv;
       const rep = this.wallRepeat;
       const lenMm = entry.len / MM, hMm = entry.h / MM;
+      const shx = (this.wallShift || {}).x || 0, shy = (this.wallShift || {}).y || 0;
       for (let i = 0; i < uv.count; i++) {
         const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
         const s = (entry.s0 || 0) + u0 * lenMm; // position along the perimeter
-        if (rep) uv.setXY(i, s / rep.w, 1 - (1 - v0) * hMm / rep.h);
+        if (rep) uv.setXY(i, (s - shx) / rep.w, 1 - ((1 - v0) * hMm - shy) / rep.h);
         else if (this.wallAspect && this.wallMode === 'wrap') {
           // one picture round the room: as wide as the perimeter (and the wall height), times the size setting
           const P = Math.max(entry.perimeter || lenMm, 1);
@@ -160,7 +168,7 @@
           const imgW = Math.max(P + tr.side * 2, (this._maxWall.h + tr.top + tr.bottom) * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
           const b0 = (P - imgW) / 2;
-          uv.setXY(i, (s - b0) / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
+          uv.setXY(i, (s - b0 - shx) / imgW, 0.5 + ((v0 - 0.5) * hMm + shy) / imgH);
         }
         else if (this.wallAspect) {
           // one picture, the same size on every wall: big enough to cover the longest wall and the
@@ -168,7 +176,7 @@
           const tr = this.wallTrim || { side: 0, top: 0, bottom: 0 };
           const imgW = Math.max(this._maxWall.len + tr.side * 2, (this._maxWall.h + tr.top + tr.bottom) * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
-          uv.setXY(i, 0.5 + (u0 - 0.5) * lenMm / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
+          uv.setXY(i, 0.5 + ((u0 - 0.5) * lenMm - shx) / imgW, 0.5 + ((v0 - 0.5) * hMm + shy) / imgH);
         } else uv.setXY(i, u0, v0);
       }
       uv.needsUpdate = true;

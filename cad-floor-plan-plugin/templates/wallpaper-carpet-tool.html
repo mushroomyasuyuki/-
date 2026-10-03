@@ -2144,7 +2144,7 @@
       const full = document.createElement('canvas');
       full.width = N * P.STEP + P.OVERLAP;
       full.height = H;
-      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP, P.TRIM_TOP, W, WH);
+      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP + (window.cfpWallShift || { x: 0 }).x, P.TRIM_TOP + (window.cfpWallShift || { y: 0 }).y, W, WH);
 
       const files = [];
       const strips = [];
@@ -2311,7 +2311,7 @@
       const designCanvas = document.createElement('canvas');
       designCanvas.width = imageW;
       designCanvas.height = imageH;
-      drawWallDesign(designCanvas.getContext('2d'), canvas, 0, P.TRIM_TOP, imageW, WH);
+      drawWallDesign(designCanvas.getContext('2d'), canvas, (window.cfpWallShift || { x: 0 }).x, P.TRIM_TOP + (window.cfpWallShift || { y: 0 }).y, imageW, WH);
 
       // ②裁断ガイド層：赤枠（壁の範囲）と、巾の境目（カット線の間隔ごと）の縦線
       const guideCanvas = document.createElement('canvas');
@@ -2850,24 +2850,27 @@
       el.style.backgroundRepeat = repeat;
       el.style.backgroundColor = white ? '#ffffff' : '';
     };
+    // 「壁紙の巾の枠」で画像を動かした量（mm）。横の壁は左右反転して貼っているので、横方向は逆向きにずらす
+    const sh = window.cfpWallShift || { x: 0, y: 0 };
+    const sx = sh.x * scale, sy = sh.y * scale;
     if (wallRepeat.mode === 'repeat') {
       // 角を柄の区切りにして、奥の壁は右へ、横の壁は左へ続ける（天井から）
       const size = Math.max(2, wallRepeat.mm * scale) + 'px auto';
-      setBg(backWall, size, '0 0', 'repeat', false);
-      setBg(sideWall, size, '0 0', 'repeat', false);
+      setBg(backWall, size, sx + 'px ' + sy + 'px', 'repeat', false);
+      setBg(sideWall, size, (-sx) + 'px ' + sy + 'px', 'repeat', false);
     } else if (wallRepeat.mode === 'wrap') {
       // 横の壁（奥行 D）→ 奥の壁（幅 W）を1本の帯として、1枚の画像を途切れずに貼る
       const b = window.cfpWrapBand ? window.cfpWrapBand(aspect) : { D: floorDepthMm, iw: widthMm + floorDepthMm, ih: (widthMm + floorDepthMm) / aspect, s0: 0 };
       const size = Math.max(2, b.iw * scale) + 'px auto';
-      const y = ((wallHeightMm - b.ih) / 2) * scale + 'px';
-      setBg(backWall, size, ((b.s0 - b.D) * scale) + 'px ' + y, 'no-repeat', !!wsrc);
-      setBg(sideWall, size, ((b.D - b.iw - b.s0) * scale) + 'px ' + y, 'no-repeat', !!wsrc);
+      const y = (((wallHeightMm - b.ih) / 2) * scale + sy) + 'px';
+      setBg(backWall, size, ((b.s0 - b.D) * scale + sx) + 'px ' + y, 'no-repeat', !!wsrc);
+      setBg(sideWall, size, ((b.D - b.iw - b.s0) * scale - sx) + 'px ' + y, 'no-repeat', !!wsrc);
     } else {
       // 1枚を壁ごとに中央（どの壁でも同じ大きさ）
       const iw = window.cfpSingleImageWidthMm ? window.cfpSingleImageWidthMm(aspect) : Math.max(widthMm, floorDepthMm, wallHeightMm * aspect);
       const size = Math.max(2, iw * scale) + 'px auto';
-      setBg(backWall, size, 'center', 'no-repeat', !!wsrc);
-      setBg(sideWall, size, 'center', 'no-repeat', !!wsrc);
+      setBg(backWall, size, 'calc(50% + ' + sx + 'px) calc(50% + ' + sy + 'px)', 'no-repeat', !!wsrc);
+      setBg(sideWall, size, 'calc(50% + ' + (-sx) + 'px) calc(50% + ' + sy + 'px)', 'no-repeat', !!wsrc);
     }
     if (window.cfpUpdateWallRepeatNote) window.cfpUpdateWallRepeatNote();
 
@@ -2919,6 +2922,7 @@
   // 上のカーペット用・壁紙用デザインが再処理される（減色・パレット・サイズ変更の）たびに、
   // このパース表示を自動更新する
   window.onCarpetDesignUpdated = updatePerspectiveRoom;
+  window.cfpLayoutPersp = layoutRoom; // 画像の位置だけが変わったとき（壁紙の巾の枠で画像を移動）
 
   let resizeTimer = null;
   window.addEventListener('resize', () => {

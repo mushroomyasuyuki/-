@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.61.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.61.1 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -1395,6 +1395,12 @@
       }
       this._render();
     }
+    // the wall paper picture moved by x (right) / y (down) mm (the strip frame view's "画像を移動")
+    setWallShift(x, y) {
+      this.wallShift = { x: x || 0, y: y || 0 };
+      this.walls.forEach((e) => this._wallUV(e));
+      this._render();
+    }
     _measureWalls() {
       this._maxWall = { len: 1, h: 1 };
       this.walls.forEach((e) => {
@@ -1408,10 +1414,11 @@
       const uv = entry.mesh.geometry.attributes.uv;
       const rep = this.wallRepeat;
       const lenMm = entry.len / MM, hMm = entry.h / MM;
+      const shx = (this.wallShift || {}).x || 0, shy = (this.wallShift || {}).y || 0;
       for (let i = 0; i < uv.count; i++) {
         const u0 = i % 2, v0 = i < 2 ? 1 : 0; // PlaneGeometry(1x1 segment): (0,1) (1,1) (0,0) (1,0)
         const s = (entry.s0 || 0) + u0 * lenMm; // position along the perimeter
-        if (rep) uv.setXY(i, s / rep.w, 1 - (1 - v0) * hMm / rep.h);
+        if (rep) uv.setXY(i, (s - shx) / rep.w, 1 - ((1 - v0) * hMm - shy) / rep.h);
         else if (this.wallAspect && this.wallMode === 'wrap') {
           // one picture round the room: as wide as the perimeter (and the wall height), times the size setting
           const P = Math.max(entry.perimeter || lenMm, 1);
@@ -1419,7 +1426,7 @@
           const imgW = Math.max(P + tr.side * 2, (this._maxWall.h + tr.top + tr.bottom) * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
           const b0 = (P - imgW) / 2;
-          uv.setXY(i, (s - b0) / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
+          uv.setXY(i, (s - b0 - shx) / imgW, 0.5 + ((v0 - 0.5) * hMm + shy) / imgH);
         }
         else if (this.wallAspect) {
           // one picture, the same size on every wall: big enough to cover the longest wall and the
@@ -1427,7 +1434,7 @@
           const tr = this.wallTrim || { side: 0, top: 0, bottom: 0 };
           const imgW = Math.max(this._maxWall.len + tr.side * 2, (this._maxWall.h + tr.top + tr.bottom) * this.wallAspect) * (this.wallSingleScale || 1);
           const imgH = imgW / this.wallAspect;
-          uv.setXY(i, 0.5 + (u0 - 0.5) * lenMm / imgW, 0.5 + (v0 - 0.5) * hMm / imgH);
+          uv.setXY(i, 0.5 + ((u0 - 0.5) * lenMm - shx) / imgW, 0.5 + ((v0 - 0.5) * hMm + shy) / imgH);
         } else uv.setXY(i, u0, v0);
       }
       uv.needsUpdate = true;
@@ -3064,6 +3071,17 @@
         pan(m[0], m[1], e.shiftKey);
       });
     }
+    // the picture's shift is shared with the room perspective, the 3D view and the other wall paper saves
+    _wpShare(o) {
+      const cur = window.cfpWallShift || { x: 0, y: 0 };
+      if (cur.x === o.x && cur.y === o.y) return;
+      window.cfpWallShift = { x: o.x, y: o.y };
+      clearTimeout(this._wpShareTimer);
+      this._wpShareTimer = setTimeout(() => {
+        if (window.cfpLayoutPersp) window.cfpLayoutPersp();
+        if (this.renderer && this.renderer.setWallShift) this.renderer.setWallShift(o.x, o.y);
+      }, 80);
+    }
     // how far the picture and the frames were moved on the current wall (mm)
     _wpO() {
       if (!this._wpOffs) this._wpOffs = new Map();
@@ -3218,6 +3236,7 @@
       if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
       const off = this._wpO();
+      this._wpShare(off.img);
       svg.textContent = '';
       const add = (name, attrs, parent) => {
         const e = document.createElementNS(SVG_NS, name);
@@ -3983,6 +4002,7 @@
       // the single picture also covers the print margins (top / bottom trim, side overlaps), as in the saved data
       const wp = window.cfpWallPrint;
       this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
+      this.renderer.wallShift = window.cfpWallShift || { x: 0, y: 0 };
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);

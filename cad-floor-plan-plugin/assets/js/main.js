@@ -1015,6 +1015,18 @@
       });
     }
 
+    // the picture's shift is shared with the room perspective, the 3D view and the other wall paper saves
+    _wpShare(o) {
+      const cur = window.cfpWallShift || { x: 0, y: 0 };
+      if (cur.x === o.x && cur.y === o.y) return;
+      window.cfpWallShift = { x: o.x, y: o.y };
+      clearTimeout(this._wpShareTimer);
+      this._wpShareTimer = setTimeout(() => {
+        if (window.cfpLayoutPersp) window.cfpLayoutPersp();
+        if (this.renderer && this.renderer.setWallShift) this.renderer.setWallShift(o.x, o.y);
+      }, 80);
+    }
+
     // how far the picture and the frames were moved on the current wall (mm)
     _wpO() {
       if (!this._wpOffs) this._wpOffs = new Map();
@@ -1182,6 +1194,7 @@
       if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
       const off = this._wpO();
+      this._wpShare(off.img);
       svg.textContent = '';
       const add = (name, attrs, parent) => {
         const e = document.createElementNS(SVG_NS, name);
@@ -1981,6 +1994,7 @@
       // the single picture also covers the print margins (top / bottom trim, side overlaps), as in the saved data
       const wp = window.cfpWallPrint;
       this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
+      this.renderer.wallShift = window.cfpWallShift || { x: 0, y: 0 };
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);
