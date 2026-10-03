@@ -1848,6 +1848,137 @@
     cenc.forEach((r) => push(r.data));
     return new Blob(parts, { type: 'image/vnd.adobe.photoshop' });
   }
+  // 大きな絵（部屋一周の壁など）用：タイル（横 4096px × 縦 256px）ずつ描いて CMYK に変換・圧縮するので、
+  // 絵全体の大きさの canvas を作らない（メモリを使い切って固まるのを防ぐ）。途中で画面に処理を返し、進み具合を知らせる。
+  // layers: [{ name, draw(ctx) }]（ctx は絵全体の座標）。compositeDraw(ctx): 統合イメージ（白地の上に全レイヤー）
+  // 縦か横が 30000px を超える絵は PSD に入らないので、Photoshop の大きなドキュメント形式（PSB）で書く
+  async function writeCmykPsdTiled(width, height, layers, compositeDraw, dpi, onProgress) {
+    const TW = 4096, TH = 256;
+    const big = width > 30000 || height > 30000;
+    const tile = document.createElement('canvas');
+    tile.width = Math.min(TW, width); tile.height = Math.min(TH, height);
+    const tctx = tile.getContext('2d', { willReadFrequently: true });
+    const be = (bytes, v) => { const u = new Uint8Array(bytes); for (let i = bytes - 1; i >= 0; i--) { u[i] = v % 256; v = Math.floor(v / 256); } return u; };
+    const i16 = (v) => be(2, v < 0 ? v + 65536 : v);
+    const i32 = (v) => be(4, v < 0 ? v + 4294967296 : v);
+    const len = (v) => be(big ? 8 : 4, v); // PSB では長さの一部が 8 バイト
+    const ascii = (t) => Uint8Array.from(t.split('').map((c) => c.charCodeAt(0)));
+    const concat = (arr) => { const t = arr.reduce((x, y) => x + y.length, 0); const u = new Uint8Array(t); let o = 0; arr.forEach((y) => { u.set(y, o); o += y.length; }); return u; };
+    const RB = big ? 4 : 2; // 行ごとの圧縮バイト数の大きさ
+    const rowCounts = (counts) => { const u = new Uint8Array(height * RB); counts.forEach((v, i) => u.set(be(RB, v), i * RB)); return u; };
+    const rowBuf = new Uint8Array(width * 2 + 4);
+    const rleRow = (plane, base) => { // 1行を PackBits で圧縮
+      let i = 0, r = 0;
+      while (i !== width) {
+        const v = plane[base + i];
+        let run = 1;
+        while (i + run !== width) { if (run === 128) break; if (plane[base + i + run] !== v) break; run++; }
+        if (run >= 2) { rowBuf[r++] = 257 - run; rowBuf[r++] = v; i += run; continue; }
+        const start = i; i++;
+        while (i !== width) {
+          if (i - start === 128) break;
+          if (i + 1 !== width) { if (plane[base + i] === plane[base + i + 1]) break; }
+          i++;
+        }
+        rowBuf[r++] = i - start - 1;
+        for (let q = start; q !== i; q++) rowBuf[r++] = plane[base + q];
+      }
+      return rowBuf.slice(0, r);
+    };
+    const totalSteps = (layers.length + 1) * Math.ceil(height / TH);
+    let step = 0;
+    // draw: 描く関数 → チャンネルごとの { counts, chunks }（C,M,Y,K と、withAlpha なら A）
+    const encode = async (draw, withAlpha, white) => {
+      const ch = [0, 1, 2, 3, 4].map(() => ({ counts: new Uint32Array(height), chunks: [], size: 0 }));
+      for (let y0 = 0; y0 < height; y0 += TH) {
+        const bh = Math.min(TH, height - y0), n = width * bh;
+        const pl = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
+        for (let x0 = 0; x0 < width; x0 += TW) {
+          const bw = Math.min(TW, width - x0);
+          tctx.setTransform(1, 0, 0, 1, 0, 0);
+          tctx.clearRect(0, 0, tile.width, tile.height);
+          if (white) { tctx.fillStyle = '#ffffff'; tctx.fillRect(0, 0, tile.width, tile.height); }
+          tctx.setTransform(1, 0, 0, 1, -x0, -y0);
+          tctx.save(); draw(tctx); tctx.restore();
+          const d = tctx.getImageData(0, 0, bw, bh).data;
+          let last = -1, lc = 255, lm = 255, ly = 255, lk = 255;
+          for (let yy = 0; yy !== bh; yy++) {
+            for (let xx = 0; xx !== bw; xx++) {
+              const j = (yy * bw + xx) * 4, i = yy * width + x0 + xx;
+              const al = d[j + 3];
+              pl[4][i] = al;
+              if (al === 0) { pl[0][i] = pl[1][i] = pl[2][i] = pl[3][i] = 255; continue; }
+              const rr = d[j], gg = d[j + 1], bb = d[j + 2];
+              const key = rr * 65536 + gg * 256 + bb;
+              if (key !== last) {
+                const mx = Math.max(rr, gg, bb);
+                let c = 0, m = 0, yv = 0;
+                if (mx > 0) { c = Math.round((mx - rr) * 255 / mx); m = Math.round((mx - gg) * 255 / mx); yv = Math.round((mx - bb) * 255 / mx); }
+                last = key; lc = 255 - c; lm = 255 - m; ly = 255 - yv; lk = mx; // 255 = インクなし
+              }
+              pl[0][i] = lc; pl[1][i] = lm; pl[2][i] = ly; pl[3][i] = lk;
+            }
+          }
+        }
+        for (let c = 0; c !== (withAlpha ? 5 : 4); c++) {
+          for (let yy = 0; yy !== bh; yy++) {
+            const row = rleRow(pl[c], yy * width);
+            ch[c].counts[y0 + yy] = row.length; ch[c].chunks.push(row); ch[c].size += row.length;
+          }
+        }
+        step++;
+        if (onProgress) onProgress(step / totalSteps);
+        await new Promise((res) => setTimeout(res, 0)); // 画面に処理を返す（固まらない）
+      }
+      return ch;
+    };
+    const chanBytes = (c) => [i16(1), rowCounts(c.counts)].concat(c.chunks); // 圧縮方式(1=RLE) + 行バイト数 + データ
+    const chanLen = (c) => 2 + height * RB + c.size;
+
+    const parts = [];
+    parts.push(ascii('8BPS'), i16(big ? 2 : 1), new Uint8Array(6), i16(4), i32(height), i32(width), i16(8), i16(4), i32(0));
+    const fx = Math.round(dpi * 65536);
+    const resBody = concat([ascii('8BIM'), i16(1005), i16(0), i32(16), i32(fx), i16(1), i16(1), i32(fx), i16(1), i16(1)]);
+    parts.push(i32(resBody.length), resBody);
+
+    const recs = [], data = [];
+    let dataLen = 0;
+    for (const L of layers) {
+      const ch = await encode(L.draw, true, false);
+      const order = [[-1, ch[4]], [0, ch[0]], [1, ch[1]], [2, ch[2]], [3, ch[3]]];
+      const nb = unescape(encodeURIComponent(L.name));
+      const nameBytes = Uint8Array.from(nb.split('').map((c) => c.charCodeAt(0))).subarray(0, 255);
+      const pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
+      const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
+      const ub = new Uint8Array(L.name.length * 2);
+      for (let i = 0; i !== L.name.length; i++) { const c = L.name.charCodeAt(i); ub[i * 2] = c >> 8; ub[i * 2 + 1] = c % 256; }
+      let luniData = concat([i32(L.name.length), ub]);
+      if (luniData.length % 4) luniData = concat([luniData, new Uint8Array(4 - (luniData.length % 4))]);
+      const luni = concat([ascii('8BIM'), ascii('luni'), i32(luniData.length), luniData]);
+      const extra = concat([i32(0), i32(0), pascal, luni]);
+      const head = [i32(0), i32(0), i32(height), i32(width), i16(5)];
+      order.forEach((o) => { head.push(i16(o[0])); head.push(len(chanLen(o[1]))); });
+      head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, 0, 0), i32(extra.length), extra);
+      recs.push(concat(head));
+      order.forEach((o) => { chanBytes(o[1]).forEach((u) => { data.push(u); dataLen += u.length; }); });
+    }
+    const recLen = recs.reduce((t, u) => t + u.length, 0);
+    let layerInfoLen = 2 + recLen + dataLen;
+    const odd = layerInfoLen % 2;
+    layerInfoLen += odd;
+    parts.push(len((big ? 8 : 4) + layerInfoLen + 4), len(layerInfoLen), i16(layers.length));
+    recs.forEach((u) => parts.push(u));
+    data.forEach((u) => parts.push(u));
+    if (odd) parts.push(new Uint8Array(1));
+    parts.push(i32(0)); // グローバルレイヤーマスク情報（空）
+
+    const comp = await encode(compositeDraw, false, true);
+    parts.push(i16(1));
+    [0, 1, 2, 3].forEach((c) => parts.push(rowCounts(comp[c].counts)));
+    [0, 1, 2, 3].forEach((c) => comp[c].chunks.forEach((u) => parts.push(u)));
+    return new Blob(parts, { type: 'image/vnd.adobe.photoshop' });
+  }
+
 
   async function downloadPsd() {
     if (!state.loadedImg) {
@@ -1951,12 +2082,13 @@
   // 壁の左上が (ox, oy) にある壁（wallW × wallH、1px=1mm）として、貼り方どおりにデザインを描く。
   // 壁の外（裁断代・重なり）にも、柄・画像の続きを描く（1枚の画像の外は白）
   // k: 1mm を何pxで描くか（省略時 1。画面表示用に小さく描くとき 1 未満）
-  function drawWallDesign(ctx, source, ox, oy, wallW, wallH, k) {
+  // sceneW / sceneH: 絵全体の大きさ（mm）。タイルに分けて描くとき（ctx がずらしてある）に渡す
+  function drawWallDesign(ctx, source, ox, oy, wallW, wallH, k, sceneW, sceneH) {
     k = k || 1;
-    ctx.setTransform(k, 0, 0, k, 0, 0);
+    if (!sceneW) ctx.setTransform(k, 0, 0, k, 0, 0);
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const r = getWallRepeat();
-    const cw = ctx.canvas.width / k, chh = ctx.canvas.height / k;
+    const cw = sceneW || ctx.canvas.width / k, chh = sceneH || ctx.canvas.height / k;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, chh);
     ctx.imageSmoothingQuality = 'high';
@@ -2045,6 +2177,31 @@
         fx.stroke();
       }));
     }
+  };
+  // buildWhole と同じ内容を、タイルに分けて作る（大きな壁でも固まらない）。cadDraw(ctx): CAD図面を絵の座標に描く関数
+  WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress) {
+    off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
+    const P = WALL_PRINT;
+    const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
+    const N = Math.max(1, Math.ceil((W + P.OVERLAP - 5) / P.STEP));
+    const FW = Math.round(N * P.STEP + P.OVERLAP);
+    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
+    const src = P.getSource();
+    const cadL = (ctx) => { if (cadDraw) cadDraw(ctx); };
+    const design = (ctx) => {
+      if (src) drawWallDesign(ctx, src, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH, 1, FW, H);
+      else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, FW, H); }
+    };
+    const frame = (ctx) => P.drawFrames(ctx, W, WH, N, FW, H, right, shapes, off.frame);
+    const blob = await writeCmykPsdTiled(FW, H, [
+      { name: '①CAD図面（' + (label || '壁の範囲 ' + W + '×' + WH + 'mm') + '）', draw: cadL },
+      { name: '②壁紙の画像（切り分けなし・左右の余白と上下' + P.TRIM_TOP + 'mmを含む）', draw: design },
+      { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', draw: frame }
+    ], (ctx) => { cadL(ctx); design(ctx); frame(ctx); }, 25.4, onProgress);
+    return {
+      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + (FW > 30000 || H > 30000 ? '.psb' : '.psd'),
+      blob, width: FW, height: H, strips: N, psb: FW > 30000 || H > 30000
+    };
   };
   // cadFull: CAD図面のレイヤー（絵の大きさのcanvas、壁の位置に描いたもの）。W: 壁の幅（つなげたときは合計）、WH: 壁の高さ（最大）
   // off: { img: {x, y}, frame: {x, y} } 画像・枠を動かした量（mm）

@@ -1381,24 +1381,26 @@
         await new Promise((r) => setTimeout(r, 30));
         const right = this.$('wp-right').checked;
         const shapes = this._wpShapes(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP);
-        let cad = null;
+        // the CAD layer is drawn piece by piece (tiles) by the PSD writer: no canvas as big as the whole picture
+        let cadDraw = null;
         const bd = this.elev.backdrop;
         if (bd) {
           const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('図面の画像を読めませんでした')); i.src = bd.dataUrl; });
-          cad = document.createElement('canvas');
-          cad.width = g.FW; cad.height = g.H;
-          const cx = cad.getContext('2d');
-          cx.imageSmoothingQuality = 'high';
-          shapes.forEach((sh) => cx.drawImage(img, sh.box[0], sh.box[1], sh.box[2], sh.box[3], sh.x0, sh.y0, sh.W, sh.WH));
+          cadDraw = (cx) => {
+            cx.imageSmoothingQuality = 'high';
+            shapes.forEach((sh) => cx.drawImage(img, sh.box[0], sh.box[1], sh.box[2], sh.box[3], sh.x0, sh.y0, sh.W, sh.WH));
+          };
         }
-        const label = g.multi ? '壁 ' + g.walls.map((x) => x.no).join('→') + ' を時計回りにつなげる・幅の合計 ' + W + 'mm' : '壁の範囲 ' + W + '×' + WH + 'mm';
-        const out = wp.buildWhole(cad, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label);
+        const label = g.multi ? '壁 ' + g.walls.map((x) => x.no).join('→') + ' をつなげる・幅の合計 ' + W + 'mm' : '壁の範囲 ' + W + '×' + WH + 'mm';
+        const out = await wp.buildWholeAsync(cadDraw, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label,
+          (f) => { btn.textContent = 'PSDを作成中… ' + Math.round(f * 100) + '%'; });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-        this.status('壁紙データを保存しました（' + out.width + ' × ' + out.height + ' mm・1px = 1mm・' + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠）。', 'success');
+        this.status('壁紙データを保存しました（' + out.width + ' × ' + out.height + ' mm・1px = 1mm・' + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠）。'
+          + (out.psb ? '幅が30000mmを超えるため、PhotoshopのPSB形式（大きなドキュメント形式）で保存しました。Photoshopで開けます。' : ''), 'success');
       } catch (err) {
         this.status('エラー: 壁紙データを作成できませんでした（' + err.message + '）', 'error');
         console.error(err);
