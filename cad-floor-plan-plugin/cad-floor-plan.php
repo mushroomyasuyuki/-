@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.36.0
+ * Version: 2.37.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.36.0');
+define('CFP_VERSION', '2.37.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -381,9 +381,9 @@ final class CAD_Floor_Plan_Plugin {
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-poly">多角形</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-move" title="手で指定した部屋（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">部屋を移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-edit" title="手で指定した部屋の角（白い丸）をドラッグして形を変えます。辺の中央の四角をドラッグすると角を追加、角をダブルクリックすると削除">形を変える</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-fit">全体</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-in" aria-label="拡大">＋</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-out" aria-label="縮小">－</button>
-                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-fit">全体</button>
                     <label class="cfp-check"><input type="checkbox" data-cfp="ortho" checked> 角を直角にそろえる</label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="hide-auto"> 自動で出た部屋を隠す</label>
                   </div>
