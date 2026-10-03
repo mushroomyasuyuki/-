@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.41.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.42.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -118,6 +118,8 @@
 .cfp-layout-title{font-size:13px;font-weight:700;color:#f87171}
 .cfp-layout-note{margin:0 0 8px;min-height:3.2em;font-size:13px;font-weight:700;color:#fecaca;line-height:1.6}
 .cfp-layout-view{height:480px;background:#fff}
+.cfp-btn.cfp-btn-save{background:#7f1d1d;border-color:#ef4444}
+.cfp-btn.cfp-btn-save:hover{background:#991b1b;color:#fff}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -247,6 +249,7 @@
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-fit">全体</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-zin" title="図面を拡大">＋ 拡大</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="layout-zout" title="図面を縮小">− 縮小</button>
+        <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="layout-psd" title="元図面・部屋・画像・割付をレイヤーに分けたPSDで保存します">割付をPSDで保存</button>
         <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-img" checked> 図面を表示</label>
         <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-grid" checked> 割付を表示</label>
         <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-design" checked> 変換画像を表示</label>
@@ -2090,6 +2093,19 @@
   const fmtM = (mm) => (mm / 1000).toFixed(1);
   const fmtMm = (mm) => Math.round(mm).toLocaleString('ja-JP');
   const TILE = 500; // carpet tile (mm)
+  // PSD writer (ag-psd), shared with the simulator page
+  function loadAgPsd() {
+    if (window.agPsd) return Promise.resolve(window.agPsd);
+    if (window.__cocoonAgPsdPromise) return window.__cocoonAgPsdPromise;
+    window.__cocoonAgPsdPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/ag-psd/dist/bundle.js';
+      s.onload = () => (window.agPsd ? resolve(window.agPsd) : reject(new Error('ag-psd の読み込みエラー')));
+      s.onerror = () => { window.__cocoonAgPsdPromise = null; reject(new Error('PSDライブラリの読み込みに失敗しました')); };
+      document.head.appendChild(s);
+    });
+    return window.__cocoonAgPsdPromise;
+  }
   // area of a polygon clipped to the rectangle x0..x1 / y0..y1 (Sutherland-Hodgman)
   function clipArea(poly, x0, y0, x1, y1) {
     let pts = poly;
@@ -2264,6 +2280,7 @@
       });
       this.$('layout-dopacity').addEventListener('input', () => this._renderLayout());
       this.$('layout-show-design').addEventListener('change', () => this._renderLayout());
+      this.$('layout-psd').addEventListener('click', () => this._saveLayoutPsd());
       document.addEventListener('cfp:designs-updated', () => { this._designUrl = null; this._renderLayout(); });
       this.$('layout-fit').addEventListener('click', () => this.layoutTracer && this.layoutTracer.fit());
       this.$('layout-zin').addEventListener('click', () => this.layoutTracer && this.layoutTracer.zoom(0.7));
@@ -3282,11 +3299,9 @@
       this.$('layout-design').disabled = !hasDesign;
       if (hasDesign && lay.box && this.$('layout-show-design').checked) {
         if (!this._designUrl) this._designUrl = dsrc.toDataURL('image/png');
-        const d = previewOffset && previewOffset.design ? previewOffset.design : this.design;
-        const bw = lay.box.x1 - lay.box.x0;
-        const w = bw * d.scale, h = w * dsrc.height / dsrc.width;
-        const ccx = (lay.box.x0 + lay.box.x1) / 2 + d.x, ccy = (lay.box.y0 + lay.box.y1) / 2 + d.y; // mm, Y up
-        const [vx, vy] = view.toV([ccx - w / 2, ccy + h / 2]);
+        const r = this._designRect(lay, dsrc, previewOffset && previewOffset.design);
+        const w = r.w, h = r.h;
+        const [vx, vy] = view.toV([r.x0, r.y1]);
         const parent = add('g', {});
         add('image', { href: this._designUrl, x: vx, y: vy, width: w, height: h, preserveAspectRatio: 'none',
           opacity: (parseFloat(this.$('layout-dopacity').value) || 80) / 100 }, parent);
@@ -3318,6 +3333,143 @@
           + (hasDesign ? '' : '①でカーペット用のデザイン画像を処理すると、変換画像を重ねて表示します。')
           + (hasDesign && (this.design.x || this.design.y || this.design.scale !== 1) ? '変換画像：大きさ ' + Math.round(this.design.scale * 100) + '%・ずらし 横 ' + Math.round(this.design.x) + ' mm／縦 ' + Math.round(this.design.y) + ' mm。' : '')
         : '';
+    }
+    // where the converted carpet image sits (mm, Y up): centred on the tile layout, then shifted / scaled
+    _designRect(lay, src, preview) {
+      const d = preview || this.design;
+      const w = (lay.box.x1 - lay.box.x0) * d.scale, h = w * src.height / src.width;
+      const cx = (lay.box.x0 + lay.box.x1) / 2 + d.x, cy = (lay.box.y0 + lay.box.y1) / 2 + d.y;
+      return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2, w, h };
+    }
+    // Saves the layout as a layered PSD: 元図面 / 部屋 / 画像 / 割付 (RGB, the real size in mm).
+    async _saveLayoutPsd() {
+      const room = this.data && this.data.rooms[this.roomIndex];
+      if (!room) return;
+      const btn = this.$('layout-psd');
+      btn.disabled = true;
+      this.status('割付のPSDを作成しています…', 'loading');
+      try {
+        const agPsd = await loadAgPsd();
+        const view = this._layoutView();
+        const lay = this._tileLayout(room);
+        const dsrc = document.getElementById('cc-reduced');
+        const hasDesign = !!(dsrc && dsrc.width && canvasHasContent(dsrc));
+        // the area to save (view mm): the layout, the room and the image, with a margin
+        const pts = room.vertices.map(view.toV);
+        if (lay.box) [[lay.box.x0, lay.box.y0], [lay.box.x1, lay.box.y1]].forEach((p) => pts.push(view.toV(p)));
+        let dr = null;
+        if (hasDesign && lay.box) {
+          dr = this._designRect(lay, dsrc);
+          [[dr.x0, dr.y0], [dr.x1, dr.y1]].forEach((p) => pts.push(view.toV(p)));
+        }
+        const pad = 300;
+        const rx0 = Math.min(...pts.map((p) => p[0])) - pad, ry0 = Math.min(...pts.map((p) => p[1])) - pad;
+        const rw = Math.max(...pts.map((p) => p[0])) + pad - rx0, rh = Math.max(...pts.map((p) => p[1])) + pad - ry0;
+        const k = Math.min(1, 8000 / Math.max(rw, rh)); // px per mm (1px = 1mm up to 8,000 px)
+        const Wpx = Math.max(1, Math.round(rw * k)), Hpx = Math.max(1, Math.round(rh * k));
+        const layer = () => {
+          const c = document.createElement('canvas');
+          c.width = Wpx;
+          c.height = Hpx;
+          const x = c.getContext('2d');
+          x.setTransform(k, 0, 0, k, -rx0 * k, -ry0 * k); // draw in view mm
+          return { c, x };
+        };
+        const px = 1 / k; // one pixel in mm
+        const path = (x, poly) => { x.beginPath(); poly.forEach((p, i) => (i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]))); x.closePath(); };
+        // ① 元図面: the drawing picture, or the outlines of a DXF / JSON drawing
+        const L1 = layer();
+        if (view.img) {
+          const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = view.img; });
+          L1.x.drawImage(img, this.imgOffset.x, this.imgOffset.y, view.W, view.H);
+        } else {
+          L1.x.strokeStyle = '#3f3f46';
+          L1.x.lineWidth = 2 * px;
+          this.data.rooms.forEach((r) => { path(L1.x, r.vertices.map(view.toV)); L1.x.stroke(); });
+        }
+        // ② 部屋: every room, the chosen one in blue, with its name
+        const L2 = layer();
+        this.data.rooms.forEach((r, i) => {
+          const sel = i === this.roomIndex;
+          path(L2.x, r.vertices.map(view.toV));
+          L2.x.fillStyle = sel ? 'rgba(37,99,235,0.22)' : 'rgba(161,161,170,0.18)';
+          L2.x.fill();
+          L2.x.strokeStyle = sel ? '#2563eb' : '#a1a1aa';
+          L2.x.lineWidth = (sel ? 4 : 2) * px;
+          L2.x.stroke();
+        });
+        const rb = CADParser.bounds(room.vertices);
+        const [lx, ly] = view.toV([(rb.minX + rb.maxX) / 2, (rb.minY + rb.maxY) / 2]);
+        L2.x.fillStyle = '#1e3a8a';
+        L2.x.font = 'bold ' + Math.max(120, Math.min(rb.maxX - rb.minX, rb.maxY - rb.minY) / 12) + 'px sans-serif';
+        L2.x.textAlign = 'center';
+        L2.x.textBaseline = 'middle';
+        L2.x.fillText(room.name || '部屋', lx, ly);
+        // ③ 画像: the converted carpet image where it was placed
+        const L3 = layer();
+        if (dr) {
+          const [vx, vy] = view.toV([dr.x0, dr.y1]);
+          L3.x.imageSmoothingEnabled = false; // keep the reduced colours crisp
+          L3.x.drawImage(dsrc, vx, vy, dr.w, dr.h);
+        }
+        // ④ 割付: the 500 mm tiles in red (cut tiles light red), the outline and the centre
+        const L4 = layer();
+        if (lay.box) {
+          lay.tiles.forEach((t) => {
+            const [vx, vy] = view.toV([t.x, t.y + TILE]);
+            if (t.cut) { L4.x.fillStyle = 'rgba(239,68,68,0.14)'; L4.x.fillRect(vx, vy, TILE, TILE); }
+            L4.x.strokeStyle = '#ef4444';
+            L4.x.lineWidth = 2 * px;
+            L4.x.strokeRect(vx, vy, TILE, TILE);
+          });
+          const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
+          L4.x.strokeStyle = '#dc2626';
+          L4.x.lineWidth = 5 * px;
+          L4.x.strokeRect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
+          const [cx, cy] = view.toV([lay.cx, lay.cy]);
+          L4.x.lineWidth = 3 * px;
+          L4.x.beginPath(); L4.x.moveTo(cx - 250, cy); L4.x.lineTo(cx + 250, cy); L4.x.moveTo(cx, cy - 250); L4.x.lineTo(cx, cy + 250); L4.x.stroke();
+        }
+        const opacity = (parseFloat(this.$('layout-dopacity').value) || 80) / 100;
+        const comp = document.createElement('canvas');
+        comp.width = Wpx;
+        comp.height = Hpx;
+        const cx2 = comp.getContext('2d');
+        cx2.fillStyle = '#ffffff';
+        cx2.fillRect(0, 0, Wpx, Hpx);
+        cx2.drawImage(L1.c, 0, 0);
+        cx2.drawImage(L2.c, 0, 0);
+        cx2.globalAlpha = opacity;
+        cx2.drawImage(L3.c, 0, 0);
+        cx2.globalAlpha = 1;
+        cx2.drawImage(L4.c, 0, 0);
+        const name = (room.name || '部屋');
+        const dpi = 25.4 * k;
+        const psd = {
+          width: Wpx, height: Hpx, canvas: comp,
+          imageResources: { resolutionInfo: { horizontalResolution: dpi, horizontalResolutionUnit: 'PPI', widthUnit: 'Centimeters', verticalResolution: dpi, verticalResolutionUnit: 'PPI', heightUnit: 'Centimeters' } },
+          children: [
+            { name: '①元図面', canvas: L1.c },
+            { name: '②部屋（' + name + '）', canvas: L2.c },
+            { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%）', canvas: L3.c, opacity, hidden: !dr },
+            { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', canvas: L4.c },
+          ],
+        };
+        const buf = agPsd.writePsd(psd, { generateThumbnail: true });
+        const blob = new Blob([buf], { type: 'image/vnd.adobe.photoshop' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        // ASCII file name (some browsers drop a Japanese one); the room name is in the layer names
+        a.download = 'carpet_layout_room' + (this.roomIndex + 1) + '_' + lay.cols + 'x' + lay.rows + '_' + Date.now() + '.psd';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        this.status('割付をPSDで保存しました（' + Wpx + ' × ' + Hpx + ' px、1px = ' + (1 / k).toFixed(2) + ' mm。レイヤー：元図面／部屋／画像／割付）。', 'success');
+      } catch (err) {
+        this.status('エラー: PSDを作成できませんでした（' + err.message + '）', 'error');
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+      }
     }
     _layoutDrag(tool, d, phase) {
       if (tool === 'grid') {

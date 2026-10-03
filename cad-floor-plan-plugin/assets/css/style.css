@@ -127,3 +127,5 @@
 .cfp-layout-title{font-size:13px;font-weight:700;color:#f87171}
 .cfp-layout-note{margin:0 0 8px;min-height:3.2em;font-size:13px;font-weight:700;color:#fecaca;line-height:1.6}
 .cfp-layout-view{height:480px;background:#fff}
+.cfp-btn.cfp-btn-save{background:#7f1d1d;border-color:#ef4444}
+.cfp-btn.cfp-btn-save:hover{background:#991b1b;color:#fff}
