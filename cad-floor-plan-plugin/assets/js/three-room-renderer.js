@@ -135,6 +135,45 @@
       this._render();
     }
 
+    // Joined walls of the strip frame view ("壁をつなげる"): one band picture (widths[i] mm wide walls side by
+    // side, WH mm high) laid round the room, each wall of the band on the matching wall of the room. null: off.
+    // band: { widths: [mm...], WH, top } (top: ceilings lined up, else floors)
+    setWallBand(band) {
+      this.wallBand = band || null;
+      this.walls.forEach((e) => this._wallUV(e));
+      this._render();
+    }
+
+    _bandUV(entry, uv) {
+      const band = this.wallBand;
+      const ws = band.widths, m = ws.length;
+      const B = [];
+      let Wsum = 0;
+      ws.forEach((w) => { B.push(Wsum); Wsum += w; });
+      // the room's walls in the order of the band (left to right seen from inside = growing s0)
+      const same = this.walls.filter((e) => e.roomIndex === entry.roomIndex).sort((a, b) => a.s0 - b.s0);
+      const n = same.length, p = same.indexOf(entry);
+      const lenMm = entry.len / MM, hMm = entry.h / MM;
+      let map = null;
+      if (n === m) {
+        // start on the room wall that makes the lengths agree best
+        let best = 0, bestErr = Infinity;
+        for (let k = 0; k < n; k++) {
+          const err = ws.reduce((t, w, i) => t + Math.abs(w - same[(i + k) % n].len / MM), 0);
+          if (err < bestErr) { bestErr = err; best = k; }
+        }
+        const i = (p - best + n) % n;
+        map = { b0: B[i], bw: ws[i] };
+      }
+      for (let j = 0; j < uv.count; j++) {
+        const u0 = j % 2, v0 = j < 2 ? 1 : 0;
+        const b = map ? map.b0 + u0 * map.bw : (entry.s0 || 0) + u0 * lenMm; // position in the band (mm)
+        const v = band.top ? 1 - (1 - v0) * hMm / band.WH : v0 * hMm / band.WH;
+        uv.setXY(j, b / Wsum, v);
+      }
+      uv.needsUpdate = true;
+    }
+
     // the wall paper picture moved by x (right) / y (down) mm (the strip frame view's "画像を移動")
     setWallShift(x, y) {
       this.wallShift = { x: x || 0, y: y || 0 };
@@ -154,6 +193,7 @@
     // The pattern starts at the ceiling (top edge) like hung wallpaper.
     _wallUV(entry) {
       const uv = entry.mesh.geometry.attributes.uv;
+      if (this.wallBand) { this._bandUV(entry, uv); return; }
       const rep = this.wallRepeat;
       const lenMm = entry.len / MM, hMm = entry.h / MM;
       const shx = (this.wallShift || {}).x || 0, shy = (this.wallShift || {}).y || 0;

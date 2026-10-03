@@ -124,7 +124,7 @@
       }
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
-      document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpRender(); });
+      document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpBandKey = null; this._wpRender(); });
       if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル', { fromFile: false });
     }
 
@@ -1116,6 +1116,35 @@
       this._wpApplyView();
     }
 
+    // the joined walls shown on the 3D room as one band (the same picture and position as in the strip frame view)
+    _wp3D(g) {
+      const r = this.renderer;
+      if (!r || !r.setWallBand) return;
+      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      const src = g ? g.wp.getSource() : null;
+      if (!g || !g.multi || !room || !src) {
+        if (this._wpBand) { this._wpBand = null; this._wpBandKey = null; r.setWallBand(null); this.syncDesigns(true); }
+        return;
+      }
+      const off = this._wpO(), top = (this.$('wp-align') || {}).value === 'top';
+      const key = [g.walls.map((x) => x.W).join(','), g.WH, top, off.img.x, off.img.y, src.width, src.height,
+        JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
+      if (this._wpBandKey === key) return;
+      this._wpBandKey = key;
+      clearTimeout(this._wpBandTimer);
+      this._wpBandTimer = setTimeout(() => {
+        const k = Math.min(1, 2048 / Math.max(g.W, g.WH));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(g.W * k)); c.height = Math.max(1, Math.round(g.WH * k));
+        g.wp.renderDesign(c, off.img.x, off.img.y, g.W, g.WH, k); // the walls only (no margins), as placed in the view
+        this._wpBand = { widths: g.walls.map((x) => x.W), WH: g.WH, top };
+        r.wallSingle = false;
+        r.wallRepeat = null;
+        r.setWallCanvas(c);
+        r.setWallBand(this._wpBand);
+      }, 250);
+    }
+
     // joined walls against the room chosen on the floor plan: the total width should equal the room's perimeter
     _wpCheckRoom(g) {
       const el = this.$('wp-warn');
@@ -1217,7 +1246,7 @@
       const panel = this.$('wp');
       if (!panel) return;
       const g = this._wpGeom();
-      if (!g) { panel.hidden = true; return; }
+      if (!g) { panel.hidden = true; this._wp3D(null); return; }
       panel.hidden = false;
       const { wp, w, W, WH, H, N, FW } = g;
       const svg = this.$('wp-svg');
@@ -1313,6 +1342,7 @@
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
       this._wpCheckRoom(g);
+      if (!this._wpDragging) this._wp3D(g);
     }
 
     async _wpSave() {
@@ -2057,7 +2087,8 @@
       const wp = window.cfpWallPrint;
       this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
       this.renderer.wallShift = window.cfpWallShift || { x: 0, y: 0 };
-      if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
+      if (this._wpBand) { /* the joined walls' band picture stays on the walls (see _wp3D) */ }
+      else if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);
       this._thumb('src-floor', hasFloor ? floor : null);

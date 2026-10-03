@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.62.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.63.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -1399,6 +1399,43 @@
       }
       this._render();
     }
+    // Joined walls of the strip frame view ("壁をつなげる"): one band picture (widths[i] mm wide walls side by
+    // side, WH mm high) laid round the room, each wall of the band on the matching wall of the room. null: off.
+    // band: { widths: [mm...], WH, top } (top: ceilings lined up, else floors)
+    setWallBand(band) {
+      this.wallBand = band || null;
+      this.walls.forEach((e) => this._wallUV(e));
+      this._render();
+    }
+    _bandUV(entry, uv) {
+      const band = this.wallBand;
+      const ws = band.widths, m = ws.length;
+      const B = [];
+      let Wsum = 0;
+      ws.forEach((w) => { B.push(Wsum); Wsum += w; });
+      // the room's walls in the order of the band (left to right seen from inside = growing s0)
+      const same = this.walls.filter((e) => e.roomIndex === entry.roomIndex).sort((a, b) => a.s0 - b.s0);
+      const n = same.length, p = same.indexOf(entry);
+      const lenMm = entry.len / MM, hMm = entry.h / MM;
+      let map = null;
+      if (n === m) {
+        // start on the room wall that makes the lengths agree best
+        let best = 0, bestErr = Infinity;
+        for (let k = 0; k < n; k++) {
+          const err = ws.reduce((t, w, i) => t + Math.abs(w - same[(i + k) % n].len / MM), 0);
+          if (err < bestErr) { bestErr = err; best = k; }
+        }
+        const i = (p - best + n) % n;
+        map = { b0: B[i], bw: ws[i] };
+      }
+      for (let j = 0; j < uv.count; j++) {
+        const u0 = j % 2, v0 = j < 2 ? 1 : 0;
+        const b = map ? map.b0 + u0 * map.bw : (entry.s0 || 0) + u0 * lenMm; // position in the band (mm)
+        const v = band.top ? 1 - (1 - v0) * hMm / band.WH : v0 * hMm / band.WH;
+        uv.setXY(j, b / Wsum, v);
+      }
+      uv.needsUpdate = true;
+    }
     // the wall paper picture moved by x (right) / y (down) mm (the strip frame view's "画像を移動")
     setWallShift(x, y) {
       this.wallShift = { x: x || 0, y: y || 0 };
@@ -1416,6 +1453,7 @@
     // The pattern starts at the ceiling (top edge) like hung wallpaper.
     _wallUV(entry) {
       const uv = entry.mesh.geometry.attributes.uv;
+      if (this.wallBand) { this._bandUV(entry, uv); return; }
       const rep = this.wallRepeat;
       const lenMm = entry.len / MM, hMm = entry.h / MM;
       const shx = (this.wallShift || {}).x || 0, shy = (this.wallShift || {}).y || 0;
@@ -2220,7 +2258,7 @@
       }
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
-      document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpRender(); });
+      document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpBandKey = null; this._wpRender(); });
       if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル', { fromFile: false });
     }
     _bind() {
@@ -3167,6 +3205,34 @@
       this._wpView = { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
       this._wpApplyView();
     }
+    // the joined walls shown on the 3D room as one band (the same picture and position as in the strip frame view)
+    _wp3D(g) {
+      const r = this.renderer;
+      if (!r || !r.setWallBand) return;
+      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      const src = g ? g.wp.getSource() : null;
+      if (!g || !g.multi || !room || !src) {
+        if (this._wpBand) { this._wpBand = null; this._wpBandKey = null; r.setWallBand(null); this.syncDesigns(true); }
+        return;
+      }
+      const off = this._wpO(), top = (this.$('wp-align') || {}).value === 'top';
+      const key = [g.walls.map((x) => x.W).join(','), g.WH, top, off.img.x, off.img.y, src.width, src.height,
+        JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
+      if (this._wpBandKey === key) return;
+      this._wpBandKey = key;
+      clearTimeout(this._wpBandTimer);
+      this._wpBandTimer = setTimeout(() => {
+        const k = Math.min(1, 2048 / Math.max(g.W, g.WH));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(g.W * k)); c.height = Math.max(1, Math.round(g.WH * k));
+        g.wp.renderDesign(c, off.img.x, off.img.y, g.W, g.WH, k); // the walls only (no margins), as placed in the view
+        this._wpBand = { widths: g.walls.map((x) => x.W), WH: g.WH, top };
+        r.wallSingle = false;
+        r.wallRepeat = null;
+        r.setWallCanvas(c);
+        r.setWallBand(this._wpBand);
+      }, 250);
+    }
     // joined walls against the room chosen on the floor plan: the total width should equal the room's perimeter
     _wpCheckRoom(g) {
       const el = this.$('wp-warn');
@@ -3262,7 +3328,7 @@
       const panel = this.$('wp');
       if (!panel) return;
       const g = this._wpGeom();
-      if (!g) { panel.hidden = true; return; }
+      if (!g) { panel.hidden = true; this._wp3D(null); return; }
       panel.hidden = false;
       const { wp, w, W, WH, H, N, FW } = g;
       const svg = this.$('wp-svg');
@@ -3358,6 +3424,7 @@
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
       this._wpCheckRoom(g);
+      if (!this._wpDragging) this._wp3D(g);
     }
     async _wpSave() {
       const g = this._wpGeom();
@@ -4067,7 +4134,8 @@
       const wp = window.cfpWallPrint;
       this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
       this.renderer.wallShift = window.cfpWallShift || { x: 0, y: 0 };
-      if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
+      if (this._wpBand) { /* the joined walls' band picture stays on the walls (see _wp3D) */ }
+      else if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
         hasWall && rep && !rep.on ? wall.width / wall.height : 0, rep && rep.scale ? rep.scale : 1, rep && rep.mode ? rep.mode : null);
       this._thumb('src-floor', hasFloor ? floor : null);
