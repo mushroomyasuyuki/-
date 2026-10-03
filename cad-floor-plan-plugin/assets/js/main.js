@@ -438,6 +438,7 @@
       else this.$('size-note').textContent = prov && kind.manual && this.backdrop.kind === 'pdf'
         ? '指定した部屋の大きさは仮です。「PDFの縮尺（1:N の N）」に図面の縮尺（例: 100）を入力してください。' : '';
       this._renderLayout();
+      this._wpRender(); // the joined walls are checked against this room
     }
 
     _unitText() {
@@ -912,6 +913,7 @@
       const jl = this.$('wp-join-list');
       this.$('wp-join').addEventListener('change', () => this._wpRender());
       this.$('wp-align').addEventListener('change', () => this._wpRender());
+      this.$('wp-ccw').addEventListener('change', () => this._wpRender());
       jl.addEventListener('input', () => this._wpRender());
       this.$('wp-join-add').addEventListener('click', () => {
         if (this.elevIndex < 0) return;
@@ -1071,6 +1073,45 @@
       this._wpApplyView();
     }
 
+    // joined walls against the room chosen on the floor plan: the total width should equal the room's perimeter
+    _wpCheckRoom(g) {
+      const el = this.$('wp-warn');
+      if (!el) return;
+      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      if (!g || !g.multi || !room) { el.hidden = true; return; }
+      const v = room.vertices;
+      const sides = v.map((p, i) => { const q = v[(i + 1) % v.length]; return Math.hypot(q[0] - p[0], q[1] - p[1]); });
+      const per = sides.reduce((t, x) => t + x, 0);
+      const diff = g.W - per, tol = Math.max(50, per * 0.01);
+      const f = (x) => Math.round(x).toLocaleString();
+      const sideText = '部屋の辺（' + sides.length + '辺）：' + sides.map(f).join(' / ') + ' mm。';
+      const countText = sides.length !== g.walls.length ? ' つなげた壁は ' + g.walls.length + ' 面で、部屋の辺の数（' + sides.length + '）と違います。' : '';
+      // the same number of walls and sides: line them up (best starting side, in the joining direction) and compare one by one
+      let pairText = '', pairBad = false;
+      if (!countText) {
+        const n = sides.length, ws = g.walls.map((x) => x.W);
+        let best = null;
+        [false, true].forEach((rev) => {
+          const sd = rev ? sides.slice().reverse() : sides;
+          for (let k = 0; k < n; k++) {
+            const err = ws.reduce((t, wv, i) => t + Math.abs(wv - sd[(i + k) % n]), 0);
+            if (!best || err < best.err) best = { err, sd, k };
+          }
+        });
+        const off = ws.map((wv, i) => ({ no: g.walls[i].no, wv, sv: best.sd[(i + best.k) % n] })).filter((x) => Math.abs(x.wv - x.sv) > Math.max(30, x.sv * 0.01));
+        if (off.length) {
+          pairBad = true;
+          pairText = ' 長さの合わない壁：' + off.map((x) => '壁' + x.no + '（' + f(x.wv) + '）↔ 部屋の辺（' + f(x.sv) + '）差 ' + (x.wv > x.sv ? '+' : '') + f(x.wv - x.sv)).join('、') + ' mm。';
+        }
+      }
+      const bad = Math.abs(diff) > tol || !!countText || pairBad;
+      el.hidden = false;
+      el.classList.toggle('is-bad', bad);
+      el.textContent = (bad ? '⚠️ 平面図で選んだ部屋「' + (room.name || '部屋') + '」と合いません。' : '✅ 平面図で選んだ部屋「' + (room.name || '部屋') + '」と合っています。')
+        + ' つなげた壁の幅の合計 ' + f(g.W) + ' mm ／ 部屋の周長 ' + f(per) + ' mm → 差 ' + (diff > 0 ? '+' : '') + f(diff) + ' mm（' + (Math.round(diff / per * 1000) / 10) + '%）。'
+        + countText + pairText + ' ' + sideText + (bad ? ' 壁の選び方・順番や、展開図・平面図の縮尺を確かめてください。' : '');
+    }
+
     // the wall numbers typed for joining (1-based, in order, no duplicates, only walls that exist)
     _wpJoinNums() {
       const all = this._elevAll(), seen = new Set();
@@ -1082,7 +1123,9 @@
     _wpWalls() {
       const all = this._elevAll();
       if (this.$('wp-join') && this.$('wp-join').checked) {
-        const nums = this._wpJoinNums();
+        let nums = this._wpJoinNums();
+        // left-hand (counter-clockwise): from the same first wall, the others the other way round
+        if (this.$('wp-ccw').checked && nums.length > 2) nums = [nums[0]].concat(nums.slice(1).reverse());
         if (nums.length) return nums.map((n) => ({ w: all[n - 1], no: n }));
       }
       const w = all[this.elevIndex];
@@ -1208,12 +1251,13 @@
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);
       this.$('wp-note').textContent = (g.multi
-        ? '壁 ' + g.walls.map((x) => x.no).join(' → ') + '（時計回りにつなげる・' + ((this.$('wp-align') || {}).value === 'top' ? '上（天井）' : '下（床）') + '合わせ） 幅の合計 ' + fmt(W) + ' × 高さ（最大） ' + fmt(WH) + ' mm → '
+        ? '壁 ' + g.walls.map((x) => x.no).join(' → ') + '（' + (this.$('wp-ccw').checked ? '左回り' : '右回り') + 'につなげる・' + ((this.$('wp-align') || {}).value === 'top' ? '上（天井）' : '下（床）') + '合わせ） 幅の合計 ' + fmt(W) + ' × 高さ（最大） ' + fmt(WH) + ' mm → '
         : '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → ') + '画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
         + '巾 ' + wp.ROLL + ' mm・合わせ代（巾が重なる幅） ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP) + ' mm）の真ん中（' + fmt(wp.OVERLAP / 2) + ' mm）のカット線。'
         + (off.img.x || off.img.y ? ' 画像を動かした量：横 ' + off.img.x + ' mm・縦 ' + off.img.y + ' mm。' : '')
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
+      this._wpCheckRoom(g);
     }
 
     async _wpSave() {
