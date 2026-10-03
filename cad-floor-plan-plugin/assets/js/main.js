@@ -211,6 +211,7 @@
       });
       this.$('layout-dopacity').addEventListener('input', () => this._renderLayout());
       this.$('layout-show-design').addEventListener('change', () => this._renderLayout());
+      this.$('layout-clip-box').addEventListener('change', () => this._renderLayout());
       this.$('layout-psd').addEventListener('click', () => this._saveLayoutPsd());
       document.addEventListener('cfp:designs-updated', () => { this._designUrl = null; this._renderLayout(); });
       this.$('layout-fit').addEventListener('click', () => this.layoutTracer && this.layoutTracer.fit());
@@ -1292,7 +1293,15 @@
         const r = this._designRect(lay, dsrc, previewOffset && previewOffset.design);
         const w = r.w, h = r.h;
         const [vx, vy] = view.toV([r.x0, r.y1]);
-        const parent = add('g', {});
+        let parent = add('g', {});
+        if (this.$('layout-clip-box').checked) {
+          // show the image only inside the tile layout (the carpet that is ordered)
+          const id = 'cfp-lclip-' + (this._clipSeq = (this._clipSeq || 0) + 1);
+          const cp = add('clipPath', { id }, add('defs', {}));
+          const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
+          add('rect', { x: bx, y: by, width: lay.box.x1 - lay.box.x0, height: lay.box.y1 - lay.box.y0 }, cp);
+          parent.setAttribute('clip-path', 'url(#' + id + ')');
+        }
         add('image', { href: this._designUrl, x: vx, y: vy, width: w, height: h, preserveAspectRatio: 'none',
           opacity: (parseFloat(this.$('layout-dopacity').value) || 80) / 100 }, parent);
       }
@@ -1402,6 +1411,13 @@
         const L3 = layer();
         if (dr) {
           const [vx, vy] = view.toV([dr.x0, dr.y1]);
+          if (this.$('layout-clip-box').checked) {
+            // only inside the tile layout, as on the screen
+            const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
+            L3.x.beginPath();
+            L3.x.rect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
+            L3.x.clip();
+          }
           L3.x.imageSmoothingEnabled = false; // keep the reduced colours crisp
           L3.x.drawImage(dsrc, vx, vy, dr.w, dr.h);
         }
@@ -1423,7 +1439,8 @@
           L4.x.lineWidth = 3 * px;
           L4.x.beginPath(); L4.x.moveTo(cx - 250, cy); L4.x.lineTo(cx + 250, cy); L4.x.moveTo(cx, cy - 250); L4.x.lineTo(cx, cy + 250); L4.x.stroke();
         }
-        const opacity = (parseFloat(this.$('layout-dopacity').value) || 80) / 100;
+        // the image is saved fully opaque (the 濃さ slider is only for looking at the drawing underneath)
+        const opacity = 1;
         const comp = document.createElement('canvas');
         comp.width = Wpx;
         comp.height = Hpx;
@@ -1444,7 +1461,7 @@
           children: [
             { name: '①元図面', canvas: L1.c },
             { name: '②部屋（' + name + '）', canvas: L2.c },
-            { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%）', canvas: L3.c, opacity, hidden: !dr },
+            { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%' + (this.$('layout-clip-box').checked ? '・割付の範囲' : '') + '）', canvas: L3.c, hidden: !dr },
             { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', canvas: L4.c },
           ],
         };

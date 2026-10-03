@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.42.0
+ * Version: 2.43.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.42.0');
+define('CFP_VERSION', '2.43.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -455,6 +455,7 @@ final class CAD_Floor_Plan_Plugin {
                     <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-img" checked> 図面を表示</label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-grid" checked> 割付を表示</label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="layout-show-design" checked> 変換画像を表示</label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="layout-clip-box" checked> 画像をカーペット割付の範囲まで表示</label>
                   </div>
                   <div class="cfp-raster-row cfp-layout-sliders">
                     <label>画像の大きさ <input type="range" data-cfp="layout-dscale" min="20" max="300" step="1" value="100"> <span data-cfp="layout-dscale-val">100</span>%</label>
