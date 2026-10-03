@@ -972,12 +972,12 @@
       const svg = this.$('wp-svg');
       const r = svg.getBoundingClientRect();
       const base = this._wpBase(g);
-      const nw = Math.min(base.w * 1.2, Math.max(60, v.w * f));
+      const nw = Math.min(base.w, Math.max(60, v.w * f)); // never wider than the whole picture; the position is kept
       const nh = nw * v.h / v.w;
       // the point under the pointer stays put
       const px = e ? (e.clientX - r.left) / r.width : 0.5, py = e ? (e.clientY - r.top) / r.height : 0.5;
       const ax = v.x + v.w * px, ay = v.y + v.h * py;
-      this._wpView = nw >= base.w * 1.19 ? null : { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
+      this._wpView = { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
       this._wpApplyView();
     }
 
