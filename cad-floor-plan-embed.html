@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.61.2 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.61.3 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2516,7 +2516,7 @@
       else this.$('size-note').textContent = prov && kind.manual && this.backdrop.kind === 'pdf'
         ? '指定した部屋の大きさは仮です。「PDFの縮尺（1:N の N）」に図面の縮尺（例: 100）を入力してください。' : '';
       this._renderLayout();
-      this._wpRender(); // the joined walls are checked against this room
+      try { this._wpRender(); } catch (err) { console.error(err); } // the joined walls are checked against this room (never in the way of the plan)
     }
     _unitText() {
       const m = this.data.metadata || {};
@@ -3711,11 +3711,30 @@
       const m = Math.max(b.maxX - b.minX, b.maxY - b.minY) * 0.12 + TILE;
       return { W: b.maxX - b.minX + m * 2, H: b.maxY - b.minY + m * 2, img: '', toV: ([x, y]) => [x - b.minX + m, b.maxY - y + m] };
     }
+    // a vector PDF has no picture until one is rendered: render its page so that the drawing shows under the
+    // tile layout and rooms can be traced on it (also after resuming saved work or switching drawings)
+    async _ensureBackdrop() {
+      if (this.backdrop || this.raster || !this.fromFile || !this.lastFile || !/\.pdf$/i.test(this.lastFile.name) || this._bdBusy) return;
+      const file = this.lastFile;
+      this._bdBusy = true;
+      try {
+        const bd = await CADParser.renderPdfBackdrop(file, { scale: parseFloat(this.$('scale').value) || 1 });
+        if (this.lastFile !== file || this.backdrop) return;
+        this.backdrop = bd;
+        this.backdropFile = file;
+        this._afterRoomsChanged();
+      } catch (err) {
+        console.warn(err);
+      } finally {
+        this._bdBusy = false;
+      }
+    }
     _renderLayout(previewOffset) {
       const panel = this.$('layout');
       const room = this.data && this.data.rooms[this.roomIndex];
       if (!this.fromFile || !room) { panel.hidden = true; return; }
       panel.hidden = false;
+      if (!this.backdrop) this._ensureBackdrop();
       const view = this._layoutView();
       if (!this.layoutTracer) {
         this.layoutTracer = new RoomTracer(this.$('layout-svg'), {
