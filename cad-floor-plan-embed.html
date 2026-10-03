@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.61.3 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.62.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -128,6 +128,10 @@
 .cfp-wp-join input[type=text]{width:140px}
 .cfp-wp-warn{margin:0 0 8px;padding:8px 10px;border-radius:6px;font-size:13px;font-weight:700;line-height:1.6;background:#052e16;border:1px solid #16a34a;color:#bbf7d0}
 .cfp-wp-warn.is-bad{background:#450a0a;border-color:#ef4444;color:#fecaca}
+.cfp-focus-plan [data-cfp="elev"]{display:none!important}
+.cfp-focus-elev [data-cfp="trace"],.cfp-focus-elev [data-cfp="rooms"],.cfp-focus-elev [data-cfp="layout"],.cfp-focus-elev [data-cfp="raster"]{display:none!important}
+.cfp-dw-chip.is-focus{box-shadow:0 0 0 2px #facc15}
+.cfp-dw-both{margin-top:8px}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -2905,7 +2909,8 @@
       if (!this.drawings.length) { this.$('dw-note').textContent = ''; return; }
       // what each drawing was taken for, and why
       this.$('dw-note').textContent = this.drawings.map((d) => '「' + d.file.name + '」→ ' + (d.type === 'elev' ? '展開図（壁）' : '平面図（床）') + '：' + d.reason).join('\n')
-        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「↑↓」で入れ替えられます。' : '');
+        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「↑↓」で入れ替えられます。' : '')
+        + '\n図面名を押すと、その図面（平面図か展開図）だけを表示します（もう一度押すと両方表示）。';
       [['plan', '平面図（床 → カーペット）', this.planFile], ['elev', '展開図（壁 → 壁紙）', this._elevFile]].forEach(([type, title, active]) => {
         const row = document.createElement('div');
         row.className = 'cfp-dw-row';
@@ -2922,12 +2927,17 @@
         }
         items.forEach((d) => {
           const chip = document.createElement('span');
-          chip.className = 'cfp-dw-chip' + (d.file === active && (type === 'elev' || this.fromFile) ? ' is-active' : '');
+          chip.className = 'cfp-dw-chip' + (d.file === active && (type === 'elev' || this.fromFile) ? ' is-active' : '') + (d.file === active && this.viewFocus === type ? ' is-focus' : '');
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = d.file.name;
           b.title = d.file.name + (type === 'elev' ? '（展開図）' : '（平面図）') + (d.reason ? '\n判定: ' + d.reason : '');
-          b.addEventListener('click', () => (type === 'elev' ? this.showElevation(d) : this.showPlan(d)));
+          b.addEventListener('click', async () => {
+            const wasShown = d.file === active && this.viewFocus === type;
+            if (type === 'elev') await this.showElevation(d); else await this.showPlan(d);
+            // show only this kind of drawing (the other one's panels are folded away); pressed again: both
+            this._setFocus(wasShown ? null : type);
+          });
           const x = document.createElement('button');
           x.type = 'button';
           x.className = 'cfp-dw-x';
@@ -2948,6 +2958,24 @@
         });
         box.appendChild(row);
       });
+      if (this.viewFocus) {
+        const both = document.createElement('button');
+        both.type = 'button';
+        both.className = 'cfp-btn cfp-btn-sm cfp-dw-both';
+        both.textContent = (this.viewFocus === 'elev' ? '展開図だけ表示中' : '平面図だけ表示中') + ' → 両方表示に戻す';
+        both.addEventListener('click', () => this._setFocus(null));
+        box.appendChild(both);
+      }
+    }
+    // which drawing's panels are shown: 'plan', 'elev' or null (both)
+    _setFocus(type) {
+      this.viewFocus = type;
+      this.el.classList.toggle('cfp-focus-plan', type === 'plan');
+      this.el.classList.toggle('cfp-focus-elev', type === 'elev');
+      this._renderDrawings();
+      if (!type) return;
+      const target = type === 'elev' ? this.$('elev') : (!this.$('trace').hidden ? this.$('trace') : this.$('rooms'));
+      if (target && !target.hidden) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     // ------------------------------------------------ wall paper strip frames (巾の枠), whole wall without cutting
     _wpInit() {

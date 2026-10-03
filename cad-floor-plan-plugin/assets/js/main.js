@@ -847,7 +847,8 @@
       if (!this.drawings.length) { this.$('dw-note').textContent = ''; return; }
       // what each drawing was taken for, and why
       this.$('dw-note').textContent = this.drawings.map((d) => '「' + d.file.name + '」→ ' + (d.type === 'elev' ? '展開図（壁）' : '平面図（床）') + '：' + d.reason).join('\n')
-        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「↑↓」で入れ替えられます。' : '');
+        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「↑↓」で入れ替えられます。' : '')
+        + '\n図面名を押すと、その図面（平面図か展開図）だけを表示します（もう一度押すと両方表示）。';
       [['plan', '平面図（床 → カーペット）', this.planFile], ['elev', '展開図（壁 → 壁紙）', this._elevFile]].forEach(([type, title, active]) => {
         const row = document.createElement('div');
         row.className = 'cfp-dw-row';
@@ -864,12 +865,17 @@
         }
         items.forEach((d) => {
           const chip = document.createElement('span');
-          chip.className = 'cfp-dw-chip' + (d.file === active && (type === 'elev' || this.fromFile) ? ' is-active' : '');
+          chip.className = 'cfp-dw-chip' + (d.file === active && (type === 'elev' || this.fromFile) ? ' is-active' : '') + (d.file === active && this.viewFocus === type ? ' is-focus' : '');
           const b = document.createElement('button');
           b.type = 'button';
           b.textContent = d.file.name;
           b.title = d.file.name + (type === 'elev' ? '（展開図）' : '（平面図）') + (d.reason ? '\n判定: ' + d.reason : '');
-          b.addEventListener('click', () => (type === 'elev' ? this.showElevation(d) : this.showPlan(d)));
+          b.addEventListener('click', async () => {
+            const wasShown = d.file === active && this.viewFocus === type;
+            if (type === 'elev') await this.showElevation(d); else await this.showPlan(d);
+            // show only this kind of drawing (the other one's panels are folded away); pressed again: both
+            this._setFocus(wasShown ? null : type);
+          });
           const x = document.createElement('button');
           x.type = 'button';
           x.className = 'cfp-dw-x';
@@ -890,6 +896,25 @@
         });
         box.appendChild(row);
       });
+      if (this.viewFocus) {
+        const both = document.createElement('button');
+        both.type = 'button';
+        both.className = 'cfp-btn cfp-btn-sm cfp-dw-both';
+        both.textContent = (this.viewFocus === 'elev' ? '展開図だけ表示中' : '平面図だけ表示中') + ' → 両方表示に戻す';
+        both.addEventListener('click', () => this._setFocus(null));
+        box.appendChild(both);
+      }
+    }
+
+    // which drawing's panels are shown: 'plan', 'elev' or null (both)
+    _setFocus(type) {
+      this.viewFocus = type;
+      this.el.classList.toggle('cfp-focus-plan', type === 'plan');
+      this.el.classList.toggle('cfp-focus-elev', type === 'elev');
+      this._renderDrawings();
+      if (!type) return;
+      const target = type === 'elev' ? this.$('elev') : (!this.$('trace').hidden ? this.$('trace') : this.$('rooms'));
+      if (target && !target.hidden) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // ------------------------------------------------ wall paper strip frames (巾の枠), whole wall without cutting

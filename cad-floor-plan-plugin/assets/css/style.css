@@ -138,3 +138,7 @@
 .cfp-wp-join input[type=text]{width:140px}
 .cfp-wp-warn{margin:0 0 8px;padding:8px 10px;border-radius:6px;font-size:13px;font-weight:700;line-height:1.6;background:#052e16;border:1px solid #16a34a;color:#bbf7d0}
 .cfp-wp-warn.is-bad{background:#450a0a;border-color:#ef4444;color:#fecaca}
+.cfp-focus-plan [data-cfp="elev"]{display:none!important}
+.cfp-focus-elev [data-cfp="trace"],.cfp-focus-elev [data-cfp="rooms"],.cfp-focus-elev [data-cfp="layout"],.cfp-focus-elev [data-cfp="raster"]{display:none!important}
+.cfp-dw-chip.is-focus{box-shadow:0 0 0 2px #facc15}
+.cfp-dw-both{margin-top:8px}
