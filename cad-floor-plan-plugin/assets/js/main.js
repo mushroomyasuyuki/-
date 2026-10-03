@@ -1077,9 +1077,15 @@
     _wpShare(o, sc) {
       const cur = window.cfpWallShift || { x: 0, y: 0, s: 1 };
       if (cur.x === o.x && cur.y === o.y && (cur.s || 1) === sc) return;
+      const scaled = (cur.s || 1) !== sc;
       window.cfpWallShift = { x: o.x, y: o.y, s: sc };
       clearTimeout(this._wpShareTimer);
       this._wpShareTimer = setTimeout(() => {
+        // the picture's size: the 3D walls and the tool's note follow (the room perspective below)
+        if (scaled) {
+          if (this.renderer) this.syncDesigns(false);
+          if (window.cfpUpdateWallRepeatNote) window.cfpUpdateWallRepeatNote();
+        }
         if (window.cfpLayoutPersp) window.cfpLayoutPersp();
         if (this.renderer && this.renderer.setWallShift) this.renderer.setWallShift(o.x, o.y);
       }, 80);
@@ -2116,7 +2122,7 @@
       if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? floor : null);
       // wallpaper pattern: repeated at its real size, aspect ratio kept (setting of the tool's ② panel)
       const rep = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : null;
-      if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm, h: rep.mm * wall.height / wall.width };
+      if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm * (rep.scale || 1), h: rep.mm * (rep.scale || 1) * wall.height / wall.width };
       else this.renderer.wallRepeat = null;
       this.renderer.wallSingle = !!(hasWall && rep && !rep.on);
       // the single picture also covers the print margins (top / bottom trim, side overlaps), as in the saved data

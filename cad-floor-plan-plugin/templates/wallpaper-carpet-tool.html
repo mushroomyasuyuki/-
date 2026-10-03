@@ -346,8 +346,6 @@
           <option value="center">1枚を壁ごとに中央に貼る</option>
           <option value="wrap">1枚を部屋を一周して続けて貼る（隣の壁へ途切れずに続く）</option>
         </select></label></div>
-      <div class="slider-row cw-single-row" style="margin-top:10px;"><label for="cw-single-scale">1枚表示の画像の大きさ：<span id="cw-single-scale-val">100</span>%</label><span>100% = 壁と裁断代（上下100mm・左右10mm）を覆う大きさ（壁ごとに中央：一番長い壁／一周：部屋の壁の合計の長さ）</span></div>
-      <input type="range" id="cw-single-scale" min="10" max="300" step="5" value="100">
       <div class="file-note" id="cw-repeat-note" style="margin-top:6px;"></div>
     </div>
 
@@ -1342,8 +1340,10 @@
     const mode = $('cw-wall-mode') ? $('cw-wall-mode').value : 'repeat';
     const on = mode === 'repeat';
     const mm = Math.max(50, parseFloat($('cw-repeat-mm')?.value) || 910);
-    const sc = Math.min(300, Math.max(10, parseFloat($('cw-single-scale')?.value) || 100));
-    return { on: on, mode: mode, mm: mm, scale: sc / 100 };
+    // 画像の大きさは、CAD表示の「壁紙の巾の枠」の「画像の大きさ」スライダーで決める（1 = 100%）
+    const sh = window.cfpWallShift;
+    const sc = sh ? (sh.s || 1) : 1;
+    return { on: on, mode: mode, mm: mm, scale: sc };
   }
   window.cfpGetWallRepeat = getWallRepeat;
 
@@ -2095,7 +2095,7 @@
     ctx.imageSmoothingQuality = 'high';
     // 拡大縮小：見えている範囲（0..cw, 0..chh）を、拡大縮小前の座標に直して柄を敷く範囲にする
     let xa = 0, xb = cw, ya = 0, yb = chh;
-    if (sc) {
+    if (sc ? r.on : false) {
       if (sc !== 1) {
         const cx = ox + wallW / 2, cy = oy + wallH / 2;
         ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
@@ -3031,15 +3031,15 @@
     } else if (wallRepeat.mode === 'wrap') {
       // 横の壁（奥行 D）→ 奥の壁（幅 W）を1本の帯として、1枚の画像を途切れずに貼る
       const b = window.cfpWrapBand ? window.cfpWrapBand(aspect) : { D: floorDepthMm, iw: widthMm + floorDepthMm, ih: (widthMm + floorDepthMm) / aspect, s0: 0 };
-      const size = Math.max(2, b.iw * scale * ss) + 'px auto';
-      const gx = b.iw * (ss - 1) / 2 * scale; // 大きさを変えても帯の中心は同じ位置
-      const y = (((wallHeightMm - b.ih * ss) / 2) * scale + sy) + 'px';
+      const size = Math.max(2, b.iw * scale) + 'px auto';
+      const gx = 0; // 大きさは wrapBand（画像の大きさの設定）に含まれる
+      const y = (((wallHeightMm - b.ih) / 2) * scale + sy) + 'px';
       setBg(backWall, size, ((b.s0 - b.D) * scale - gx + sx) + 'px ' + y, 'no-repeat', !!wsrc);
       setBg(sideWall, size, ((b.D - b.iw - b.s0) * scale - gx - sx) + 'px ' + y, 'no-repeat', !!wsrc);
     } else {
       // 1枚を壁ごとに中央（どの壁でも同じ大きさ）
       const iw = window.cfpSingleImageWidthMm ? window.cfpSingleImageWidthMm(aspect) : Math.max(widthMm, floorDepthMm, wallHeightMm * aspect);
-      const size = Math.max(2, iw * scale * ss) + 'px auto';
+      const size = Math.max(2, iw * scale) + 'px auto';
       setBg(backWall, size, 'calc(50% + ' + sx + 'px) calc(50% + ' + sy + 'px)', 'no-repeat', !!wsrc);
       setBg(sideWall, size, 'calc(50% + ' + (-sx) + 'px) calc(50% + ' + sy + 'px)', 'no-repeat', !!wsrc);
     }
