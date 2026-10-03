@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.63.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.63.1 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2277,7 +2277,10 @@
         clearTimeout(scaleTimer);
         if (scaleEl.value === scaleApplied) return;
         scaleApplied = scaleEl.value;
-        reload();
+        // an elevation sheet without walls found automatically takes its scale from this field too
+        const ed = this.elev && !this.elev.walls.length ? this.drawings.find((x) => x.file === this._elevFile) : null;
+        if (ed) { ed.elevScale = parseFloat(scaleEl.value) || 1; this.showElevation(ed); }
+        if (this.viewFocus !== 'elev' || !ed) reload(); // looking at the elevation only: leave the floor plan as it is
       };
       scaleEl.addEventListener('input', () => {
         // 全角数字を半角にし、数字以外は取り除く
@@ -2773,8 +2776,10 @@
         if (!res) { res = await CADParser.analyzeElevations(d.file, {}); d.elev = res; }
         const st = this.elevStates.get(d.file);
         // no wall found automatically: the scale comes from the "PDFの縮尺" field
-        const typed = parseFloat(this.$('scale').value) || 1;
+        // (the scale typed for this sheet is kept with it: the field changes with the floor plan shown)
+        const typed = d.elevScale > 1 ? d.elevScale : (parseFloat(this.$('scale').value) || 1);
         const scaleN = res.walls.length ? res.scale : (typed > 1 ? typed : (res.scale || 1));
+        if (!res.walls.length) d.elevScale = scaleN;
         let bd = st && st.backdrop;
         if (!bd || bd.scaleN !== scaleN) {
           this.status('展開図を表示しています…', 'loading');
@@ -2783,6 +2788,13 @@
         }
         this._elevFile = d.file;
         this.elev = { scale: scaleN, walls: res.walls, backdrop: bd, pageW: res.pageW, pageH: res.pageH, custom: st ? st.custom : [] };
+        // ranges drawn by hand: their size follows the scale (the outline is kept in picture pixels)
+        this.elev.custom.forEach((c) => {
+          if (!c.poly) return;
+          const xs = c.poly.map((q) => q[0]), ys = c.poly.map((q) => q[1]);
+          c.width = Math.round((Math.max(...xs) - Math.min(...xs)) * bd.mmPerPx);
+          c.height = Math.round((Math.max(...ys) - Math.min(...ys)) * bd.mmPerPx);
+        });
         this.elevIndex = st ? st.elevIndex : -1;
         this.$('elev-cloth-only').checked = st ? st.clothOnly : false;
         this.$('elev-note').textContent = '';
@@ -2808,6 +2820,8 @@
     async switchDrawing(d) {
       if (!d.canSwitch) return;
       const wasActive = d.type === 'elev' ? this._elevFile === d.file : this.planFile === d.file;
+      // a floor plan moved to the elevations keeps the scale it was read with (the field then shows another plan's)
+      if (d.type === 'plan' && this.planFile === d.file) d.elevScale = parseFloat(this.$('scale').value) || 1;
       if (wasActive) {
         // take it out of its current slot first, as when it is removed
         const keep = this.drawings;
@@ -3609,7 +3623,10 @@
       const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
       const wmm = (Math.max(...xs) - Math.min(...xs)) * s;
       const hmm = (Math.max(...ys) - Math.min(...ys)) * s;
-      if (wmm < 100 || hmm < 100) return;
+      if (wmm < 10 || hmm < 10) {
+        this.status('囲んだ範囲が小さすぎます（幅 ' + Math.round(wmm) + ' × 高さ ' + Math.round(hmm) + ' mm）。「PDFの縮尺（1:N の N）」に展開図の縮尺（例: 50）を入れてから囲んでください。', 'error');
+        return;
+      }
       const n = this.elev.custom.length + 1;
       this.elev.custom.push({ id: 'custom_' + n, name: '指定した壁紙の範囲 ' + n, width: Math.round(wmm), height: Math.round(hmm), custom: true, poly, cloth: null });
       this._renderElevList();
