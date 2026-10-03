@@ -145,3 +145,7 @@
 .cfp-rooms-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin:0 0 8px}
 .cfp-rooms-head .cfp-rooms-title{margin:0}
 .cfp-room-add{background:#14532d;border-color:#22c55e}
+.cad-floor-plan-widget .cfp-wp-ctrl input[type=number]{width:72px!important;max-width:72px;display:inline-block;padding:2px 6px;min-height:0}
+.cad-floor-plan-widget .cfp-wp-ctrl label,.cad-floor-plan-widget .cfp-wp-sliders label{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.cad-floor-plan-widget .cfp-wp-join input[type=text]{width:150px!important;display:inline-block;padding:2px 6px;min-height:0}
+.cad-floor-plan-widget .cfp-wp-join select{width:auto!important;display:inline-block;padding:2px 6px;min-height:0}

@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.65.0
+ * Version: 2.66.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.65.0');
+define('CFP_VERSION', '2.66.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -491,8 +491,30 @@ final class CAD_Floor_Plan_Plugin {
                   </div>
                   <div class="cfp-wp" data-cfp="wp" hidden>
                     <div class="cfp-layout-title">壁紙の巾の枠（切り分けなし・実寸）</div>
-                    <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下100mmずつ」です。「壁をつなげる（部屋一周）」にチェックを入れて壁の番号を順に入れると（右回り／左回りを選べます）、その壁を横に並べ、柄が途切れずに一周つながるように貼ります（高さが違う壁は、下（床）合わせか上（天井）合わせを選べます）。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。マウスホイールか「＋ 拡大／− 縮小」で拡大縮小、「表示を動かす」「画像を移動」「枠を移動」を選ぶと、ドラッグか「← 左／右 →／↑ 上／↓ 下」ボタン（矢印キーも可。画像・枠は10mm、Shiftで100mm）で、表示・壁紙の画像・巾の枠をそれぞれ動かせます。</p>
-                    <div class="cfp-wp-ctrl">
+                    <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下100mmずつ」です。「壁をつなげる（部屋一周）」にチェックを入れて壁の番号を順に入れると（右回り／左回りを選べます）、その壁を横に並べ、柄が途切れずに一周つながるように貼ります（高さが違う壁は、下（床）合わせか上（天井）合わせを選べます）。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。マウスホイールか「＋ 拡大／− 縮小」で拡大縮小、「移動」「枠を移動」「画像を移動」を選ぶと、ドラッグか「← 左／右 →／↑ 上／↓ 下」ボタン（矢印キーも可。画像・枠は10mm、Shiftで100mm）で、表示・壁紙の画像・巾の枠をそれぞれ動かせます。「画像の大きさ」で壁紙の画像を拡大縮小、「画像の濃さ」で画面の画像の濃さを変えられます（保存する画像は濃さ100%）。</p>
+                    <div class="cfp-trace-bar">
+                      <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="wp-m-view" title="ドラッグで表示を動かす">移動</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-frame" title="ドラッグで巾の枠を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">枠を移動</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-img" title="ドラッグで壁紙の画像を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">画像を移動</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-reset" title="画像の位置・大きさと枠の位置を元に戻す">位置を戻す</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-fit" title="全体を表示">全体</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zin" title="拡大">＋ 拡大</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zout" title="縮小">− 縮小</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pl" title="左へ">← 左</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pr" title="右へ">右 →</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pu" title="上へ">↑ 上</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pd" title="下へ">↓ 下</button>
+                      <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save" title="CAD図面・壁紙の画像・巾の枠をレイヤーに分けたPSDで保存します">壁紙データを保存（PSD）</button>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-cad" checked> CAD図面を表示</label>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像を表示</label>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-right"> 枠を右寄せスタート（外すと左寄せ）</label>
+                    </div>
+                    <div class="cfp-raster-row cfp-layout-sliders cfp-wp-sliders">
+                      <label>画像の大きさ <input type="range" data-cfp="wp-dscale" min="20" max="300" step="1" value="100"> <span data-cfp="wp-dscale-val">100</span>%</label>
+                      <label>画像の濃さ <input type="range" data-cfp="wp-dopacity" min="10" max="100" step="5" value="80"> <span data-cfp="wp-dopacity-val">80</span>%</label>
+                    </div>
+                    <div class="cfp-raster-row cfp-layout-sliders cfp-wp-ctrl">
                       <label>巾（横幅）<input type="range" data-cfp="wp-roll-r" min="850" max="930" step="1" value="910"> <input type="number" data-cfp="wp-roll" min="850" max="930" step="1" value="910"> mm</label>
                       <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="10"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="10"> mm</label>
                     </div>
@@ -504,24 +526,6 @@ final class CAD_Floor_Plan_Plugin {
                       <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-clear">クリア</button>
                       <label class="cfp-check"><input type="checkbox" data-cfp="wp-ccw"> 左回り（反時計回り）でつなげる（外すと右回り）</label>
                       <label>高さが違うとき <select data-cfp="wp-align"><option value="bottom">下（床）合わせ</option><option value="top">上（天井）合わせ</option></select></label>
-                    </div>
-                    <div class="cfp-trace-bar">
-                      <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="wp-m-view" title="ドラッグで表示を動かす">表示を動かす</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-img" title="ドラッグで壁紙の画像を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">画像を移動</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-frame" title="ドラッグで巾の枠を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">枠を移動</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-reset" title="画像と枠の位置を元に戻す">位置を戻す</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-fit" title="全体を表示">全体</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zin">＋ 拡大</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zout">− 縮小</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pl" title="表示を左へ">← 左</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pr" title="表示を右へ">右 →</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pu" title="表示を上へ">↑ 上</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pd" title="表示を下へ">↓ 下</button>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-cad" checked> CAD図面を表示</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像（元画像）を表示</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-right"> 枠を右寄せスタート（外すと左寄せスタート）</label>
-                      <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save">壁紙データを保存（PSD・3レイヤー）</button>
                     </div>
                     <p class="cfp-layout-note" data-cfp="wp-note"></p>
                     <p class="cfp-wp-warn" data-cfp="wp-warn" hidden></p>

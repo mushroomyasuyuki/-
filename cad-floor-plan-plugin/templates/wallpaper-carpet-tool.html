@@ -2083,7 +2083,8 @@
   // 壁の外（裁断代・重なり）にも、柄・画像の続きを描く（1枚の画像の外は白）
   // k: 1mm を何pxで描くか（省略時 1。画面表示用に小さく描くとき 1 未満）
   // sceneW / sceneH: 絵全体の大きさ（mm）。タイルに分けて描くとき（ctx がずらしてある）に渡す
-  function drawWallDesign(ctx, source, ox, oy, wallW, wallH, k, sceneW, sceneH) {
+  // sc: 画像の大きさ（壁の中心を基準に拡大縮小。1 = 100%）
+  function drawWallDesign(ctx, source, ox, oy, wallW, wallH, k, sceneW, sceneH, sc) {
     k = k || 1;
     if (!sceneW) ctx.setTransform(k, 0, 0, k, 0, 0);
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
@@ -2092,6 +2093,15 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, chh);
     ctx.imageSmoothingQuality = 'high';
+    // 拡大縮小：見えている範囲（0..cw, 0..chh）を、拡大縮小前の座標に直して柄を敷く範囲にする
+    let xa = 0, xb = cw, ya = 0, yb = chh;
+    if (sc) {
+      if (sc !== 1) {
+        const cx = ox + wallW / 2, cy = oy + wallH / 2;
+        ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
+        xa = cx - cx / sc; xb = cx + (cw - cx) / sc; ya = cy - cy / sc; yb = cy + (chh - cy) / sc;
+      }
+    }
     if (r.on) {
       const tw = Math.max(1, Math.round(r.mm)), th = Math.max(1, Math.round(r.mm * sh / sw));
       const tile = document.createElement('canvas');
@@ -2099,9 +2109,9 @@
       tile.height = th;
       tile.getContext('2d').drawImage(source, 0, 0, tw, th);
       // 柄の区切りを壁の左端・天井に合わせる
-      const x0 = ox - Math.ceil(ox / tw) * tw, y0 = oy - Math.ceil(oy / th) * th;
-      for (let y = y0; y <= chh; y += th) {
-        for (let x = x0; x <= cw; x += tw) ctx.drawImage(tile, x, y);
+      const x0 = ox - Math.ceil((ox - xa) / tw) * tw, y0 = oy - Math.ceil((oy - ya) / th) * th;
+      for (let y = y0; y <= yb; y += th) {
+        for (let x = x0; x <= xb; x += tw) ctx.drawImage(tile, x, y);
       }
       return;
     }
@@ -2123,9 +2133,9 @@
     const c = getWallSource();
     return c ? ((c.naturalWidth || c.width) ? c : null) : null;
   };
-  WALL_PRINT.renderDesign = function (canvas, ox, oy, wallW, wallH, k) {
+  WALL_PRINT.renderDesign = function (canvas, ox, oy, wallW, wallH, k, sc) {
     const src = WALL_PRINT.getSource();
-    if (src) drawWallDesign(canvas.getContext('2d'), src, ox, oy, wallW, wallH, k);
+    if (src) drawWallDesign(canvas.getContext('2d'), src, ox, oy, wallW, wallH, k, 0, 0, sc || 1);
     else {
       const x = canvas.getContext('2d');
       x.fillStyle = '#ffffff';
@@ -2189,7 +2199,7 @@
     const src = P.getSource();
     const cadL = (ctx) => { if (cadDraw) cadDraw(ctx); };
     const design = (ctx) => {
-      if (src) drawWallDesign(ctx, src, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH, 1, FW, H);
+      if (src) drawWallDesign(ctx, src, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH, 1, FW, H, off.scale || 1);
       else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, FW, H); }
     };
     const frame = (ctx) => P.drawFrames(ctx, W, WH, N, FW, H, right, shapes, off.frame);
@@ -2304,7 +2314,7 @@
       const full = document.createElement('canvas');
       full.width = N * P.STEP + P.OVERLAP;
       full.height = H;
-      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP + (window.cfpWallShift || { x: 0 }).x, P.TRIM_TOP + (window.cfpWallShift || { y: 0 }).y, W, WH);
+      drawWallDesign(full.getContext('2d'), canvas, P.OVERLAP + (window.cfpWallShift || { x: 0 }).x, P.TRIM_TOP + (window.cfpWallShift || { y: 0 }).y, W, WH, 1, 0, 0, (window.cfpWallShift || { s: 1 }).s || 1);
 
       const files = [];
       const strips = [];
@@ -2471,7 +2481,7 @@
       const designCanvas = document.createElement('canvas');
       designCanvas.width = imageW;
       designCanvas.height = imageH;
-      drawWallDesign(designCanvas.getContext('2d'), canvas, (window.cfpWallShift || { x: 0 }).x, P.TRIM_TOP + (window.cfpWallShift || { y: 0 }).y, imageW, WH);
+      drawWallDesign(designCanvas.getContext('2d'), canvas, (window.cfpWallShift || { x: 0 }).x, P.TRIM_TOP + (window.cfpWallShift || { y: 0 }).y, imageW, WH, 1, 0, 0, (window.cfpWallShift || { s: 1 }).s || 1);
 
       // ②裁断ガイド層：赤枠（壁の範囲）と、巾の境目（カット線の間隔ごと）の縦線
       const guideCanvas = document.createElement('canvas');
@@ -3012,23 +3022,24 @@
     };
     // 「壁紙の巾の枠」で画像を動かした量（mm）。横の壁は左右反転して貼っているので、横方向は逆向きにずらす
     const sh = window.cfpWallShift || { x: 0, y: 0 };
-    const sx = sh.x * scale, sy = sh.y * scale;
+    const sx = sh.x * scale, sy = sh.y * scale, ss = sh.s || 1; // ss: 画像の大きさ
     if (wallRepeat.mode === 'repeat') {
       // 角を柄の区切りにして、奥の壁は右へ、横の壁は左へ続ける（天井から）
-      const size = Math.max(2, wallRepeat.mm * scale) + 'px auto';
+      const size = Math.max(2, wallRepeat.mm * scale * ss) + 'px auto';
       setBg(backWall, size, sx + 'px ' + sy + 'px', 'repeat', false);
       setBg(sideWall, size, (-sx) + 'px ' + sy + 'px', 'repeat', false);
     } else if (wallRepeat.mode === 'wrap') {
       // 横の壁（奥行 D）→ 奥の壁（幅 W）を1本の帯として、1枚の画像を途切れずに貼る
       const b = window.cfpWrapBand ? window.cfpWrapBand(aspect) : { D: floorDepthMm, iw: widthMm + floorDepthMm, ih: (widthMm + floorDepthMm) / aspect, s0: 0 };
-      const size = Math.max(2, b.iw * scale) + 'px auto';
-      const y = (((wallHeightMm - b.ih) / 2) * scale + sy) + 'px';
-      setBg(backWall, size, ((b.s0 - b.D) * scale + sx) + 'px ' + y, 'no-repeat', !!wsrc);
-      setBg(sideWall, size, ((b.D - b.iw - b.s0) * scale - sx) + 'px ' + y, 'no-repeat', !!wsrc);
+      const size = Math.max(2, b.iw * scale * ss) + 'px auto';
+      const gx = b.iw * (ss - 1) / 2 * scale; // 大きさを変えても帯の中心は同じ位置
+      const y = (((wallHeightMm - b.ih * ss) / 2) * scale + sy) + 'px';
+      setBg(backWall, size, ((b.s0 - b.D) * scale - gx + sx) + 'px ' + y, 'no-repeat', !!wsrc);
+      setBg(sideWall, size, ((b.D - b.iw - b.s0) * scale - gx - sx) + 'px ' + y, 'no-repeat', !!wsrc);
     } else {
       // 1枚を壁ごとに中央（どの壁でも同じ大きさ）
       const iw = window.cfpSingleImageWidthMm ? window.cfpSingleImageWidthMm(aspect) : Math.max(widthMm, floorDepthMm, wallHeightMm * aspect);
-      const size = Math.max(2, iw * scale) + 'px auto';
+      const size = Math.max(2, iw * scale * ss) + 'px auto';
       setBg(backWall, size, 'calc(50% + ' + sx + 'px) calc(50% + ' + sy + 'px)', 'no-repeat', !!wsrc);
       setBg(sideWall, size, 'calc(50% + ' + (-sx) + 'px) calc(50% + ' + sy + 'px)', 'no-repeat', !!wsrc);
     }
