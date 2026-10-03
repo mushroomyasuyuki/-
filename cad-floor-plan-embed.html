@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.52.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.52.2 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2878,7 +2878,7 @@
       if (!this.drawings.length) { this.$('dw-note').textContent = ''; return; }
       // what each drawing was taken for, and why
       this.$('dw-note').textContent = this.drawings.map((d) => '「' + d.file.name + '」→ ' + (d.type === 'elev' ? '展開図（壁）' : '平面図（床）') + '：' + d.reason).join('\n')
-        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「⇄」で入れ替えられます。' : '');
+        + (this.drawings.some((d) => d.canSwitch) ? '\n違っていれば、図面名の横の「↑↓」で入れ替えられます。' : '');
       [['plan', '平面図（床 → カーペット）', this.planFile], ['elev', '展開図（壁 → 壁紙）', this._elevFile]].forEach(([type, title, active]) => {
         const row = document.createElement('div');
         row.className = 'cfp-dw-row';
@@ -2911,7 +2911,7 @@
             const sw = document.createElement('button');
             sw.type = 'button';
             sw.className = 'cfp-dw-x cfp-dw-sw';
-            sw.textContent = '⇄';
+            sw.textContent = '↑↓';
             sw.title = type === 'elev' ? '平面図（床）として読み直す' : '展開図（壁）として読み直す';
             sw.setAttribute('aria-label', d.file.name + ' を' + sw.title);
             sw.addEventListener('click', () => this.switchDrawing(d));
