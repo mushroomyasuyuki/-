@@ -1358,11 +1358,8 @@
         // the area to save (view mm): the layout, the room and the image, with a margin
         const pts = room.vertices.map(view.toV);
         if (lay.box) [[lay.box.x0, lay.box.y0], [lay.box.x1, lay.box.y1]].forEach((p) => pts.push(view.toV(p)));
-        let dr = null;
-        if (hasDesign && lay.box) {
-          dr = this._designRect(lay, dsrc);
-          [[dr.x0, dr.y0], [dr.x1, dr.y1]].forEach((p) => pts.push(view.toV(p)));
-        }
+        // the image is saved only within the tile layout, so it does not widen the saved area
+        const dr = hasDesign && lay.box ? this._designRect(lay, dsrc) : null;
         const pad = 300;
         const rx0 = Math.min(...pts.map((p) => p[0])) - pad, ry0 = Math.min(...pts.map((p) => p[1])) - pad;
         const rw = Math.max(...pts.map((p) => p[0])) + pad - rx0, rh = Math.max(...pts.map((p) => p[1])) + pad - ry0;
@@ -1411,8 +1408,8 @@
         const L3 = layer();
         if (dr) {
           const [vx, vy] = view.toV([dr.x0, dr.y1]);
-          if (this.$('layout-clip-box').checked) {
-            // only inside the tile layout, as on the screen
+          {
+            // always only inside the tile layout (the carpet that is ordered)
             const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
             L3.x.beginPath();
             L3.x.rect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
@@ -1461,7 +1458,7 @@
           children: [
             { name: '①元図面', canvas: L1.c },
             { name: '②部屋（' + name + '）', canvas: L2.c },
-            { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%' + (this.$('layout-clip-box').checked ? '・割付の範囲' : '') + '）', canvas: L3.c, hidden: !dr },
+            { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%・割付の範囲）', canvas: L3.c, hidden: !dr },
             { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', canvas: L4.c },
           ],
         };
