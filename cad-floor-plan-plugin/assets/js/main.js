@@ -196,7 +196,7 @@
         this._renderLayout();
       });
       this.$('layout-dopacity').addEventListener('input', () => this._renderLayout());
-      ['layout-show-design', 'layout-clip'].forEach((k) => this.$(k).addEventListener('change', () => this._renderLayout()));
+      this.$('layout-show-design').addEventListener('change', () => this._renderLayout());
       document.addEventListener('cfp:designs-updated', () => { this._designUrl = null; this._renderLayout(); });
       this.$('layout-fit').addEventListener('click', () => this.layoutTracer && this.layoutTracer.fit());
       this.$('layout-zin').addEventListener('click', () => this.layoutTracer && this.layoutTracer.zoom(0.7));
@@ -1279,14 +1279,7 @@
         const w = bw * d.scale, h = w * dsrc.height / dsrc.width;
         const ccx = (lay.box.x0 + lay.box.x1) / 2 + d.x, ccy = (lay.box.y0 + lay.box.y1) / 2 + d.y; // mm, Y up
         const [vx, vy] = view.toV([ccx - w / 2, ccy + h / 2]);
-        let parent = ov;
-        if (this.$('layout-clip').checked) {
-          const id = 'cfp-clip-' + (this._clipSeq = (this._clipSeq || 0) + 1);
-          const defs = add('defs', {});
-          const cp = add('clipPath', { id }, defs);
-          add('polygon', { points: room.vertices.map(view.toV).map((p) => p.join(',')).join(' ') }, cp);
-          parent = add('g', { 'clip-path': 'url(#' + id + ')' });
-        }
+        const parent = add('g', {});
         add('image', { href: this._designUrl, x: vx, y: vy, width: w, height: h, preserveAspectRatio: 'none',
           opacity: (parseFloat(this.$('layout-dopacity').value) || 80) / 100 }, parent);
       }
