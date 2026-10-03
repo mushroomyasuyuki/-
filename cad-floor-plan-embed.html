@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.55.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.56.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2943,7 +2943,7 @@
       };
       link('wp-roll-r', 'wp-roll');
       link('wp-ov-r', 'wp-ov');
-      ['wp-show-cad', 'wp-show-img', 'wp-show-frame'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
+      ['wp-show-cad', 'wp-show-img', 'wp-show-frame', 'wp-right'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
       this.$('wp-save').addEventListener('click', () => this._wpSave());
       // zoom / pan of the view (a viewBox in mm)
       const svg = this.$('wp-svg');
@@ -3042,17 +3042,19 @@
         (parent || svg).appendChild(e);
         return e;
       };
+      const right = this.$('wp-right').checked;
+      const ox = right ? FW - wp.OVERLAP - W : wp.OVERLAP; // the wall's left edge in the picture
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
       const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
       const bd = this.elev.backdrop;
       if (showCad && bd) {
         const [bx, by, bw, bh] = this._wpCadBox(w);
-        const inner = add('svg', { x: wp.OVERLAP, y: wp.TRIM_TOP, width: W, height: WH, viewBox: [bx, by, bw, bh].join(' '), preserveAspectRatio: 'none' });
+        const inner = add('svg', { x: ox, y: wp.TRIM_TOP, width: W, height: WH, viewBox: [bx, by, bw, bh].join(' '), preserveAspectRatio: 'none' });
         add('image', { href: bd.dataUrl, x: 0, y: 0, width: bd.widthPx, height: bd.heightPx }, inner);
       }
       const src = wp.getSource();
       if (showImg && src) {
-        const key = [src.width, src.height, W, WH, wp.ROLL, wp.OVERLAP, JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
+        const key = [src.width, src.height, W, WH, wp.ROLL, wp.OVERLAP, right ? 'R' : 'L', JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
         if (this._wpKey === key && this._wpUrl) {
           add('image', { href: this._wpUrl, x: 0, y: 0, width: FW, height: H, preserveAspectRatio: 'none', opacity: showCad ? 0.7 : 1 });
         } else {
@@ -3061,7 +3063,7 @@
             const k = Math.min(1, 2400 / FW);
             const full = document.createElement('canvas');
             full.width = FW; full.height = H;
-            wp.renderDesign(full, wp.OVERLAP, wp.TRIM_TOP, W, WH);
+            wp.renderDesign(full, ox, wp.TRIM_TOP, W, WH);
             const small = document.createElement('canvas');
             small.width = Math.max(1, Math.round(FW * k)); small.height = Math.max(1, Math.round(H * k));
             small.getContext('2d').drawImage(full, 0, 0, small.width, small.height);
@@ -3072,17 +3074,24 @@
         }
       }
       if (showFrame) {
+        const col = (i) => (i % 2 ? '#ff7a00' : '#ff0000');
         for (let i = 0; i < N; i++) {
           const odd = i % 2;
-          add('rect', { x: i * wp.STEP + 1.5, y: 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
-            stroke: odd ? '#ff7a00' : '#ff0000', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
+          const x = right ? FW - wp.ROLL - i * wp.STEP : i * wp.STEP;
+          add('rect', { x: x + 1.5, y: 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
+            stroke: col(i), 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
         }
-        add('rect', { x: wp.OVERLAP, y: wp.TRIM_TOP, width: W, height: WH, fill: 'none', stroke: '#d000d0', 'stroke-width': 2,
-          'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' });
+        const purple = { stroke: '#d000d0', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' };
+        add('rect', Object.assign({ x: ox, y: wp.TRIM_TOP, width: W, height: WH, fill: 'none' }, purple));
+        // cut lines: half of the overlap margin inside the next strip's edge, joined to the wall's top and bottom lines
+        for (let i = 1; i < N; i++) {
+          const cx = right ? FW - i * wp.STEP - wp.OVERLAP / 2 : i * wp.STEP + wp.OVERLAP / 2;
+          add('line', Object.assign({ x1: cx, y1: wp.TRIM_TOP, x2: cx, y2: wp.TRIM_TOP + WH }, purple));
+        }
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);
       this.$('wp-note').textContent = '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → 画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
-        + '巾 ' + wp.ROLL + ' mm・合わせ代 左右 ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾。'
+        + '巾 ' + wp.ROLL + ' mm・合わせ代 左右 ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、合わせ代の半分（' + fmt(wp.OVERLAP / 2) + ' mm）の位置のカット線。'
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
     }
     async _wpSave() {
@@ -3106,7 +3115,7 @@
           cx.imageSmoothingQuality = 'high';
           cx.drawImage(img, bx, by, bw, bh, 0, 0, W, WH);
         }
-        const out = wp.buildWhole(cad, W, WH);
+        const out = wp.buildWhole(cad, W, WH, this.$('wp-right').checked);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;

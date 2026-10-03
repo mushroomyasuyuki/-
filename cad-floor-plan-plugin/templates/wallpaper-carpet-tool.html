@@ -1995,26 +1995,42 @@
     }
     return !!src;
   };
-  WALL_PRINT.buildWhole = function (cad, W, WH) {
+  // 巾の枠の線：各巾の枠（赤・オレンジ交互）、壁の範囲（紫の実線）、合わせ代の半分の位置のカット線（紫、壁の範囲の上下の線とつなぐ）
+  // right: true = 右の端から巾を並べる（右寄せスタート）、false = 左の端から（左寄せスタート）
+  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right) {
+    const P = WALL_PRINT;
+    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
+    for (let i = 0; i !== N; i++) {
+      const x = right ? FW - P.ROLL - i * P.STEP : i * P.STEP;
+      fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
+      fx.lineWidth = 3;
+      fx.strokeRect(x + 1.5, 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
+    }
+    fx.strokeStyle = '#d000d0';
+    fx.lineWidth = 2;
+    fx.strokeRect(ox, P.TRIM_TOP, W, WH);
+    // カット線：隣の巾の左端（右寄せなら右端）から、合わせ代の半分の位置
+    for (let i = 1; i !== N; i++) {
+      const cx = right ? FW - i * P.STEP - P.OVERLAP / 2 : i * P.STEP + P.OVERLAP / 2;
+      fx.beginPath();
+      fx.moveTo(cx, P.TRIM_TOP);
+      fx.lineTo(cx, P.TRIM_TOP + WH);
+      fx.stroke();
+    }
+  };
+  WALL_PRINT.buildWhole = function (cad, W, WH, right) {
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
     const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
     const FW = Math.round(N * P.STEP + P.OVERLAP * 2);
+    const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
     const mk = () => { const c = document.createElement('canvas'); c.width = FW; c.height = H; return c; };
     const cadL = mk();
-    if (cad) cadL.getContext('2d').drawImage(cad, P.OVERLAP, P.TRIM_TOP, W, WH);
+    if (cad) cadL.getContext('2d').drawImage(cad, ox, P.TRIM_TOP, W, WH);
     const design = mk();
-    P.renderDesign(design, P.OVERLAP, P.TRIM_TOP, W, WH);
+    P.renderDesign(design, ox, P.TRIM_TOP, W, WH);
     const frame = mk();
-    const fx = frame.getContext('2d');
-    for (let i = 0; i !== N; i++) {
-      fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
-      fx.lineWidth = 3;
-      fx.strokeRect(i * P.STEP + 1.5, 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
-    }
-    fx.strokeStyle = '#d000d0';
-    fx.lineWidth = 2;
-    fx.strokeRect(P.OVERLAP + 1, P.TRIM_TOP + 1, W - 2, WH - 2);
+    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right);
     const comp = mk();
     const cx = comp.getContext('2d');
     cx.fillStyle = '#ffffff';
@@ -2023,11 +2039,11 @@
     cx.drawImage(design, 0, 0);
     cx.drawImage(frame, 0, 0);
     return {
-      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + '_' + Date.now() + '.psd',
+      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + '.psd',
       blob: writeCmykPsd(FW, H, comp, [
         { name: '①CAD図面（壁の範囲 ' + W + '×' + WH + 'mm）', canvas: cadL },
         { name: '②壁紙の画像（切り分けなし・左右の合わせ代と上下' + P.TRIM_TOP + 'mmを含む）', canvas: design },
-        { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・高さ' + H + 'mm）', canvas: frame }
+        { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', canvas: frame }
       ], 25.4),
       width: FW, height: H, strips: N
     };
