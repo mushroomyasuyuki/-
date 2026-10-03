@@ -1320,8 +1320,11 @@
         const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
         add('rect', { x: bx, y: by, width: lay.box.x1 - lay.box.x0, height: lay.box.y1 - lay.box.y0, fill: 'none',
           stroke: '#dc2626', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
-        // the centre of the layout: a bold cross, a ring, a dot and a label (drawn in mm, sized to the layout)
-        const [ccx, ccy] = view.toV([lay.cx, lay.cy]);
+      }
+      if (lay.box) {
+        const rb0 = CADParser.bounds(room.vertices), rcx = (rb0.minX + rb0.maxX) / 2, rcy = (rb0.minY + rb0.maxY) / 2;
+        // the room's own centre (fixed: it does not move with the layout, so the layout can be aligned to it): a bold cross, a ring, a dot and a label (drawn in mm, sized to the layout)
+        const [ccx, ccy] = view.toV([rcx, rcy]);
         const arm = Math.max(300, Math.min(lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0) * 0.12), rr = arm * 0.45;
         const red = { stroke: '#dc2626', 'vector-effect': 'non-scaling-stroke', fill: 'none' };
         add('path', Object.assign({ d: 'M' + (ccx - arm) + ' ' + ccy + 'H' + (ccx + arm) + 'M' + ccx + ' ' + (ccy - arm) + 'V' + (ccy + arm), 'stroke-width': 4, stroke: '#ffffff' }, { 'vector-effect': 'non-scaling-stroke', fill: 'none' }));
@@ -1429,7 +1432,7 @@
           L3.x.imageSmoothingEnabled = false; // keep the reduced colours crisp
           L3.x.drawImage(dsrc, vx, vy, dr.w, dr.h);
         }
-        // ④ 割付: the 500 mm tiles in red (cut tiles light red), the outline and the centre
+        // ④ 割付: the 500 mm tiles in red (cut tiles light red), the outline
         const L4 = layer();
         if (lay.box) {
           lay.tiles.forEach((t) => {
@@ -1443,16 +1446,21 @@
           L4.x.strokeStyle = '#dc2626';
           L4.x.lineWidth = 5 * px;
           L4.x.strokeRect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
-          const [cx, cy] = view.toV([lay.cx, lay.cy]);
+        }
+        // ⑤ センター: the room's own centre, on its own layer (fixed, does not move with the layout)
+        const L5 = layer();
+        if (lay.box) {
+          const rcx = (rb.minX + rb.maxX) / 2, rcy = (rb.minY + rb.maxY) / 2;
+          const [cx, cy] = view.toV([rcx, rcy]);
           const arm = Math.max(300, Math.min(lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0) * 0.12), rr = arm * 0.45;
-          const cross = () => { L4.x.beginPath(); L4.x.moveTo(cx - arm, cy); L4.x.lineTo(cx + arm, cy); L4.x.moveTo(cx, cy - arm); L4.x.lineTo(cx, cy + arm); L4.x.stroke(); };
-          L4.x.strokeStyle = '#ffffff'; L4.x.lineWidth = 9 * px; cross();
-          L4.x.strokeStyle = '#dc2626'; L4.x.lineWidth = 5 * px; cross();
-          L4.x.beginPath(); L4.x.arc(cx, cy, rr, 0, Math.PI * 2); L4.x.stroke();
-          L4.x.fillStyle = '#dc2626'; L4.x.beginPath(); L4.x.arc(cx, cy, rr * 0.3, 0, Math.PI * 2); L4.x.fill();
-          L4.x.font = 'bold ' + Math.max(160, arm * 0.7) + 'px sans-serif'; L4.x.textAlign = 'left'; L4.x.textBaseline = 'alphabetic';
-          L4.x.lineWidth = 6 * px; L4.x.strokeStyle = '#ffffff'; L4.x.strokeText('センター', cx + rr * 1.2, cy - rr * 1.2);
-          L4.x.fillText('センター', cx + rr * 1.2, cy - rr * 1.2);
+          const cross = () => { L5.x.beginPath(); L5.x.moveTo(cx - arm, cy); L5.x.lineTo(cx + arm, cy); L5.x.moveTo(cx, cy - arm); L5.x.lineTo(cx, cy + arm); L5.x.stroke(); };
+          L5.x.strokeStyle = '#ffffff'; L5.x.lineWidth = 9 * px; cross();
+          L5.x.strokeStyle = '#dc2626'; L5.x.lineWidth = 5 * px; cross();
+          L5.x.beginPath(); L5.x.arc(cx, cy, rr, 0, Math.PI * 2); L5.x.stroke();
+          L5.x.fillStyle = '#dc2626'; L5.x.beginPath(); L5.x.arc(cx, cy, rr * 0.3, 0, Math.PI * 2); L5.x.fill();
+          L5.x.font = 'bold ' + Math.max(160, arm * 0.7) + 'px sans-serif'; L5.x.textAlign = 'left'; L5.x.textBaseline = 'alphabetic';
+          L5.x.lineWidth = 6 * px; L5.x.strokeStyle = '#ffffff'; L5.x.strokeText('センター', cx + rr * 1.2, cy - rr * 1.2);
+          L5.x.fillText('センター', cx + rr * 1.2, cy - rr * 1.2);
         }
         // the image is saved fully opaque (the 濃さ slider is only for looking at the drawing underneath)
         const opacity = 1;
@@ -1468,6 +1476,7 @@
         cx2.drawImage(L3.c, 0, 0);
         cx2.globalAlpha = 1;
         cx2.drawImage(L4.c, 0, 0);
+        cx2.drawImage(L5.c, 0, 0);
         const name = (room.name || '部屋');
         const dpi = 25.4 * k;
         const psd = {
@@ -1478,6 +1487,7 @@
             { name: '②部屋（' + name + '）', canvas: L2.c },
             { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%・割付の範囲）', canvas: L3.c, hidden: !dr },
             { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', canvas: L4.c },
+            { name: '⑤センター（部屋の中心・固定）', canvas: L5.c },
           ],
         };
         const buf = agPsd.writePsd(psd, { generateThumbnail: true });
@@ -1488,7 +1498,7 @@
         a.download = 'carpet_layout_room' + (this.roomIndex + 1) + '_' + lay.cols + 'x' + lay.rows + '_' + Date.now() + '.psd';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-        this.status('割付をPSDで保存しました（' + Wpx + ' × ' + Hpx + ' px、1px = ' + (1 / k).toFixed(2) + ' mm。レイヤー：元図面／部屋／画像／割付）。', 'success');
+        this.status('割付をPSDで保存しました（' + Wpx + ' × ' + Hpx + ' px、1px = ' + (1 / k).toFixed(2) + ' mm。レイヤー：元図面／部屋／画像／割付／センター）。', 'success');
       } catch (err) {
         this.status('エラー: PSDを作成できませんでした（' + err.message + '）', 'error');
         console.error(err);
