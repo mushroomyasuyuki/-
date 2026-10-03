@@ -1819,7 +1819,7 @@
       const pl = toPlanes(L.canvas);
       const order = [[-1, pl[4]], [0, pl[0]], [1, pl[1]], [2, pl[2]], [3, pl[3]]];
       const enc = order.map((o) => encodeChannel(o[1]));
-      const nameBytes = (() => { const nb = unescape(encodeURIComponent(L.name)); const u = Uint8Array.from(nb.split('').map((c) => c.charCodeAt(0))); return u.length > 255 ? u.subarray(0, 255) : u; })();
+      const nameBytes = Uint8Array.from(L.name.split('').map((c) => (c.charCodeAt(0) > 126 ? 63 : c.charCodeAt(0)))).subarray(0, 255); // ASCII（日本語は luni）
       // Pascal文字列（4バイト境界に詰める）
       let pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
       const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
@@ -1946,8 +1946,8 @@
     for (const L of layers) {
       const ch = await encode(L.draw, true, false);
       const order = [[-1, ch[4]], [0, ch[0]], [1, ch[1]], [2, ch[2]], [3, ch[3]]];
-      const nb = unescape(encodeURIComponent(L.name));
-      const nameBytes = Uint8Array.from(nb.split('').map((c) => c.charCodeAt(0))).subarray(0, 255);
+      // 旧形式のレイヤー名は ASCII だけ（日本語は「?」）。日本語の名前は luni（Unicode）で持つ
+      const nameBytes = Uint8Array.from(L.name.split('').map((c) => (c.charCodeAt(0) > 126 ? 63 : c.charCodeAt(0)))).subarray(0, 255);
       const pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
       const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
       const ub = new Uint8Array(L.name.length * 2);
@@ -1981,39 +1981,57 @@
 
 
   // 大きなカーペット（例：6.5m×7.5m＝約4,900万画素）でも画面が固まらないよう、減色とPSD作成を
-  // 別のスレッド（Web Worker：assets/js/carpet-psd-worker.js）で行い、進み具合をボタンに表示する
-  function downloadPsdInWorker(imageW, imageH, ditherFactor, activeEntries, button, ditherPct) {
-    return new Promise((resolve, reject) => {
-      const off = document.createElement('canvas');
-      off.width = imageW;
-      off.height = imageH;
-      const octx = off.getContext('2d', { willReadFrequently: true });
-      octx.imageSmoothingEnabled = true;
-      octx.imageSmoothingQuality = 'high';
-      octx.drawImage(state.loadedImg, 0, 0, imageW, imageH);
-      const data = octx.getImageData(0, 0, imageW, imageH).data;
-      off.width = 1; off.height = 1; // メモリを空ける
-      const wk = new Worker('{{CFP_ASSET_URL}}js/carpet-psd-worker.js');
-      wk.onmessage = (ev) => {
-        const m = ev.data;
-        if (m.type === 'progress') { button.textContent = 'PSDを作成中… ' + Math.round(m.value * 100) + '%'; return; }
-        wk.terminate();
-        if (m.type !== 'done') { reject(new Error(m.message || 'PSDを作成できませんでした')); return; }
-        const used = m.used.map((i) => activeEntries[i]);
-        state.lastUsedColorEntries = used;
-        renderUsedColorsUI(used);
-        const blob = new Blob(m.parts, { type: 'image/vnd.adobe.photoshop' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'carpet_print_indexed_25.4dpi_dither' + ditherPct + 'pct_' + Date.now() + (imageW > 30000 ? '.psb' : (imageH > 30000 ? '.psb' : '.psd'));
-        document.body.appendChild(link); link.click(); link.remove();
-        setTimeout(() => URL.revokeObjectURL(link.href), 2000);
-        resolve();
-      };
-      wk.onerror = (e) => { wk.terminate(); reject(new Error((e ? e.message : '') || 'Worker を使えませんでした')); };
-      wk.postMessage({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
-        layerName: 'カーペット減色画像 (実寸出力)' }, [data.buffer]);
+  // 別のスレッド（Web Worker：assets/js/carpet-psd-worker.js）で行い、進み具合をボタンに表示する。
+  // Worker が使えないときは、同じ処理をこの画面で少しずつ行う（どちらも少ないメモリで、仕上がりは同じ）。
+  const CARPET_PSD_JS = '{{CFP_ASSET_URL}}js/carpet-psd-worker.js';
+  // 起動して「準備できた」と返ってきた Worker（データを渡す前に確かめる。だめなら null）
+  function startCarpetWorker(url) {
+    return new Promise((resolve) => {
+      let wk = null;
+      const fail = () => { if (wk) wk.terminate(); resolve(null); };
+      try { wk = new Worker(url); } catch (e) { resolve(null); return; }
+      const timer = setTimeout(fail, 8000);
+      wk.onerror = () => { clearTimeout(timer); fail(); };
+      wk.onmessage = (ev) => { if (ev.data ? ev.data.type === 'ready' : false) { clearTimeout(timer); resolve(wk); } };
     });
+  }
+  async function getCarpetWorker() {
+    if (!window.Worker) return null;
+    let wk = await startCarpetWorker(CARPET_PSD_JS);
+    if (wk) return wk;
+    // 別のドメイン（CDN など）から読まれて起動できないときは、内容を読み込んでこのページの Worker として起動する
+    try {
+      const text = await (await fetch(CARPET_PSD_JS)).text();
+      wk = await startCarpetWorker(URL.createObjectURL(new Blob([text], { type: 'text/javascript' })));
+    } catch (e) { wk = null; }
+    return wk;
+  }
+  function loadCarpetPsdScript() {
+    if (window.CFPCarpetPsd) return Promise.resolve(window.CFPCarpetPsd);
+    return new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = CARPET_PSD_JS;
+      sc.onload = () => (window.CFPCarpetPsd ? resolve(window.CFPCarpetPsd) : reject(new Error('PSD作成の部品を読み込めませんでした')));
+      sc.onerror = () => reject(new Error('PSD作成の部品（carpet-psd-worker.js）を読み込めませんでした'));
+      document.head.appendChild(sc);
+    });
+  }
+  async function makeCarpetPsd(job, progress) {
+    const wk = await getCarpetWorker();
+    if (wk) {
+      return new Promise((resolve, reject) => {
+        wk.onmessage = (ev) => {
+          const m = ev.data;
+          if (m.type === 'progress') { progress(m.value); return; }
+          wk.terminate();
+          if (m.type === 'done') resolve(m); else reject(new Error(m.message || 'PSDを作成できませんでした'));
+        };
+        wk.onerror = (e) => { wk.terminate(); reject(new Error((e ? e.message : '') || 'PSDを作成できませんでした')); };
+        wk.postMessage(job, [job.rgba]);
+      });
+    }
+    const lib = await loadCarpetPsdScript();
+    return lib.run(job, progress);
   }
 
   async function downloadPsd() {
@@ -2026,61 +2044,35 @@
     button.disabled = true;
     button.textContent = 'PSDを作成中…';
     try {
-      // まず別スレッドで作る（使えないブラウザ・環境では、これまでどおりこの画面で作る）
-      const ditherW = Math.min(1, Math.max(0, (parseFloat(($('cc-dither') || {}).value) || 0) / 100));
-      const workerUrl = '{{CFP_ASSET_URL}}';
-      if (window.Worker ? workerUrl.indexOf('{{') !== 0 : false) {
-        try {
-          await downloadPsdInWorker(Math.max(1, Math.round(parseFloat($('cc-width').value) || 1000)), Math.max(1, Math.round(parseFloat($('cc-height').value) || 1000)),
-            ditherW, getActivePaletteEntries(), button, Math.round(ditherW * 100));
-          return;
-        } catch (err) {
-          console.warn('PSD worker:', err);
-        }
-      }
-      const agPsd = await loadAgPsd();
-      const wMm = parseFloat($('cc-width').value) || 1000;
-      const hMm = parseFloat($('cc-height').value) || 1000;
-      const imageW = Math.max(1, Math.round(wMm));
-      const imageH = Math.max(1, Math.round(hMm));
-
-      const ditherEl = $('cc-dither');
-      const ditherAmount = ditherEl ? (parseFloat(ditherEl.value) || 0) : 0;
-      const ditherFactor = Math.min(1, Math.max(0, ditherAmount / 100));
+      const imageW = Math.max(1, Math.round(parseFloat($('cc-width').value) || 1000));
+      const imageH = Math.max(1, Math.round(parseFloat($('cc-height').value) || 1000));
+      const ditherFactor = Math.min(1, Math.max(0, (parseFloat(($('cc-dither') || {}).value) || 0) / 100));
       const activeEntries = getActivePaletteEntries();
-
-      // プレビュー用の縮小キャンバスを引き伸ばすのではなく、実寸(1px=1mm)で
-      // 元画像から直接、減色・誤差拡散処理を行う（1色1ピクセル単位の表現にするため）
-      const { imageData, usedEntries } = getReducedImageData(state.loadedImg, imageW, imageH, ditherFactor, activeEntries);
-      state.lastUsedColorEntries = usedEntries;
-      renderUsedColorsUI(usedEntries);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = imageW;
-      canvas.height = imageH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('PSD用Canvasを作成できませんでした。');
-      ctx.putImageData(imageData, 0, 0);
-
-      const psdData = {
-        width: imageW,
-        height: imageH,
-        bitsPerChannel: 8,
-        colorMode: 3,
-        resolution: 25.4,
-        canvas: canvas,
-        children: [{ name: 'カーペット減色画像 (実寸出力)', top: 0, left: 0, right: imageW, bottom: imageH, canvas: canvas }]
-      };
-
-      const ditherPct = Math.round(ditherAmount);
-
-      const buffer = agPsd.writePsd(psdData, { generateThumbnail: true });
-      const blob = new Blob([buffer], {type:'image/vnd.adobe.photoshop'});
+      // 元画像を実寸（1px=1mm）に描いて、その画素を渡す（プレビューの縮小画像は使わない）
+      const off = document.createElement('canvas');
+      off.width = imageW;
+      off.height = imageH;
+      const octx = off.getContext('2d', { willReadFrequently: true });
+      if (!octx) throw new Error('画像を用意できませんでした（大きすぎる可能性があります）。');
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      octx.drawImage(state.loadedImg, 0, 0, imageW, imageH);
+      const data = octx.getImageData(0, 0, imageW, imageH).data;
+      off.width = 1; off.height = 1; // メモリを空ける
+      let opaque = false;
+      for (let i = 3; i < data.length; i += 4096) { if (data[i]) { opaque = true; break; } }
+      if (!opaque) throw new Error('画像を実寸に描けませんでした（ブラウザのメモリ不足の可能性があります）。カーペットのサイズを確かめて、もう一度お試しください。');
+      const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
+        layerName: 'カーペット減色画像 (実寸出力)' }, (v) => { button.textContent = 'PSDを作成中… ' + Math.round(v * 100) + '%'; });
+      const used = res.used.map((i) => activeEntries[i]);
+      state.lastUsedColorEntries = used;
+      renderUsedColorsUI(used);
+      const blob = new Blob(res.parts, { type: 'image/vnd.adobe.photoshop' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'carpet_print_indexed_25.4dpi_dither' + ditherPct + 'pct_' + Date.now() + '.psd';
+      link.download = 'carpet_print_indexed_25.4dpi_dither' + Math.round(ditherFactor * 100) + 'pct_' + Date.now() + (Math.max(imageW, imageH) > 30000 ? '.psb' : '.psd');
       document.body.appendChild(link); link.click(); link.remove();
-      setTimeout(()=>URL.revokeObjectURL(link.href), 1000);
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000);
     } catch (error) {
       alert('PSDファイルの生成中にエラーが発生しました。\n' + error.message);
     } finally {

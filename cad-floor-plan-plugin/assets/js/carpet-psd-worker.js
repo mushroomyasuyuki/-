@@ -23,8 +23,9 @@
     return best;
   }
 
-  // reduce to the palette -> three planes (R, G, B), and which palette colours were used
-  function quantize(rgba, w, h, pal, dither, progress) {
+  // reduce to the palette -> three planes (R, G, B), and which palette colours were used.
+  // A generator: it pauses every 64 rows (yielding the progress), so that it can also run on the page in small steps.
+  function* quantize(rgba, w, h, pal, dither) {
     const n = w * h;
     const R = new Uint8Array(n), G = new Uint8Array(n), B = new Uint8Array(n);
     const used = new Uint8Array(pal.length);
@@ -53,7 +54,7 @@
         }
       }
       const t = cur; cur = next; next = t;
-      if (y % 64 === 0) progress(0.8 * y / h);
+      if (y % 64 === 63) yield 0.8 * y / h;
     }
     const list = [];
     used.forEach((u, i) => { if (u) list.push(i); });
@@ -109,8 +110,8 @@
     parts.push(i32(res.length), res);
 
     // layer record
-    const nb = unescape(encodeURIComponent(layerName));
-    const nameBytes = Uint8Array.from(nb.split('').map((c) => c.charCodeAt(0))).subarray(0, 255);
+    // the old style name is ASCII only (Japanese as "?"); the real name is in 'luni' (Unicode)
+    const nameBytes = Uint8Array.from(layerName.split('').map((c) => (c.charCodeAt(0) > 126 ? 63 : c.charCodeAt(0)))).subarray(0, 255);
     const pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
     const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
     const ub = new Uint8Array(layerName.length * 2);
@@ -140,23 +141,47 @@
     return parts;
   }
 
+  // join the small pieces into a few big buffers
+  function pack(parts) {
+    const out = [];
+    let cur = [], curLen = 0;
+    const flush = () => {
+      if (!curLen) return;
+      const u = new Uint8Array(curLen); let o = 0;
+      cur.forEach((p) => { u.set(p, o); o += p.length; });
+      out.push(u.buffer); cur = []; curLen = 0;
+    };
+    parts.forEach((p) => { cur.push(p); curLen += p.length; if (curLen > 16 * 1024 * 1024) flush(); });
+    flush();
+    return out;
+  }
+
+  // On the page (when a worker cannot be started): the same work, a little at a time
+  if (typeof window !== 'undefined') {
+    window.CFPCarpetPsd = {
+      run: async (m, progress) => {
+        const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither);
+        let r = it.next();
+        while (!r.done) { progress(r.value); await new Promise((res) => setTimeout(res, 0)); r = it.next(); }
+        const q = r.value;
+        const parts = writePsd(m.width, m.height, q, m.layerName || 'layer', progress);
+        return { parts: pack(parts), used: q.used };
+      }
+    };
+    return;
+  }
+
+  self.postMessage({ type: 'ready' });
   self.onmessage = (ev) => {
     try {
       const m = ev.data;
       const progress = (v) => self.postMessage({ type: 'progress', value: v });
-      const q = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither, progress);
+      const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither);
+      let r = it.next();
+      while (!r.done) { progress(r.value); r = it.next(); }
+      const q = r.value;
       const parts = writePsd(m.width, m.height, q, m.layerName || 'layer', progress);
-      // join the small pieces into a few big buffers before sending them back
-      const out = [];
-      let cur = [], curLen = 0;
-      const flush = () => {
-        if (!curLen) return;
-        const u = new Uint8Array(curLen); let o = 0;
-        cur.forEach((p) => { u.set(p, o); o += p.length; });
-        out.push(u.buffer); cur = []; curLen = 0;
-      };
-      parts.forEach((p) => { cur.push(p); curLen += p.length; if (curLen > 16 * 1024 * 1024) flush(); });
-      flush();
+      const out = pack(parts);
       self.postMessage({ type: 'done', parts: out, used: q.used }, out);
     } catch (err) {
       self.postMessage({ type: 'error', message: err && err.message ? err.message : String(err) });
