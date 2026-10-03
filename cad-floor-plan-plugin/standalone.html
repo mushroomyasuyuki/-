@@ -59,12 +59,13 @@
         <span class="cfp-trace-title">図面の上で部屋を指定</span>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="trace-close">閉じる</button>
       </div>
-      <p class="cfp-hint">自動で部屋を読み取れない図面は、ここで部屋を自分で囲んで指定します。「四角」は対角の2点をドラッグ、「多角形」は角を順にクリックし、最初の赤い点をクリック（またはダブルクリック）で確定します。ホイールで拡大・縮小、「移動」でドラッグして動かせます。</p>
+      <p class="cfp-hint">自動で部屋を読み取れない図面は、ここで部屋を自分で囲んで指定します。「四角」は対角の2点をドラッグ、「多角形」は角を順にクリックし、最初の赤い点をクリック（またはダブルクリック）で確定します。「部屋を移動」で枠だけを動かし、「形を変える」で角（白い丸）をドラッグして形を直せます（辺の中央の四角で角を追加、角のダブルクリックで削除）。ホイールで拡大・縮小、「移動」でドラッグして動かせます。</p>
       <div class="cfp-trace-bar">
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-pan">移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="tool-rect">四角</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-poly">多角形</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-move" title="手で指定した部屋（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">部屋を移動</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-edit" title="手で指定した部屋の角（白い丸）をドラッグして形を変えます。辺の中央の四角をドラッグすると角を追加、角をダブルクリックすると削除">形を変える</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="undo-pt">1点戻す</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-in" aria-label="拡大">＋</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-out" aria-label="縮小">－</button>
@@ -86,6 +87,7 @@
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
         <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角で壁紙の範囲を指定</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-move" title="四角で指定した範囲（緑の枠）をドラッグして動かします">範囲を移動</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-edit" title="範囲の角（白い丸）をドラッグして形を変えます。辺の中央の四角で角を追加、角をダブルクリックで削除">範囲の形を変える</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
         <label class="cfp-check"><input type="checkbox" data-cfp="elev-cloth-only"> クロス貼りの壁だけ表示</label>
         <span class="cfp-elev-sep">この図面の壁を合計に：</span>

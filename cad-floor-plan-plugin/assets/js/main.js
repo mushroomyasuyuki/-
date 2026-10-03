@@ -124,9 +124,9 @@
       const tool = (name) => {
         if (!this.tracer) return;
         this.tracer.setTool(name);
-        ['pan', 'rect', 'poly', 'move'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'poly', 'move'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
+      ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
       this.$('zoom-in').addEventListener('click', () => this.tracer && this.tracer.zoom(0.7));
       this.$('zoom-out').addEventListener('click', () => this.tracer && this.tracer.zoom(1.4));
       this.$('zoom-fit').addEventListener('click', () => this.tracer && this.tracer.fit());
@@ -139,9 +139,9 @@
       const etool = (name) => {
         if (!this.elevTracer) return;
         this.elevTracer.setTool(name);
-        ['pan', 'rect', 'move'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'move'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      ['pan', 'rect', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
       const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
@@ -804,7 +804,7 @@
       const bd = this.elev.backdrop;
       if (!this.elevTracer) {
         this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly), onMove: (i, poly) => this._moveElevRect(i, poly) });
-        this.elevTracer.ortho = false;
+        this.elevTracer.ortho = true; // corners line up with their neighbours when reshaping
       }
       if (this._elevImage !== bd.dataUrl) {
         this.elevTracer.setBackdrop(bd.dataUrl, bd.widthPx, bd.heightPx);
@@ -827,7 +827,7 @@
         if (!this._elevVisible(w, i)) return;
         const sel = i === this.elevIndex;
         let poly;
-        if (w.poly) poly = w.poly;
+        if (w.poly) poly = w.poly.map((p) => [p[0], p[1]]); // a copy: the tracer edits it in place while dragging
         else poly = this._wallPoly(w);
         items.push({ poly, label: String(i + 1), manual: !!w.custom, movable: !!w.custom, key: i, selected: sel, color: sel ? '#2563eb' : (w.custom ? '#16a34a' : (w.cloth ? '#a855f7' : '#a1a1aa')) });
       });
@@ -931,8 +931,15 @@
       const w = this._elevAll()[i];
       if (!w || !w.custom) return;
       w.poly = poly;
+      // the size follows the new outline (its width x height)
+      const s = this.elev.backdrop.mmPerPx;
+      const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+      w.width = Math.round((Math.max(...xs) - Math.min(...xs)) * s);
+      w.height = Math.round((Math.max(...ys) - Math.min(...ys)) * s);
       this._renderElevList();
-      this.status('「' + w.name + '」を移動しました。', 'success');
+      if (i === this.elevIndex) this.selectWall(i);
+      const editing = this.elevTracer && this.elevTracer.tool === 'edit';
+      this.status('「' + w.name + '」の' + (editing ? '形を変えました（' + fmtMm(w.width) + ' × ' + fmtMm(w.height) + ' mm）。' : '位置を移動しました。'), 'success');
     }
 
     // a rectangle drawn on the elevation: the wall paper area of that wall
@@ -1008,7 +1015,8 @@
       if (!kind || !kind.manual) return;
       this.manual[kind.mi].poly = poly;
       this._afterRoomsChanged(i);
-      this.status('「' + (this.data.rooms[i].name || '指定した部屋') + '」を移動しました。', 'success');
+      const editing = this.tracer && this.tracer.tool === 'edit';
+      this.status('「' + (this.data.rooms[i].name || '指定した部屋') + '」の' + (editing ? '形を変えました。' : '位置を移動しました。'), 'success');
     }
 
     _removeManual(mi) {

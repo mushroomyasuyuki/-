@@ -1,7 +1,9 @@
 /**
  * RoomTracer: draw rooms by hand on top of a drawing picture (SVG, coordinates = picture pixels).
  * Tools: pan (drag), rect (drag two corners), poly (click corners; click the first point or
- * double-click to finish), move (drag a room drawn by hand to another place; the picture stays).
+ * double-click to finish), move (drag a room drawn by hand to another place; the picture stays),
+ * edit (reshape a room drawn by hand: drag a corner, drag an edge's middle handle to add a corner,
+ * double-click a corner to remove it).
  * Mouse wheel zooms around the pointer.
  */
 (function (root) {
@@ -35,7 +37,9 @@
       this.image = el('image', { preserveAspectRatio: 'none' });
       this.roomsLayer = el('g', { 'pointer-events': 'none' });
       this.draft = el('g', { 'pointer-events': 'none' });
-      svg.append(this.image, this.roomsLayer, this.draft);
+      this.handles = el('g', { 'pointer-events': 'none' });
+      this.edit = null;
+      svg.append(this.image, this.roomsLayer, this.handles, this.draft);
       svg.setAttribute('tabindex', '0');
       this._bind();
     }
@@ -60,7 +64,7 @@
         const g = el('g');
         const color = it.color || (it.selected ? '#2563eb' : (it.manual ? '#16a34a' : '#a1a1aa'));
         it._g = g;
-        g.appendChild(el('polygon', {
+        it._poly = g.appendChild(el('polygon', {
           points: it.poly.map((p) => p[0] + ',' + p[1]).join(' '),
           fill: color, 'fill-opacity': it.selected ? 0.35 : 0.22,
           stroke: color, 'stroke-width': it.selected ? 3 : 2, 'vector-effect': 'non-scaling-stroke',
@@ -72,21 +76,90 @@
           stroke: '#fff', 'stroke-width': 3, 'paint-order': 'stroke',
         });
         t.textContent = it.label;
+        it._label = t;
         g.appendChild(t);
         this.labels.push(t);
         this.roomsLayer.appendChild(g);
       });
       this._labelSize();
+      this._drawHandles();
     }
 
     setTool(tool) {
       this.tool = tool;
       this.cancel();
       this.svg.style.cursor = this._cursor();
+      this._drawHandles();
     }
 
     _cursor() {
-      return this.tool === 'pan' ? 'grab' : (this.tool === 'move' ? 'move' : 'crosshair');
+      return this.tool === 'pan' ? 'grab' : (this.tool === 'move' ? 'move' : (this.tool === 'edit' ? 'default' : 'crosshair'));
+    }
+
+    // ---------------------------------------------------------- reshaping (edit tool)
+    _drawHandles() {
+      this.handles.textContent = '';
+      if (this.tool !== 'edit') return;
+      const r = 6 / this._scale();
+      this.items.forEach((it) => {
+        if (!it.movable) return;
+        const v = it.poly;
+        v.forEach((p, i) => {
+          const q = v[(i + 1) % v.length];
+          // middle of each edge: drag it to add a corner
+          this.handles.appendChild(el('rect', {
+            x: (p[0] + q[0]) / 2 - r * 0.7, y: (p[1] + q[1]) / 2 - r * 0.7, width: r * 1.4, height: r * 1.4,
+            fill: '#16a34a', 'fill-opacity': 0.75, stroke: '#fff', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke',
+          }));
+        });
+        v.forEach((p) => this.handles.appendChild(el('circle', {
+          cx: p[0], cy: p[1], r, fill: '#fff', stroke: '#16a34a', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke',
+        })));
+      });
+    }
+
+    // nearest corner (or, failing that, edge middle) of a movable room within 10 screen px
+    _handleAt(p) {
+      const tol = 10 / this._scale();
+      let best = null, bd = tol;
+      this.items.forEach((it) => {
+        if (!it.movable) return;
+        it.poly.forEach((q, i) => {
+          const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+          if (d <= bd) { bd = d; best = { it, vi: i, mid: false }; }
+        });
+      });
+      if (best) return best;
+      bd = tol;
+      this.items.forEach((it) => {
+        if (!it.movable) return;
+        it.poly.forEach((q, i) => {
+          const n = it.poly[(i + 1) % it.poly.length];
+          const d = Math.hypot((q[0] + n[0]) / 2 - p[0], (q[1] + n[1]) / 2 - p[1]);
+          if (d <= bd) { bd = d; best = { it, vi: i, mid: true }; }
+        });
+      });
+      return best;
+    }
+
+    _redrawItem(it) {
+      it._poly.setAttribute('points', it.poly.map((p) => p[0] + ',' + p[1]).join(' '));
+      const xs = it.poly.map((p) => p[0]), ys = it.poly.map((p) => p[1]);
+      it._label.setAttribute('x', (Math.min(...xs) + Math.max(...xs)) / 2);
+      it._label.setAttribute('y', (Math.min(...ys) + Math.max(...ys)) / 2);
+      this._drawHandles();
+    }
+
+    // with "角を直角にそろえる", a dragged corner lines up with its neighbours
+    _snapCorner(poly, vi, p) {
+      if (!this.ortho) return p;
+      const tol = 10 / this._scale();
+      const q = [p[0], p[1]];
+      [poly[(vi + poly.length - 1) % poly.length], poly[(vi + 1) % poly.length]].forEach((n) => {
+        if (Math.abs(q[0] - n[0]) <= tol) q[0] = n[0];
+        if (Math.abs(q[1] - n[1]) <= tol) q[1] = n[1];
+      });
+      return q;
     }
 
     // the topmost movable room under a picture point
@@ -136,6 +209,7 @@
       const v = this.vb;
       this.svg.setAttribute('viewBox', [v.x, v.y, v.w, v.h].join(' '));
       this._labelSize();
+      this._drawHandles();
       this._drawDraft();
     }
 
@@ -212,6 +286,22 @@
         }
         if (e.button !== 0) return;
         const p = this._clamp(this._pt(e));
+        if (this.tool === 'edit') {
+          const h = this._handleAt(p);
+          if (!h) return;
+          const orig = h.it.poly.map((q) => [q[0], q[1]]);
+          let vi = h.vi;
+          if (h.mid) {
+            // a new corner in the middle of the edge
+            const a = h.it.poly[vi], b = h.it.poly[(vi + 1) % h.it.poly.length];
+            h.it.poly.splice(vi + 1, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+            vi += 1;
+            this._redrawItem(h.it);
+          }
+          this.edit = { it: h.it, vi, orig, changed: h.mid };
+          svg.setPointerCapture(e.pointerId);
+          return;
+        }
         if (this.tool === 'move') {
           const it = this._hit(p);
           if (!it) return;
@@ -238,6 +328,16 @@
           this._applyView();
           return;
         }
+        if (this.edit) {
+          const ed = this.edit;
+          ed.it.poly[ed.vi] = this._snapCorner(ed.it.poly, ed.vi, this._clamp(this._pt(e)));
+          ed.changed = true;
+          this._redrawItem(ed.it);
+          return;
+        }
+        if (this.tool === 'edit') {
+          this.svg.style.cursor = this._handleAt(this._clamp(this._pt(e))) ? 'pointer' : 'default';
+        }
         if (this.move) {
           const m = this.move, p = this._pt(e);
           // keep the room inside the picture
@@ -259,6 +359,12 @@
         if (this.pan) {
           this.pan = null;
           svg.style.cursor = this._cursor();
+          return;
+        }
+        if (this.edit) {
+          const ed = this.edit;
+          this.edit = null;
+          if (ed.changed) this.onMove(ed.it.key, ed.it.poly.map((q) => [q[0], q[1]]));
           return;
         }
         if (this.move) {
@@ -296,6 +402,16 @@
       });
 
       svg.addEventListener('dblclick', (e) => {
+        if (this.tool === 'edit') {
+          // remove a corner (a room keeps at least 3)
+          e.preventDefault();
+          const h = this._handleAt(this._clamp(this._pt(e)));
+          if (!h || h.mid || h.it.poly.length <= 3) return;
+          h.it.poly.splice(h.vi, 1);
+          this._redrawItem(h.it);
+          this.onMove(h.it.key, h.it.poly.map((q) => [q[0], q[1]]));
+          return;
+        }
         if (this.tool !== 'poly') return;
         e.preventDefault();
         // the two clicks of a double click each added a point; drop the duplicate
@@ -309,6 +425,7 @@
       svg.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
           if (this.move) { this.move.it._g.removeAttribute('transform'); this.move = null; }
+          if (this.edit) { this.edit.it.poly = this.edit.orig; this._redrawItem(this.edit.it); this.edit = null; }
           this.cancel();
         }
         else if (e.key === 'Backspace') { e.preventDefault(); this.undoPoint(); }
