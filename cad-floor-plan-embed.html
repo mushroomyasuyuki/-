@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.58.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.59.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2968,18 +2968,34 @@
         }
         this._wpZoom(e.deltaY < 0 ? 1 / 1.2 : 1.2, e);
       }, { passive: false });
+      // what the drag / arrow buttons move: the view, the wall paper picture or the strip frames
+      this._wpMode = 'view';
+      const setMode = (m) => {
+        this._wpMode = m;
+        [['view', 'wp-m-view'], ['img', 'wp-m-img'], ['frame', 'wp-m-frame']].forEach(([k, n]) => this.$(n).classList.toggle('is-on', k === m));
+        svg.style.cursor = m === 'view' ? 'grab' : 'move';
+      };
+      this.$('wp-m-view').addEventListener('click', () => setMode('view'));
+      this.$('wp-m-img').addEventListener('click', () => setMode('img'));
+      this.$('wp-m-frame').addEventListener('click', () => setMode('frame'));
+      this.$('wp-reset').addEventListener('click', () => { const o = this._wpO(); o.img = { x: 0, y: 0 }; o.frame = { x: 0, y: 0 }; this._wpRender(); });
       // drag: followed on the window, so it goes on outside the picture and the page's edge
       let drag = null;
       const onMove = (e) => {
         if (!drag) return;
         const r = svg.getBoundingClientRect();
         const k = Math.max(drag.v.w / r.width, drag.v.h / r.height);
+        if (drag.mode !== 'view') { // the picture / the frames: shifted in mm
+          this._wpO()[drag.mode] = { x: Math.round(drag.o.x + (e.clientX - drag.x) * k), y: Math.round(drag.o.y + (e.clientY - drag.y) * k) };
+          this._wpRender();
+          return;
+        }
         this._wpView = { x: drag.v.x - (e.clientX - drag.x) * k, y: drag.v.y - (e.clientY - drag.y) * k, w: drag.v.w, h: drag.v.h };
         this._wpApplyView();
       };
       const onEnd = () => {
         drag = null;
-        svg.style.cursor = 'grab';
+        svg.style.cursor = this._wpMode === 'view' ? 'grab' : 'move';
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onEnd);
         window.removeEventListener('pointercancel', onEnd);
@@ -2989,8 +3005,9 @@
         if (!v || e.button > 0) return;
         e.preventDefault();
         svg.focus({ preventScroll: true });
-        drag = { x: e.clientX, y: e.clientY, v };
-        svg.style.cursor = 'grabbing';
+        const mode = this._wpMode || 'view';
+        drag = { x: e.clientX, y: e.clientY, v, mode, o: mode === 'view' ? null : Object.assign({}, this._wpO()[mode]) };
+        svg.style.cursor = mode === 'view' ? 'grabbing' : 'move';
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onEnd);
         window.addEventListener('pointercancel', onEnd);
@@ -2998,16 +3015,22 @@
       svg.style.cursor = 'grab';
       // pan buttons and arrow keys (a quarter of the view; Shift = a whole view)
       const pan = (dx, dy, big) => {
+        if (this._wpMode !== 'view') { // the picture / the frames: 10 mm (Shift: 100 mm)
+          const o = this._wpO(), c = o[this._wpMode], st = big ? 100 : 10;
+          o[this._wpMode] = { x: c.x + dx * st, y: c.y + dy * st };
+          this._wpRender();
+          return;
+        }
         const v = this._wpCurView();
         if (!v) return;
         const k = big ? 1 : 0.25;
         this._wpView = { x: v.x + dx * v.w * k, y: v.y + dy * v.h * k, w: v.w, h: v.h };
         this._wpApplyView();
       };
-      this.$('wp-pl').addEventListener('click', () => pan(-1, 0));
-      this.$('wp-pr').addEventListener('click', () => pan(1, 0));
-      this.$('wp-pu').addEventListener('click', () => pan(0, -1));
-      this.$('wp-pd').addEventListener('click', () => pan(0, 1));
+      this.$('wp-pl').addEventListener('click', (e) => pan(-1, 0, e.shiftKey));
+      this.$('wp-pr').addEventListener('click', (e) => pan(1, 0, e.shiftKey));
+      this.$('wp-pu').addEventListener('click', (e) => pan(0, -1, e.shiftKey));
+      this.$('wp-pd').addEventListener('click', (e) => pan(0, 1, e.shiftKey));
       svg.setAttribute('tabindex', '0');
       svg.addEventListener('keydown', (e) => {
         const m = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -3015,6 +3038,13 @@
         e.preventDefault();
         pan(m[0], m[1], e.shiftKey);
       });
+    }
+    // how far the picture and the frames were moved on the current wall (mm)
+    _wpO() {
+      if (!this._wpOffs) this._wpOffs = new Map();
+      const id = this._wpWall || '';
+      if (!this._wpOffs.has(id)) this._wpOffs.set(id, { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } });
+      return this._wpOffs.get(id);
     }
     _wpClamp(name, v) {
       v = parseFloat(v);
@@ -3098,6 +3128,7 @@
       const wid = this.elevIndex + '|' + W + 'x' + WH + '|' + (this._elevFile ? this._elevFile.name : '');
       if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
+      const off = this._wpO();
       svg.textContent = '';
       const add = (name, attrs, parent) => {
         const e = document.createElementNS(SVG_NS, name);
@@ -3118,22 +3149,27 @@
       const src = wp.getSource();
       if (showImg && src) {
         const key = [src.width, src.height, W, WH, wp.ROLL, wp.OVERLAP, right ? 'R' : 'L', JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
-        if (this._wpKey === key && this._wpUrl) {
-          add('image', { href: this._wpUrl, x: 0, y: 0, width: FW, height: H, preserveAspectRatio: 'none', opacity: showCad ? 0.7 : 1 });
-        } else {
+        const uo = this._wpUrlOff || { x: 0, y: 0 };
+        const same = this._wpKey === key && this._wpUrl;
+        if (same) {
+          // the picture as it was built, moved by what was moved since (a new one is built a moment later)
+          add('image', { href: this._wpUrl, x: off.img.x - uo.x, y: off.img.y - uo.y, width: FW, height: H, preserveAspectRatio: 'none', opacity: showCad ? 0.7 : 1 });
+        }
+        if (!same || uo.x !== off.img.x || uo.y !== off.img.y) {
           clearTimeout(this._wpTimer);
           this._wpTimer = setTimeout(() => {
             const k = Math.min(1, 2400 / FW);
             const full = document.createElement('canvas');
             full.width = FW; full.height = H;
-            wp.renderDesign(full, ox, wp.TRIM_TOP, W, WH);
+            wp.renderDesign(full, ox + off.img.x, wp.TRIM_TOP + off.img.y, W, WH);
             const small = document.createElement('canvas');
             small.width = Math.max(1, Math.round(FW * k)); small.height = Math.max(1, Math.round(H * k));
             small.getContext('2d').drawImage(full, 0, 0, small.width, small.height);
             this._wpUrl = small.toDataURL('image/png');
+            this._wpUrlOff = { x: off.img.x, y: off.img.y };
             this._wpKey = key;
             this._wpRender();
-          }, 150);
+          }, 200);
         }
       }
       if (showFrame) {
@@ -3141,7 +3177,7 @@
         for (let i = 0; i < N; i++) {
           const odd = i % 2;
           const x = right ? FW - wp.ROLL - i * wp.STEP : i * wp.STEP;
-          add('rect', { x: x + 1.5, y: 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
+          add('rect', { x: x + off.frame.x + 1.5, y: off.frame.y + 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
             stroke: col(i), 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
         }
         const purple = { stroke: '#d000d0', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' };
@@ -3150,13 +3186,15 @@
         else add('rect', Object.assign({ x: ox, y: wp.TRIM_TOP, width: W, height: WH, fill: 'none' }, purple));
         // cut lines: in the middle of the overlap of two neighbouring strips, joined to the wall's top and bottom lines
         for (let i = 1; i < N; i++) {
-          const cx = right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE; // the middle of the overlap of two strips
+          const cx = (right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x; // the middle of the overlap of two strips
           (poly ? wp.cutSegments(poly, cx) : [[wp.TRIM_TOP, wp.TRIM_TOP + WH]]).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple)));
         }
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);
       this.$('wp-note').textContent = '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → 画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
         + '巾 ' + wp.ROLL + ' mm・合わせ代（巾が重なる幅） ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP) + ' mm）の真ん中（' + fmt(wp.OVERLAP / 2) + ' mm）のカット線。'
+        + (off.img.x || off.img.y ? ' 画像を動かした量：横 ' + off.img.x + ' mm・縦 ' + off.img.y + ' mm。' : '')
+        + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
     }
     async _wpSave() {
@@ -3181,7 +3219,7 @@
           cx.drawImage(img, bx, by, bw, bh, 0, 0, W, WH);
         }
         const right = this.$('wp-right').checked;
-        const out = wp.buildWhole(cad, W, WH, right, this._wpPoly(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP));
+        const out = wp.buildWhole(cad, W, WH, right, this._wpPoly(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP), this._wpO());
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;

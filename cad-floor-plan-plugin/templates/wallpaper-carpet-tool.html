@@ -2013,14 +2013,15 @@
     return out;
   };
   // poly: 変形した壁の形（絵の座標、mm）。無ければ四角
-  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right, poly) {
+  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right, poly, fo) {
     const P = WALL_PRINT;
+    fo = fo || { x: 0, y: 0 }; // 枠を動かした量（mm）
     const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
     for (let i = 0; i !== N; i++) {
       const x = right ? FW - P.ROLL - i * P.STEP : i * P.STEP;
       fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
       fx.lineWidth = 3;
-      fx.strokeRect(x + 1.5, 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
+      fx.strokeRect(x + fo.x + 1.5, fo.y + 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
     }
     fx.strokeStyle = '#d000d0';
     fx.lineWidth = 2;
@@ -2032,7 +2033,7 @@
     } else fx.strokeRect(ox, P.TRIM_TOP, W, WH);
     // カット線：隣り合う巾の重なりの真ん中
     for (let i = 1; i !== N; i++) {
-      const cx = right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
+      const cx = (right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE) + fo.x; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
       (poly ? P.cutSegments(poly, cx) : [[P.TRIM_TOP, P.TRIM_TOP + WH]]).forEach((sg) => {
         fx.beginPath();
         fx.moveTo(cx, sg[0]);
@@ -2041,7 +2042,9 @@
       });
     }
   };
-  WALL_PRINT.buildWhole = function (cad, W, WH, right, poly) {
+  // off: { img: {x, y}, frame: {x, y} } 画像・枠を動かした量（mm）
+  WALL_PRINT.buildWhole = function (cad, W, WH, right, poly, off) {
+    off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
     const N = Math.max(1, Math.ceil((W + P.OVERLAP - 5) / P.STEP));
@@ -2051,9 +2054,9 @@
     const cadL = mk();
     if (cad) cadL.getContext('2d').drawImage(cad, ox, P.TRIM_TOP, W, WH);
     const design = mk();
-    P.renderDesign(design, ox, P.TRIM_TOP, W, WH);
+    P.renderDesign(design, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH);
     const frame = mk();
-    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right, poly);
+    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right, poly, off.frame);
     const comp = mk();
     const cx = comp.getContext('2d');
     cx.fillStyle = '#ffffff';
