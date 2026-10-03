@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.57.4 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.58.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -210,10 +210,15 @@
       <p class="cfp-elev-total" data-cfp="elev-total"></p>
       <div class="cfp-trace-bar">
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
-        <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角で壁紙の範囲を指定</button>
-        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-move" title="四角で指定した範囲（緑の枠）をドラッグして動かします">範囲を移動</button>
-        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-edit" title="範囲の角（白い丸）をドラッグして形を変えます。辺の中央の四角で角を追加、角をダブルクリックで削除">範囲の形を変える</button>
+        <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-poly">多角形</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-move" title="手で指定した壁紙の範囲（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">壁を移動</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-edit" title="手で指定した範囲の角（白い丸）をドラッグして形を変えます。辺の中央の四角をドラッグすると角を追加、角をダブルクリックすると削除">形を変える</button>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-zin" aria-label="拡大" title="図面を拡大">＋ 拡大</button>
+        <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-zout" aria-label="縮小" title="図面を縮小">− 縮小</button>
+        <label class="cfp-check"><input type="checkbox" data-cfp="elev-ortho" checked> 角を直角にそろえる</label>
+        <label class="cfp-check"><input type="checkbox" data-cfp="elev-hide-auto"> 自動で出た壁を隠す</label>
         <label class="cfp-check"><input type="checkbox" data-cfp="elev-cloth-only"> クロス貼りの壁だけ表示</label>
         <span class="cfp-elev-sep">この図面の壁を合計に：</span>
         <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="total-all">全部</button>
@@ -2264,10 +2269,14 @@
       const etool = (name) => {
         if (!this.elevTracer) return;
         this.elevTracer.setTool(name);
-        ['pan', 'rect', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
+      this.$('elev-zin').addEventListener('click', () => this.elevTracer && this.elevTracer.zoom(0.7));
+      this.$('elev-zout').addEventListener('click', () => this.elevTracer && this.elevTracer.zoom(1.4));
+      this.$('elev-ortho').addEventListener('change', () => { if (this.elevTracer) this.elevTracer.ortho = this.$('elev-ortho').checked; });
+      this.$('elev-hide-auto').addEventListener('change', () => this._renderElevList());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
       const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
       this.$('total-all').addEventListener('click', () => setTotal(() => true));
@@ -3179,7 +3188,7 @@
       const bd = this.elev.backdrop;
       if (!this.elevTracer) {
         this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly), onMove: (i, poly) => this._moveElevRect(i, poly) });
-        this.elevTracer.ortho = true; // corners line up with their neighbours when reshaping
+        this.elevTracer.ortho = this.$('elev-ortho').checked; // corners line up with their neighbours when reshaping
       }
       if (this._elevImage !== bd.dataUrl) {
         this.elevTracer.setBackdrop(bd.dataUrl, bd.widthPx, bd.heightPx);
@@ -3207,6 +3216,7 @@
       this.elevTracer.setRooms(items);
     }
     _elevVisible(w, i) {
+      if (this.$('elev-hide-auto').checked && !w.custom) return false; // hide the walls found automatically: only the ones drawn by hand
       return !(this.$('elev-cloth-only').checked && !w.cloth && !w.custom);
     }
     _renderElevList() {

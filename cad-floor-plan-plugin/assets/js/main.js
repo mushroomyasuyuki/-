@@ -190,10 +190,14 @@
       const etool = (name) => {
         if (!this.elevTracer) return;
         this.elevTracer.setTool(name);
-        ['pan', 'rect', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
+      this.$('elev-zin').addEventListener('click', () => this.elevTracer && this.elevTracer.zoom(0.7));
+      this.$('elev-zout').addEventListener('click', () => this.elevTracer && this.elevTracer.zoom(1.4));
+      this.$('elev-ortho').addEventListener('change', () => { if (this.elevTracer) this.elevTracer.ortho = this.$('elev-ortho').checked; });
+      this.$('elev-hide-auto').addEventListener('change', () => this._renderElevList());
       this.$('elev-cloth-only').addEventListener('change', () => this._renderElevList());
       const setTotal = (fn) => { this._elevAll().forEach((w) => { w.inTotal = fn(w); }); this._renderElevList(); };
       this.$('total-all').addEventListener('click', () => setTotal(() => true));
@@ -1150,7 +1154,7 @@
       const bd = this.elev.backdrop;
       if (!this.elevTracer) {
         this.elevTracer = new RoomTracer(this.$('elev-svg'), { onCommit: (poly) => this._commitElevRect(poly), onMove: (i, poly) => this._moveElevRect(i, poly) });
-        this.elevTracer.ortho = true; // corners line up with their neighbours when reshaping
+        this.elevTracer.ortho = this.$('elev-ortho').checked; // corners line up with their neighbours when reshaping
       }
       if (this._elevImage !== bd.dataUrl) {
         this.elevTracer.setBackdrop(bd.dataUrl, bd.widthPx, bd.heightPx);
@@ -1181,6 +1185,7 @@
     }
 
     _elevVisible(w, i) {
+      if (this.$('elev-hide-auto').checked && !w.custom) return false; // hide the walls found automatically: only the ones drawn by hand
       return !(this.$('elev-cloth-only').checked && !w.cloth && !w.custom);
     }
 
