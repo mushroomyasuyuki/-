@@ -1935,6 +1935,14 @@
   // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代、巾は910mm幅で左右10mmずつ重ねる
   const WALL_PRINT = { ROLL: 910, OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
   WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP * 2; // 1巾が受け持つ壁の幅（890mm）
+  // 巾（横幅）は850〜930mm、合わせ代（左右それぞれ重ねる幅）は6〜15mmを0.5mm刻みで調整できる
+  WALL_PRINT.set = function (roll, overlap) {
+    const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
+    const o = Math.min(15, Math.max(6, Math.round((parseFloat(overlap) || 10) * 2) / 2));
+    this.ROLL = r;
+    this.OVERLAP = o;
+    this.STEP = r - o * 2;
+  };
   window.cfpWallPrint = WALL_PRINT;
 
   // 壁の左上が (ox, oy) にある壁（wallW × wallH、1px=1mm）として、貼り方どおりにデザインを描く。
@@ -1969,6 +1977,61 @@
     const ih = iw * sh / sw;
     ctx.drawImage(source, ox + (wallW - iw) / 2, oy + (wallH - ih) / 2, iw, ih);
   }
+
+  // 壁のデザインを切り分けず1枚に（左右の合わせ代・上下100mmの裁断代を含む）、3レイヤーのCMYK PSDにする。
+  //   ①CAD図面（展開図の壁の範囲）／②壁紙の画像（切り分けなし）／③巾の枠（赤・各巾の幅×高さ）
+  // cad: 展開図から切り出した壁の絵（壁の範囲の大きさ、1枚のcanvas）。無ければ空のレイヤー
+  WALL_PRINT.getSource = function () {
+    const c = getWallSource();
+    return c ? ((c.naturalWidth || c.width) ? c : null) : null;
+  };
+  WALL_PRINT.renderDesign = function (canvas, ox, oy, wallW, wallH) {
+    const src = WALL_PRINT.getSource();
+    if (src) drawWallDesign(canvas.getContext('2d'), src, ox, oy, wallW, wallH);
+    else {
+      const x = canvas.getContext('2d');
+      x.fillStyle = '#ffffff';
+      x.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    return !!src;
+  };
+  WALL_PRINT.buildWhole = function (cad, W, WH) {
+    const P = WALL_PRINT;
+    const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
+    const N = Math.max(1, Math.ceil((W - 5) / P.STEP));
+    const FW = Math.round(N * P.STEP + P.OVERLAP * 2);
+    const mk = () => { const c = document.createElement('canvas'); c.width = FW; c.height = H; return c; };
+    const cadL = mk();
+    if (cad) cadL.getContext('2d').drawImage(cad, P.OVERLAP, P.TRIM_TOP, W, WH);
+    const design = mk();
+    P.renderDesign(design, P.OVERLAP, P.TRIM_TOP, W, WH);
+    const frame = mk();
+    const fx = frame.getContext('2d');
+    for (let i = 0; i !== N; i++) {
+      fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
+      fx.lineWidth = 3;
+      fx.strokeRect(i * P.STEP + 1.5, 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
+    }
+    fx.strokeStyle = '#d000d0';
+    fx.lineWidth = 2;
+    fx.strokeRect(P.OVERLAP + 1, P.TRIM_TOP + 1, W - 2, WH - 2);
+    const comp = mk();
+    const cx = comp.getContext('2d');
+    cx.fillStyle = '#ffffff';
+    cx.fillRect(0, 0, FW, H);
+    cx.drawImage(cadL, 0, 0);
+    cx.drawImage(design, 0, 0);
+    cx.drawImage(frame, 0, 0);
+    return {
+      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + '_' + Date.now() + '.psd',
+      blob: writeCmykPsd(FW, H, comp, [
+        { name: '①CAD図面（壁の範囲 ' + W + '×' + WH + 'mm）', canvas: cadL },
+        { name: '②壁紙の画像（切り分けなし・左右の合わせ代と上下' + P.TRIM_TOP + 'mmを含む）', canvas: design },
+        { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・高さ' + H + 'mm）', canvas: frame }
+      ], 25.4),
+      width: FW, height: H, strips: N
+    };
+  };
 
   // 壁1面分のデザイン（1px=1mm）。貼り方（繰り返し／壁ごとに中央／一周）に合わせる
   function buildWallDesignCanvas(source, w, h, wallH) {
@@ -2135,7 +2198,7 @@
         longC.getContext('2d').drawImage(longD, 0, 0);
         longC.getContext('2d').drawImage(longF, 0, 0);
         extra.push({
-          name: '03_910mm幅ロール連続データ_' + (first + 1) + '-' + (first + count) + '巾目_' + P.ROLL + 'x' + (count * H) + 'mm' + (parts > 1 ? '_' + (pi + 1) + 'of' + parts : '') + '.psd',
+          name: '03_' + P.ROLL + 'mm幅ロール連続データ_' + (first + 1) + '-' + (first + count) + '巾目_' + P.ROLL + 'x' + (count * H) + 'mm' + (parts > 1 ? '_' + (pi + 1) + 'of' + parts : '') + '.psd',
           blob: writeCmykPsd(P.ROLL, count * H, longC, [
             { name: '①壁紙 ' + (first + 1) + '〜' + (first + count) + '巾目（偶数巾は180°回転）', canvas: longD },
             { name: '②赤枠（各巾の壁の範囲）', canvas: longF }

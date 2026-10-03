@@ -129,3 +129,8 @@
 .cfp-layout-view{height:480px;background:#fff}
 .cfp-btn.cfp-btn-save{background:#7f1d1d;border-color:#ef4444}
 .cfp-btn.cfp-btn-save:hover{background:#991b1b;color:#fff}
+
+.cfp-wp{background:#09090b;border:1px solid #ef4444;border-radius:8px;padding:14px;margin:12px 0 0}
+.cfp-wp-ctrl{display:flex;flex-wrap:wrap;gap:8px 20px;margin:6px 0 10px;font-size:13px;color:#e4e4e7}
+.cfp-wp-ctrl input[type=number]{width:70px}
+.cfp-wp-view{display:block;width:100%;height:auto;max-height:420px;background:#fff;border-radius:4px}

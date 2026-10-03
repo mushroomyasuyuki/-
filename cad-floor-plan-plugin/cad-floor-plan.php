@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.54.0
+ * Version: 2.55.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.54.0');
+define('CFP_VERSION', '2.55.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -483,6 +483,22 @@ final class CAD_Floor_Plan_Plugin {
                   <div class="cfp-rooms-body">
                     <svg class="cfp-elev-view" data-cfp="elev-svg" role="img" aria-label="展開図"></svg>
                     <div class="cfp-room-list cfp-elev-list" data-cfp="elev-list"></div>
+                  </div>
+                  <div class="cfp-wp" data-cfp="wp" hidden>
+                    <div class="cfp-layout-title">壁紙の巾の枠（切り分けなし・実寸）</div>
+                    <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下100mmずつ」です。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。</p>
+                    <div class="cfp-wp-ctrl">
+                      <label>巾（横幅）<input type="range" data-cfp="wp-roll-r" min="850" max="930" step="1" value="910"> <input type="number" data-cfp="wp-roll" min="850" max="930" step="1" value="910"> mm</label>
+                      <label>合わせ代（左右それぞれ）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="10"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="10"> mm</label>
+                    </div>
+                    <div class="cfp-trace-bar">
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-cad" checked> CAD図面を表示</label>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像（元画像）を表示</label>
+                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
+                      <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save">壁紙データを保存（PSD・3レイヤー）</button>
+                    </div>
+                    <p class="cfp-layout-note" data-cfp="wp-note"></p>
+                    <svg class="cfp-wp-view" data-cfp="wp-svg" role="img" aria-label="壁紙の巾の枠"></svg>
                   </div>
                 </div>
                 <div class="cfp-status" data-cfp="status"></div>

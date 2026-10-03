@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.54.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.55.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -120,6 +120,10 @@
 .cfp-layout-view{height:480px;background:#fff}
 .cfp-btn.cfp-btn-save{background:#7f1d1d;border-color:#ef4444}
 .cfp-btn.cfp-btn-save:hover{background:#991b1b;color:#fff}
+.cfp-wp{background:#09090b;border:1px solid #ef4444;border-radius:8px;padding:14px;margin:12px 0 0}
+.cfp-wp-ctrl{display:flex;flex-wrap:wrap;gap:8px 20px;margin:6px 0 10px;font-size:13px;color:#e4e4e7}
+.cfp-wp-ctrl input[type=number]{width:70px}
+.cfp-wp-view{display:block;width:100%;height:auto;max-height:420px;background:#fff;border-radius:4px}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -2196,6 +2200,7 @@
       }
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
+      document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpRender(); });
       if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル', { fromFile: false });
     }
     _bind() {
@@ -2268,6 +2273,7 @@
       this.$('total-all').addEventListener('click', () => setTotal(() => true));
       this.$('total-cloth').addEventListener('click', () => setTotal((w) => !!w.cloth || !!w.custom));
       this.$('total-none').addEventListener('click', () => setTotal(() => false));
+      this._wpInit();
       // carpet tile layout
       const ltool = (name) => {
         if (!this.layoutTracer) return;
@@ -2922,6 +2928,148 @@
         box.appendChild(row);
       });
     }
+    // ------------------------------------------------ wall paper strip frames (巾の枠), whole wall without cutting
+    _wpInit() {
+      if (!this.$('wp')) return;
+      const link = (rng, num) => {
+        const R = this.$(rng), N = this.$(num);
+        const on = (src) => () => {
+          if (src === R) N.value = R.value; else if (N.value !== '') R.value = N.value;
+          this._wpChanged();
+        };
+        R.addEventListener('input', on(R));
+        N.addEventListener('input', on(N));
+        N.addEventListener('change', () => { N.value = R.value = this._wpClamp(N.id || num, N.value); this._wpChanged(); });
+      };
+      link('wp-roll-r', 'wp-roll');
+      link('wp-ov-r', 'wp-ov');
+      ['wp-show-cad', 'wp-show-img', 'wp-show-frame'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
+      this.$('wp-save').addEventListener('click', () => this._wpSave());
+    }
+    _wpClamp(name, v) {
+      v = parseFloat(v);
+      if (/ov/.test(name)) return Math.min(15, Math.max(6, Math.round((isNaN(v) ? 10 : v) * 2) / 2));
+      return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 910 : v)));
+    }
+    // roll width / overlap changed: the print size, the total and the 3D margins follow
+    _wpChanged() {
+      const wp = window.cfpWallPrint;
+      if (!wp) return;
+      wp.set(this.$('wp-roll-r').value, this.$('wp-ov-r').value);
+      this._updateWallTotal();
+      if (this.hasTool && this.renderer) this.syncDesigns(true);
+      this._wpRender();
+    }
+    _wpGeom() {
+      const wp = window.cfpWallPrint, w = this._elevAll()[this.elevIndex];
+      if (!wp || !w || !this.elev) return null;
+      const W = Math.max(1, Math.round(w.width)), WH = Math.max(1, Math.round(w.height));
+      const H = WH + wp.TRIM_TOP + wp.TRIM_BOTTOM;
+      const N = Math.max(1, Math.ceil((W - 5) / wp.STEP));
+      return { wp, w, W, WH, H, N, FW: Math.round(N * wp.STEP + wp.OVERLAP * 2) };
+    }
+    // the wall's part of the elevation picture: [x, y, width, height] in picture pixels
+    _wpCadBox(w) {
+      const poly = w.poly || this._wallPoly(w);
+      const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys);
+      return [x0, y0, Math.max(...xs) - x0, Math.max(...ys) - y0];
+    }
+    _wpRender() {
+      const panel = this.$('wp');
+      if (!panel) return;
+      const g = this.elevIndex >= 0 ? this._wpGeom() : null;
+      if (!g) { panel.hidden = true; return; }
+      panel.hidden = false;
+      const { wp, w, W, WH, H, N, FW } = g;
+      const svg = this.$('wp-svg');
+      svg.setAttribute('viewBox', '0 0 ' + FW + ' ' + H);
+      svg.textContent = '';
+      const add = (name, attrs, parent) => {
+        const e = document.createElementNS(SVG_NS, name);
+        Object.keys(attrs).forEach((k) => e.setAttribute(k, attrs[k]));
+        (parent || svg).appendChild(e);
+        return e;
+      };
+      add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
+      const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
+      const bd = this.elev.backdrop;
+      if (showCad && bd) {
+        const [bx, by, bw, bh] = this._wpCadBox(w);
+        const inner = add('svg', { x: wp.OVERLAP, y: wp.TRIM_TOP, width: W, height: WH, viewBox: [bx, by, bw, bh].join(' '), preserveAspectRatio: 'none' });
+        add('image', { href: bd.dataUrl, x: 0, y: 0, width: bd.widthPx, height: bd.heightPx }, inner);
+      }
+      const src = wp.getSource();
+      if (showImg && src) {
+        const key = [src.width, src.height, W, WH, wp.ROLL, wp.OVERLAP, JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
+        if (this._wpKey === key && this._wpUrl) {
+          add('image', { href: this._wpUrl, x: 0, y: 0, width: FW, height: H, preserveAspectRatio: 'none', opacity: showCad ? 0.7 : 1 });
+        } else {
+          clearTimeout(this._wpTimer);
+          this._wpTimer = setTimeout(() => {
+            const k = Math.min(1, 2400 / FW);
+            const full = document.createElement('canvas');
+            full.width = FW; full.height = H;
+            wp.renderDesign(full, wp.OVERLAP, wp.TRIM_TOP, W, WH);
+            const small = document.createElement('canvas');
+            small.width = Math.max(1, Math.round(FW * k)); small.height = Math.max(1, Math.round(H * k));
+            small.getContext('2d').drawImage(full, 0, 0, small.width, small.height);
+            this._wpUrl = small.toDataURL('image/png');
+            this._wpKey = key;
+            this._wpRender();
+          }, 150);
+        }
+      }
+      if (showFrame) {
+        for (let i = 0; i < N; i++) {
+          const odd = i % 2;
+          add('rect', { x: i * wp.STEP + 1.5, y: 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
+            stroke: odd ? '#ff7a00' : '#ff0000', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
+        }
+        add('rect', { x: wp.OVERLAP, y: wp.TRIM_TOP, width: W, height: WH, fill: 'none', stroke: '#d000d0', 'stroke-width': 2,
+          'stroke-dasharray': '6 4', 'vector-effect': 'non-scaling-stroke' });
+      }
+      const fmt = (v) => String(Math.round(v * 10) / 10);
+      this.$('wp-note').textContent = '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → 画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
+        + '巾 ' + wp.ROLL + ' mm・合わせ代 左右 ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾。'
+        + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
+    }
+    async _wpSave() {
+      const g = this._wpGeom();
+      const btn = this.$('wp-save');
+      if (!g) return;
+      const { wp, w, W, WH } = g;
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '作成中…';
+      try {
+        await new Promise((r) => setTimeout(r, 30));
+        let cad = null;
+        const bd = this.elev.backdrop;
+        if (bd) {
+          const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('図面の画像を読めませんでした')); i.src = bd.dataUrl; });
+          const [bx, by, bw, bh] = this._wpCadBox(w);
+          cad = document.createElement('canvas');
+          cad.width = W; cad.height = WH;
+          const cx = cad.getContext('2d');
+          cx.imageSmoothingQuality = 'high';
+          cx.drawImage(img, bx, by, bw, bh, 0, 0, W, WH);
+        }
+        const out = wp.buildWhole(cad, W, WH);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(out.blob);
+        a.download = out.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        this.status('壁紙データを保存しました（' + out.width + ' × ' + out.height + ' mm・1px = 1mm・' + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠）。', 'success');
+      } catch (err) {
+        this.status('エラー: 壁紙データを作成できませんでした（' + err.message + '）', 'error');
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    }
     _elevAll() {
       return this.elev ? this.elev.walls.concat(this.elev.custom) : [];
     }
@@ -2991,6 +3139,7 @@
       });
       this._refreshElevTracer();
       this._updateWallTotal();
+      this._wpRender();
     }
     // The walls ticked on every loaded elevation sheet: total width, area and wall paper strips (910 mm rolls).
     _updateWallTotal() {
@@ -3019,7 +3168,7 @@
           strips, lengthM: Math.round(len * 10) / 10, files,
         };
         total.text = picked.length + '面（' + files.join('・') + '）幅の合計 ' + fmtMm(total.widthMm) + ' mm／面積の合計 ' + total.areaM2
-          + ' ㎡／910mm幅のロール（左右10mmずつ重ね）で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下100mmずつ）';
+          + ' ㎡／' + (window.cfpWallPrint ? window.cfpWallPrint.ROLL : 910) + 'mm幅のロール（左右' + (window.cfpWallPrint ? window.cfpWallPrint.OVERLAP : 10) + 'mmずつ重ね）で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下100mmずつ）';
         out.textContent = '壁紙の合計: ' + total.text + '。扉・窓などの開口は差し引いていません。';
       } else out.textContent = '壁紙の合計: 一覧の左のチェックで、合計に入れる壁を選んでください。';
       window.cfpWallTotal = total;
