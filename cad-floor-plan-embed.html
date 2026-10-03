@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.69.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.69.2 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -2195,19 +2195,6 @@
   const fmtM = (mm) => (mm / 1000).toFixed(1);
   const fmtMm = (mm) => Math.round(mm).toLocaleString('ja-JP');
   const TILE = 500; // carpet tile (mm)
-  // PSD writer (ag-psd), shared with the simulator page
-  function loadAgPsd() {
-    if (window.agPsd) return Promise.resolve(window.agPsd);
-    if (window.__cocoonAgPsdPromise) return window.__cocoonAgPsdPromise;
-    window.__cocoonAgPsdPromise = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/ag-psd/dist/bundle.js';
-      s.onload = () => (window.agPsd ? resolve(window.agPsd) : reject(new Error('ag-psd の読み込みエラー')));
-      s.onerror = () => { window.__cocoonAgPsdPromise = null; reject(new Error('PSDライブラリの読み込みに失敗しました')); };
-      document.head.appendChild(s);
-    });
-    return window.__cocoonAgPsdPromise;
-  }
   // area of a polygon clipped to the rectangle x0..x1 / y0..y1 (Sutherland-Hodgman)
   function clipArea(poly, x0, y0, x1, y1) {
     let pts = poly;
@@ -2240,6 +2227,108 @@
     return Math.abs(a) / 2;
   }
   const fmtArea = (mm2) => (mm2 / 1e6).toFixed(2);
+  // A layered RGB PSD (8 bit, RLE) made 256 rows at a time: each layer is a draw function, so no
+  // canvas as big as the picture is held (big canvases can come out empty when memory runs short).
+  // layers: [{ name, draw(ctx) }] bottom to top; ctx is already moved for the band. Returns Blob parts.
+  async function writeBandedPsd(w, h, layers, dpi, onProgress) {
+    const parts = [];
+    const be = (bytes, v) => { const u = new Uint8Array(bytes); for (let i = bytes - 1; i >= 0; i--) { u[i] = v % 256; v = Math.floor(v / 256); } return u; };
+    const i16 = (v) => be(2, v < 0 ? v + 65536 : v);
+    const i32 = (v) => be(4, v < 0 ? v + 4294967296 : v);
+    const ascii = (t) => Uint8Array.from(t.split('').map((c) => c.charCodeAt(0)));
+    const concat = (arr) => { const t = arr.reduce((a, b) => a + b.length, 0); const u = new Uint8Array(t); let o = 0; arr.forEach((b) => { u.set(b, o); o += b.length; }); return u; };
+    const rowBuf = new Uint8Array(w * 2 + 4);
+    const rleRow = (plane, base) => {
+      let i = 0, r = 0;
+      while (i < w) {
+        const v = plane[base + i];
+        let run = 1;
+        while (i + run < w && run < 128 && plane[base + i + run] === v) run++;
+        if (run >= 2) { rowBuf[r++] = 257 - run; rowBuf[r++] = v; i += run; continue; }
+        const start = i; i++;
+        while (i < w && i - start < 128 && !(i + 1 < w && plane[base + i] === plane[base + i + 1])) i++;
+        rowBuf[r++] = i - start - 1;
+        for (let q = start; q < i; q++) rowBuf[r++] = plane[base + q];
+      }
+      return rowBuf.slice(0, r);
+    };
+    const newChan = () => ({ counts: new Uint8Array(h * 2), chunks: [], size: 0 });
+    const addRow = (ch, y, row) => { ch.counts.set(be(2, row.length), y * 2); ch.chunks.push(row); ch.size += row.length; };
+    const chanLen = (c) => 2 + c.counts.length + c.size;
+    const TH = 256;
+    const band = document.createElement('canvas');
+    band.width = w;
+    band.height = TH;
+    const bx = band.getContext('2d', { willReadFrequently: true });
+    if (!bx) throw new Error('画像を用意できませんでした');
+    const n = w * TH;
+    const pl = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
+    // one band of one layer (or of the composite on white) -> rows of the channels
+    const take = (chans, y0, bh, alpha) => {
+      const d = bx.getImageData(0, 0, w, bh).data;
+      for (let i = 0, j = 0; i < w * bh; i++, j += 4) { pl[0][i] = d[j + 3]; pl[1][i] = d[j]; pl[2][i] = d[j + 1]; pl[3][i] = d[j + 2]; }
+      for (let yy = 0; yy < bh; yy++) chans.forEach((c, k) => addRow(c, y0 + yy, rleRow(pl[alpha ? k : k + 1], yy * w)));
+    };
+    const L = layers.map((l) => ({ name: l.name, chans: [newChan(), newChan(), newChan(), newChan()] }));
+    const comp = [newChan(), newChan(), newChan()];
+    const bands = Math.ceil(h / TH);
+    let seen = false;
+    for (let b = 0; b < bands; b++) {
+      const y0 = b * TH, bh = Math.min(TH, h - y0);
+      layers.forEach((l, k) => {
+        bx.setTransform(1, 0, 0, 1, 0, 0);
+        bx.clearRect(0, 0, w, TH);
+        bx.save(); bx.translate(0, -y0); l.draw(bx); bx.restore();
+        take(L[k].chans, y0, bh, true);
+      });
+      bx.setTransform(1, 0, 0, 1, 0, 0);
+      bx.fillStyle = '#ffffff';
+      bx.fillRect(0, 0, w, TH);
+      layers.forEach((l) => { bx.save(); bx.translate(0, -y0); l.draw(bx); bx.restore(); });
+      // a white band with something drawn on it reads back not all white (or the canvas was lost)
+      if (!seen) { const d = bx.getImageData(0, 0, w, bh).data; for (let i = 0; i < d.length; i += 4) { if (d[i] !== 255 || d[i + 1] !== 255 || d[i + 2] !== 255) { seen = true; break; } } }
+      take(comp, y0, bh, false);
+      if (onProgress) onProgress((b + 1) / bands);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    band.width = band.height = 1;
+    if (!seen) throw new Error('図を描けませんでした（ブラウザのメモリ不足の可能性があります）');
+    parts.push(ascii('8BPS'), i16(1), new Uint8Array(6), i16(3), i32(h), i32(w), i16(8), i16(3), i32(0));
+    const fx = Math.round(dpi * 65536);
+    const res = concat([ascii('8BIM'), i16(1005), i16(0), i32(16), i32(fx), i16(1), i16(1), i32(fx), i16(1), i16(1)]);
+    parts.push(i32(res.length), res);
+    const record = (l) => {
+      // the old style name is ASCII only (Japanese as "?"); the real name is in 'luni' (Unicode)
+      const name = l.name;
+      const nameBytes = Uint8Array.from(name.split('').map((c) => (c.charCodeAt(0) > 126 ? 63 : c.charCodeAt(0)))).subarray(0, 255);
+      const pad = (4 - ((1 + nameBytes.length) % 4)) % 4;
+      const pascal = concat([Uint8Array.of(nameBytes.length), nameBytes, new Uint8Array(pad)]);
+      const ub = new Uint8Array(name.length * 2);
+      for (let i = 0; i < name.length; i++) { const c = name.charCodeAt(i); ub[i * 2] = c >> 8; ub[i * 2 + 1] = c % 256; }
+      let luniData = concat([i32(name.length), ub]);
+      if (luniData.length % 4) luniData = concat([luniData, new Uint8Array(4 - (luniData.length % 4))]);
+      const luni = concat([ascii('8BIM'), ascii('luni'), i32(luniData.length), luniData]);
+      const extra = concat([i32(0), i32(0), pascal, luni]);
+      const head = [i32(0), i32(0), i32(h), i32(w), i16(4)];
+      [-1, 0, 1, 2].forEach((id, k) => { head.push(i16(id)); head.push(i32(chanLen(l.chans[k]))); });
+      head.push(ascii('8BIM'), ascii('norm'), Uint8Array.of(255, 0, 8, 0), i32(extra.length), extra);
+      return concat(head);
+    };
+    const recs = L.map(record);
+    const dataLen = L.reduce((t, l) => t + l.chans.reduce((u, c) => u + chanLen(c), 0), 0);
+    let infoLen = 2 + recs.reduce((t, r) => t + r.length, 0) + dataLen;
+    const odd = infoLen % 2;
+    infoLen += odd;
+    parts.push(i32(4 + infoLen + 4), i32(infoLen), i16(L.length));
+    recs.forEach((r) => parts.push(r));
+    L.forEach((l) => l.chans.forEach((c) => { parts.push(i16(1), c.counts); c.chunks.forEach((u) => parts.push(u)); }));
+    if (odd) parts.push(new Uint8Array(1));
+    parts.push(i32(0));
+    parts.push(i16(1));
+    comp.forEach((c) => parts.push(c.counts));
+    comp.forEach((c) => c.chunks.forEach((u) => parts.push(u)));
+    return parts;
+  }
   // true when something has been drawn on the canvas (checked on a 16x16 downscale)
   function canvasHasContent(c) {
     try {
@@ -4059,7 +4148,6 @@
       btn.disabled = true;
       this.status('割付のPSDを作成しています…', 'loading');
       try {
-        const agPsd = await loadAgPsd();
         const view = this._layoutView();
         const lay = this._tileLayout(room);
         const dsrc = document.getElementById('cc-reduced');
@@ -4074,118 +4162,92 @@
         const rw = Math.max(...pts.map((p) => p[0])) + pad - rx0, rh = Math.max(...pts.map((p) => p[1])) + pad - ry0;
         const k = Math.min(1, 8000 / Math.max(rw, rh)); // px per mm (1px = 1mm up to 8,000 px)
         const Wpx = Math.max(1, Math.round(rw * k)), Hpx = Math.max(1, Math.round(rh * k));
-        const layer = () => {
-          const c = document.createElement('canvas');
-          c.width = Wpx;
-          c.height = Hpx;
-          const x = c.getContext('2d');
-          x.setTransform(k, 0, 0, k, -rx0 * k, -ry0 * k); // draw in view mm
-          return { c, x };
-        };
+        // each layer is a draw function in view mm; the PSD is made 256 rows at a time (little memory)
+        const inMm = (x) => x.transform(k, 0, 0, k, -rx0 * k, -ry0 * k);
         const px = 1 / k; // one pixel in mm
         const path = (x, poly) => { x.beginPath(); poly.forEach((p, i) => (i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]))); x.closePath(); };
         // ① 元図面: the drawing picture, or the outlines of a DXF / JSON drawing
-        const L1 = layer();
-        if (view.img) {
-          const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = view.img; });
-          L1.x.drawImage(img, this.imgOffset.x, this.imgOffset.y, view.W, view.H);
-        } else {
-          L1.x.strokeStyle = '#3f3f46';
-          L1.x.lineWidth = 2 * px;
-          this.data.rooms.forEach((r) => { path(L1.x, r.vertices.map(view.toV)); L1.x.stroke(); });
-        }
+        const planImg = view.img ? await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = view.img; }) : null;
+        const io = this.imgOffset || { x: 0, y: 0 };
+        const draw1 = (x) => {
+          inMm(x);
+          if (planImg) { x.drawImage(planImg, io.x, io.y, view.W, view.H); return; }
+          x.strokeStyle = '#3f3f46';
+          x.lineWidth = 2 * px;
+          this.data.rooms.forEach((r) => { path(x, r.vertices.map(view.toV)); x.stroke(); });
+        };
         // ② 部屋: every room, the chosen one in blue, with its name
-        const L2 = layer();
-        this.data.rooms.forEach((r, i) => {
-          const sel = i === this.roomIndex;
-          path(L2.x, r.vertices.map(view.toV));
-          L2.x.fillStyle = sel ? 'rgba(37,99,235,0.22)' : 'rgba(161,161,170,0.18)';
-          L2.x.fill();
-          L2.x.strokeStyle = sel ? '#2563eb' : '#a1a1aa';
-          L2.x.lineWidth = (sel ? 4 : 2) * px;
-          L2.x.stroke();
-        });
         const rb = CADParser.bounds(room.vertices);
         const [lx, ly] = view.toV([(rb.minX + rb.maxX) / 2, (rb.minY + rb.maxY) / 2]);
-        L2.x.fillStyle = '#1e3a8a';
-        L2.x.font = 'bold ' + Math.max(120, Math.min(rb.maxX - rb.minX, rb.maxY - rb.minY) / 12) + 'px sans-serif';
-        L2.x.textAlign = 'center';
-        L2.x.textBaseline = 'middle';
-        L2.x.fillText(room.name || '部屋', lx, ly);
-        // ③ 画像: the converted carpet image where it was placed
-        const L3 = layer();
-        if (dr) {
+        const draw2 = (x) => {
+          inMm(x);
+          this.data.rooms.forEach((r, i) => {
+            const sel = i === this.roomIndex;
+            path(x, r.vertices.map(view.toV));
+            x.fillStyle = sel ? 'rgba(37,99,235,0.22)' : 'rgba(161,161,170,0.18)';
+            x.fill();
+            x.strokeStyle = sel ? '#2563eb' : '#a1a1aa';
+            x.lineWidth = (sel ? 4 : 2) * px;
+            x.stroke();
+          });
+          x.fillStyle = '#1e3a8a';
+          x.font = 'bold ' + Math.max(120, Math.min(rb.maxX - rb.minX, rb.maxY - rb.minY) / 12) + 'px sans-serif';
+          x.textAlign = 'center';
+          x.textBaseline = 'middle';
+          x.fillText(room.name || '部屋', lx, ly);
+        };
+        // ③ 画像: the converted carpet image where it was placed, only inside the tile layout (the carpet that is ordered)
+        const draw3 = (x) => {
+          if (!dr) return;
+          inMm(x);
           const [vx, vy] = view.toV([dr.x0, dr.y1]);
-          {
-            // always only inside the tile layout (the carpet that is ordered)
-            const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
-            L3.x.beginPath();
-            L3.x.rect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
-            L3.x.clip();
-          }
-          L3.x.imageSmoothingEnabled = false; // keep the reduced colours crisp
-          L3.x.drawImage(dsrc, vx, vy, dr.w, dr.h);
-        }
+          const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
+          x.beginPath();
+          x.rect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
+          x.clip();
+          x.imageSmoothingEnabled = false; // keep the reduced colours crisp
+          x.drawImage(dsrc, vx, vy, dr.w, dr.h);
+        };
         // ④ 割付: the 500 mm tiles in red (cut tiles light red), the outline
-        const L4 = layer();
-        if (lay.box) {
+        const draw4 = (x) => {
+          if (!lay.box) return;
+          inMm(x);
           lay.tiles.forEach((t) => {
             const [vx, vy] = view.toV([t.x, t.y + TILE]);
-            if (t.cut) { L4.x.fillStyle = 'rgba(239,68,68,0.14)'; L4.x.fillRect(vx, vy, TILE, TILE); }
-            L4.x.strokeStyle = '#ef4444';
-            L4.x.lineWidth = 2 * px;
-            L4.x.strokeRect(vx, vy, TILE, TILE);
+            if (t.cut) { x.fillStyle = 'rgba(239,68,68,0.14)'; x.fillRect(vx, vy, TILE, TILE); }
+            x.strokeStyle = '#ef4444';
+            x.lineWidth = 2 * px;
+            x.strokeRect(vx, vy, TILE, TILE);
           });
           const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
-          L4.x.strokeStyle = '#dc2626';
-          L4.x.lineWidth = 5 * px;
-          L4.x.strokeRect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
-        }
-        // ⑤ センター: the room's own centre, on its own layer (fixed, does not move with the layout)
-        const L5 = layer();
-        if (lay.box) {
-          const rcx = (rb.minX + rb.maxX) / 2, rcy = (rb.minY + rb.maxY) / 2;
-          const [cx, cy] = view.toV([rcx, rcy]);
-          const arm = Math.max(300, Math.min(lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0) * 0.12), rr = arm * 0.45;
-          const cross = () => { L5.x.beginPath(); L5.x.moveTo(cx - arm, cy); L5.x.lineTo(cx + arm, cy); L5.x.moveTo(cx, cy - arm); L5.x.lineTo(cx, cy + arm); L5.x.stroke(); };
-          L5.x.strokeStyle = '#ffffff'; L5.x.lineWidth = 9 * px; cross();
-          L5.x.strokeStyle = '#dc2626'; L5.x.lineWidth = 5 * px; cross();
-          L5.x.beginPath(); L5.x.arc(cx, cy, rr, 0, Math.PI * 2); L5.x.stroke();
-          L5.x.fillStyle = '#dc2626'; L5.x.beginPath(); L5.x.arc(cx, cy, rr * 0.3, 0, Math.PI * 2); L5.x.fill();
-          L5.x.font = 'bold ' + Math.max(160, arm * 0.7) + 'px sans-serif'; L5.x.textAlign = 'left'; L5.x.textBaseline = 'alphabetic';
-          L5.x.lineWidth = 6 * px; L5.x.strokeStyle = '#ffffff'; L5.x.strokeText('センター', cx + rr * 1.2, cy - rr * 1.2);
-          L5.x.fillText('センター', cx + rr * 1.2, cy - rr * 1.2);
-        }
-        // the image is saved fully opaque (the 濃さ slider is only for looking at the drawing underneath)
-        const opacity = 1;
-        const comp = document.createElement('canvas');
-        comp.width = Wpx;
-        comp.height = Hpx;
-        const cx2 = comp.getContext('2d');
-        cx2.fillStyle = '#ffffff';
-        cx2.fillRect(0, 0, Wpx, Hpx);
-        cx2.drawImage(L1.c, 0, 0);
-        cx2.drawImage(L2.c, 0, 0);
-        cx2.globalAlpha = opacity;
-        cx2.drawImage(L3.c, 0, 0);
-        cx2.globalAlpha = 1;
-        cx2.drawImage(L4.c, 0, 0);
-        cx2.drawImage(L5.c, 0, 0);
-        const name = (room.name || '部屋');
-        const dpi = 25.4 * k;
-        const psd = {
-          width: Wpx, height: Hpx, canvas: comp,
-          imageResources: { resolutionInfo: { horizontalResolution: dpi, horizontalResolutionUnit: 'PPI', widthUnit: 'Centimeters', verticalResolution: dpi, verticalResolutionUnit: 'PPI', heightUnit: 'Centimeters' } },
-          children: [
-            { name: '①元図面', canvas: L1.c },
-            { name: '②部屋（' + name + '）', canvas: L2.c },
-            { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%・割付の範囲）', canvas: L3.c, hidden: !dr },
-            { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', canvas: L4.c },
-            { name: '⑤センター（部屋の中心・固定）', canvas: L5.c },
-          ],
+          x.strokeStyle = '#dc2626';
+          x.lineWidth = 5 * px;
+          x.strokeRect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
         };
-        const buf = agPsd.writePsd(psd, { generateThumbnail: true });
-        const blob = new Blob([buf], { type: 'image/vnd.adobe.photoshop' });
+        // ⑤ センター: the room's own centre, on its own layer (fixed, does not move with the layout)
+        const draw5 = (x) => {
+          if (!lay.box) return;
+          inMm(x);
+          const [cx, cy] = view.toV([(rb.minX + rb.maxX) / 2, (rb.minY + rb.maxY) / 2]);
+          const arm = Math.max(300, Math.min(lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0) * 0.12), rr = arm * 0.45;
+          const cross = () => { x.beginPath(); x.moveTo(cx - arm, cy); x.lineTo(cx + arm, cy); x.moveTo(cx, cy - arm); x.lineTo(cx, cy + arm); x.stroke(); };
+          x.strokeStyle = '#ffffff'; x.lineWidth = 9 * px; cross();
+          x.strokeStyle = '#dc2626'; x.lineWidth = 5 * px; cross();
+          x.beginPath(); x.arc(cx, cy, rr, 0, Math.PI * 2); x.stroke();
+          x.fillStyle = '#dc2626'; x.beginPath(); x.arc(cx, cy, rr * 0.3, 0, Math.PI * 2); x.fill();
+          x.font = 'bold ' + Math.max(160, arm * 0.7) + 'px sans-serif'; x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+          x.lineWidth = 6 * px; x.strokeStyle = '#ffffff'; x.strokeText('センター', cx + rr * 1.2, cy - rr * 1.2);
+          x.fillText('センター', cx + rr * 1.2, cy - rr * 1.2);
+        };
+        const name = (room.name || '部屋');
+        const parts = await writeBandedPsd(Wpx, Hpx, [
+          { name: '①元図面', draw: draw1 },
+          { name: '②部屋（' + name + '）', draw: draw2 },
+          { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%・割付の範囲）', draw: draw3 },
+          { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', draw: draw4 },
+          { name: '⑤センター（部屋の中心・固定）', draw: draw5 },
+        ], 25.4 * k, (v) => this.status('割付のPSDを作成しています… ' + Math.round(v * 100) + '%', 'loading'));
+        const blob = new Blob(parts, { type: 'image/vnd.adobe.photoshop' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         // ASCII file name (some browsers drop a Japanese one); the room name is in the layer names
