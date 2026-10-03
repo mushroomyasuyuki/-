@@ -950,7 +950,13 @@
     _wpCurView() {
       const g = this._wpGeom();
       if (!g) return null;
-      return this._wpView || { x: 0, y: 0, w: g.FW, h: g.H };
+      return this._wpView || this._wpBase(g);
+    }
+
+    // the whole picture with a margin around it, so the outermost frame lines are fully visible
+    _wpBase(g) {
+      const pad = Math.max(g.FW, g.H) * 0.04;
+      return { x: -pad, y: -pad, w: g.FW + pad * 2, h: g.H + pad * 2 };
     }
 
     _wpApplyView() {
@@ -965,13 +971,13 @@
       if (!g || !v) return;
       const svg = this.$('wp-svg');
       const r = svg.getBoundingClientRect();
-      const base = Math.max(g.FW / r.width, g.H / r.height);
-      const nw = Math.min(g.FW * 1.2, Math.max(150, v.w * f));
+      const base = this._wpBase(g);
+      const nw = Math.min(base.w * 1.2, Math.max(60, v.w * f));
       const nh = nw * v.h / v.w;
       // the point under the pointer stays put
       const px = e ? (e.clientX - r.left) / r.width : 0.5, py = e ? (e.clientY - r.top) / r.height : 0.5;
       const ax = v.x + v.w * px, ay = v.y + v.h * py;
-      this._wpView = nw >= g.FW * 1.19 ? null : { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
+      this._wpView = nw >= base.w * 1.19 ? null : { x: ax - nw * px, y: ay - nh * py, w: nw, h: nh };
       this._wpApplyView();
     }
 
