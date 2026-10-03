@@ -1317,10 +1317,17 @@
         const [bx, by] = view.toV([lay.box.x0, lay.box.y1]);
         add('rect', { x: bx, y: by, width: lay.box.x1 - lay.box.x0, height: lay.box.y1 - lay.box.y0, fill: 'none',
           stroke: '#dc2626', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' });
-        // the centre of the layout
+        // the centre of the layout: a bold cross, a ring, a dot and a label (drawn in mm, sized to the layout)
         const [ccx, ccy] = view.toV([lay.cx, lay.cy]);
-        add('path', { d: 'M' + (ccx - 250) + ' ' + ccy + 'H' + (ccx + 250) + 'M' + ccx + ' ' + (ccy - 250) + 'V' + (ccy + 250),
-          stroke: '#dc2626', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke', fill: 'none' });
+        const arm = Math.max(300, Math.min(lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0) * 0.12), rr = arm * 0.45;
+        const red = { stroke: '#dc2626', 'vector-effect': 'non-scaling-stroke', fill: 'none' };
+        add('path', Object.assign({ d: 'M' + (ccx - arm) + ' ' + ccy + 'H' + (ccx + arm) + 'M' + ccx + ' ' + (ccy - arm) + 'V' + (ccy + arm), 'stroke-width': 4, stroke: '#ffffff' }, { 'vector-effect': 'non-scaling-stroke', fill: 'none' }));
+        add('path', Object.assign({ d: 'M' + (ccx - arm) + ' ' + ccy + 'H' + (ccx + arm) + 'M' + ccx + ' ' + (ccy - arm) + 'V' + (ccy + arm), 'stroke-width': 2.5 }, red));
+        add('circle', Object.assign({ cx: ccx, cy: ccy, r: rr, 'stroke-width': 2.5 }, red));
+        add('circle', { cx: ccx, cy: ccy, r: rr * 0.3, fill: '#dc2626' });
+        const lab = add('text', { x: ccx + rr * 1.2, y: ccy - rr * 1.2, fill: '#dc2626', stroke: '#ffffff', 'stroke-width': 3, 'paint-order': 'stroke',
+          'font-size': Math.max(160, arm * 0.7), 'font-weight': 'bold', 'font-family': 'sans-serif' });
+        lab.textContent = 'センター';
       }
       // while dragging, keep the text as it is (a longer text would push the view down under the pointer)
       if (previewOffset) return;
@@ -1433,8 +1440,15 @@
           L4.x.lineWidth = 5 * px;
           L4.x.strokeRect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
           const [cx, cy] = view.toV([lay.cx, lay.cy]);
-          L4.x.lineWidth = 3 * px;
-          L4.x.beginPath(); L4.x.moveTo(cx - 250, cy); L4.x.lineTo(cx + 250, cy); L4.x.moveTo(cx, cy - 250); L4.x.lineTo(cx, cy + 250); L4.x.stroke();
+          const arm = Math.max(300, Math.min(lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0) * 0.12), rr = arm * 0.45;
+          const cross = () => { L4.x.beginPath(); L4.x.moveTo(cx - arm, cy); L4.x.lineTo(cx + arm, cy); L4.x.moveTo(cx, cy - arm); L4.x.lineTo(cx, cy + arm); L4.x.stroke(); };
+          L4.x.strokeStyle = '#ffffff'; L4.x.lineWidth = 9 * px; cross();
+          L4.x.strokeStyle = '#dc2626'; L4.x.lineWidth = 5 * px; cross();
+          L4.x.beginPath(); L4.x.arc(cx, cy, rr, 0, Math.PI * 2); L4.x.stroke();
+          L4.x.fillStyle = '#dc2626'; L4.x.beginPath(); L4.x.arc(cx, cy, rr * 0.3, 0, Math.PI * 2); L4.x.fill();
+          L4.x.font = 'bold ' + Math.max(160, arm * 0.7) + 'px sans-serif'; L4.x.textAlign = 'left'; L4.x.textBaseline = 'alphabetic';
+          L4.x.lineWidth = 6 * px; L4.x.strokeStyle = '#ffffff'; L4.x.strokeText('センター', cx + rr * 1.2, cy - rr * 1.2);
+          L4.x.fillText('センター', cx + rr * 1.2, cy - rr * 1.2);
         }
         // the image is saved fully opaque (the 濃さ slider is only for looking at the drawing underneath)
         const opacity = 1;
