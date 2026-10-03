@@ -1606,7 +1606,8 @@
     const original = $('cc-original');
     if (!original || !original.width || !$('cc-var-std')) return;
     try {
-      const key = original.width + 'x' + original.height + ':' + (state.loadedImg ? state.loadedImg.src : '');
+      // 画像そのものが変わったときだけ選び直す（CADの縮尺・サイズ変更で表示サイズが変わっても、選んだ変換は保つ）
+      const key = state.loadedImg ? state.loadedImg.src : '';
       if (state.variantKey !== key) {
         state.variantKey = key;
         state.variantSets = computeVariantSets(original);
