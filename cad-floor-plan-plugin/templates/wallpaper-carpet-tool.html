@@ -2000,7 +2000,20 @@
   };
   // 巾の枠の線：各巾の枠（赤・オレンジ交互）、壁の範囲（紫の実線）、合わせ代の半分の位置のカット線（紫、壁の範囲の上下の線とつなぐ）
   // right: true = 右の端から巾を並べる（右寄せスタート）、false = 左の端から（左寄せスタート）
-  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right) {
+  // 多角形（変形した壁）と縦線 x の交わり：線が壁の中にある区間 [[y0, y1], ...]
+  WALL_PRINT.cutSegments = function (poly, x) {
+    const ys = [];
+    for (let i = 0; i !== poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      if ((a[0] <= x) !== (b[0] <= x)) ys.push(a[1] + (x - a[0]) * (b[1] - a[1]) / (b[0] - a[0]));
+    }
+    ys.sort((m, n) => m - n);
+    const out = [];
+    for (let i = 0; i + 1 < ys.length; i += 2) out.push([ys[i], ys[i + 1]]);
+    return out;
+  };
+  // poly: 変形した壁の形（絵の座標、mm）。無ければ四角
+  WALL_PRINT.drawFrames = function (fx, W, WH, N, FW, H, right, poly) {
     const P = WALL_PRINT;
     const ox = right ? FW - P.OVERLAP - W : P.OVERLAP;
     for (let i = 0; i !== N; i++) {
@@ -2011,17 +2024,24 @@
     }
     fx.strokeStyle = '#d000d0';
     fx.lineWidth = 2;
-    fx.strokeRect(ox, P.TRIM_TOP, W, WH);
+    if (poly) {
+      fx.beginPath();
+      poly.forEach((q, i) => { if (i === 0) fx.moveTo(q[0], q[1]); else fx.lineTo(q[0], q[1]); });
+      fx.closePath();
+      fx.stroke();
+    } else fx.strokeRect(ox, P.TRIM_TOP, W, WH);
     // カット線：隣り合う巾の重なりの真ん中
     for (let i = 1; i !== N; i++) {
       const cx = right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE; // 巾が重なる部分（赤の枠の端とオレンジの枠の端）の真ん中
-      fx.beginPath();
-      fx.moveTo(cx, P.TRIM_TOP);
-      fx.lineTo(cx, P.TRIM_TOP + WH);
-      fx.stroke();
+      (poly ? P.cutSegments(poly, cx) : [[P.TRIM_TOP, P.TRIM_TOP + WH]]).forEach((sg) => {
+        fx.beginPath();
+        fx.moveTo(cx, sg[0]);
+        fx.lineTo(cx, sg[1]);
+        fx.stroke();
+      });
     }
   };
-  WALL_PRINT.buildWhole = function (cad, W, WH, right) {
+  WALL_PRINT.buildWhole = function (cad, W, WH, right, poly) {
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
     const N = Math.max(1, Math.ceil((W + P.OVERLAP - 5) / P.STEP));
@@ -2033,7 +2053,7 @@
     const design = mk();
     P.renderDesign(design, ox, P.TRIM_TOP, W, WH);
     const frame = mk();
-    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right);
+    P.drawFrames(frame.getContext('2d'), W, WH, N, FW, H, right, poly);
     const comp = mk();
     const cx = comp.getContext('2d');
     cx.fillStyle = '#ffffff';
