@@ -11,7 +11,7 @@
 
 .cocoon-carpet-tool input[type=file]{display:block!important;width:100%!important;padding:12px!important;background:#18181b!important;color:#fff!important;border:2px dashed #f39c12!important;border-radius:8px!important;cursor:pointer!important;font-size:14px!important;margin:10px 0!important;box-sizing:border-box!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}
 
-.file-note{font-size:12px;margin-top:8px;color:#fbbf24}.slider-row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px}.slider-row span{font-size:11px;color:#a1a1aa}.dither-box input[type=range]{width:100%}.palette-select-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.palette-select-chip{width:36px;height:36px;border-radius:6px;border:2px solid #3f3f46;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 0 2px #000}.palette-select-chip.active{border-color:#f39c12;box-shadow:0 0 8px rgba(243,156,18,.6);transform:scale(1.05)}.palette-select-chip.active::after{content:'✓';position:absolute;top:-4px;right:-4px;background:#f39c12;color:#000;font-size:9px;width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center}.palette-select-chip.op-chip{border-color:#3b82f6}.palette-select-chip.op-chip.active::after{background:#3b82f6;color:#fff}.palette-controls{display:flex;gap:10px;margin-bottom:10px}.btn-chip-action{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:4px 10px;font-size:12px;border-radius:4px;cursor:pointer}.btn-chip-action:hover{background:#3f3f46}.status-box{padding:12px 15px;border-radius:6px;margin:0 0 20px;font-weight:700;display:none}.status-box.ok{background:#064e3b;color:#34d399;border:1px solid #059669;display:block}.status-box.err{background:#450a0a;color:#f87171;border:1px solid #dc2626;display:block}.preview-grid{display:flex;gap:15px;margin-bottom:20px}.preview-card{flex:1;border:1px solid #27272a;border-radius:6px;padding:10px;text-align:center;background:#18181b;min-width:0}.preview-card h3{font-size:14px!important;color:#fff!important;margin:0 0 10px!important}
+.file-note{font-size:12px;margin-top:8px;color:#fbbf24}.slider-row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px}.slider-row span{font-size:11px;color:#a1a1aa}.dither-box input[type=range]{width:100%}.palette-select-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.palette-select-chip{width:36px;height:36px;border-radius:6px;border:2px solid #3f3f46;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 0 2px #000}.palette-select-chip.active{border-color:#f39c12;box-shadow:0 0 8px rgba(243,156,18,.6);transform:scale(1.05)}.palette-select-chip.active::after{content:'✓';position:absolute;top:-4px;right:-4px;background:#f39c12;color:#000;font-size:9px;width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center}.palette-select-chip.op-chip{border-color:#3b82f6}.palette-select-chip.op-chip.active::after{background:#3b82f6;color:#fff}.palette-controls{display:flex;gap:10px;margin-bottom:10px}.btn-chip-action{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:4px 10px;font-size:12px;border-radius:4px;cursor:pointer}.btn-chip-action:hover{background:#3f3f46}.btn-chip-action:disabled{opacity:.5;cursor:not-allowed}.status-box{padding:12px 15px;border-radius:6px;margin:0 0 20px;font-weight:700;display:none}.status-box.ok{background:#064e3b;color:#34d399;border:1px solid #059669;display:block}.status-box.err{background:#450a0a;color:#f87171;border:1px solid #dc2626;display:block}.preview-grid{display:flex;gap:15px;margin-bottom:20px}.preview-card{flex:1;border:1px solid #27272a;border-radius:6px;padding:10px;text-align:center;background:#18181b;min-width:0}.preview-card h3{font-size:14px!important;color:#fff!important;margin:0 0 10px!important}
 .preview-card canvas{display:block!important;width:100%!important;margin:10px auto!important;border:2px solid #3f3f46;background:#18181b;image-rendering:pixelated;image-rendering:crisp-edges}
 #cc-original{height:auto!important;min-height:200px}
 #cc-reduced{height:auto!important;max-width:100%}
@@ -277,7 +277,8 @@
       <div class="file-note">※上の枠内をクリックして画像ファイルを選択してください。お見積り・PSD保存・ご注文はこちらのデザインが対象になります。<br>※元データの解像度が粗い（画素が少ない）場合、文字やラインが潰れてしまう場合がございます。<br>※目安として、10cm角のサイズで画数の多い漢字が表現できる程度の解像度をご用意いただくと安心です。</div>
     </div>
 
-    <div class="dither-box">
+    <!-- 階調表現の値の入れ物（画面には出さない。3つの変換の上のスライダー cc-dither2 で操作する） -->
+    <div class="dither-box" hidden style="display:none;">
       <div class="slider-row"><label for="cc-dither">ドットによる階調表現（誤差拡散）量：<span id="cc-dither-val">0</span>%</label><span>0% = メリハリ表現 / 100% = 滑らか表現</span></div>
       <input type="range" id="cc-dither" min="0" max="100" value="0">
     </div>
@@ -304,7 +305,7 @@
 
   <div id="cc-status" class="status-box"></div>
   <div class="dither-box cc-var-dither">
-    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>下の3つの変換すべてに反映（上の同じスライダーと連動）。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
+    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>下の3つの変換すべてと、お見積もり・PSDの画像に反映。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
     <input type="range" id="cc-dither2" min="0" max="100" value="0">
   </div>
   <div class="preview-grid cc-variants">
@@ -422,6 +423,8 @@
     <div class="file-note" id="persp-status" style="text-align:center;">①・②でデザイン画像を処理すると、ここに自動反映されます。</div>
 
     <div class="palette-controls" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
+      <!-- カーペットのPSD（簡易パースの畳んだ中に入れる） -->
+      <button type="button" id="cc-download-psd" class="btn-chip-action" style="padding:10px 18px;font-size:13px;" disabled="">🟩 カーペットのPSDを保存（CAD画像・部屋・変換画像・割付の4レイヤー / RGB / 25.4 DPI / 実寸）</button>
       <button type="button" id="btn-save-floor-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟧 床デザイン画像を保存（PNG）</button>
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
       <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（元データ・全体・910mm幅の連続データ・ZIP）</button>
@@ -432,8 +435,6 @@
     </details>
   </section>
 
-  <!-- 保存ボタン群（通常PSD保存 ＆ 5mmストレッチ保存） -->
-  <button type="button" id="cc-download-psd" class="btn-submit btn-psd" disabled="">PSDファイルを保存（CAD画像・部屋・変換画像・割付の4レイヤー / RGB / 25.4 DPI / 実寸）</button>
 
   <div class="estimate-summary">
     <div class="summary-title">お見積もり明細（概算）</div>
