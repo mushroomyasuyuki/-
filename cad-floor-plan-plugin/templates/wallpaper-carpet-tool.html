@@ -2361,11 +2361,15 @@
     let offset = 0;
     const u16 = (v) => Uint8Array.of(v % 256, Math.floor(v / 256) % 256);
     const u32 = (v) => Uint8Array.of(v % 256, Math.floor(v / 256) % 256, Math.floor(v / 65536) % 256, Math.floor(v / 16777216) % 256);
+    // 保存した日時（パソコンの時刻）をファイルの更新日時に入れる（0 のままだと解凍後 1980年1月1日 になる）
+    const now = new Date();
+    const dosTime = now.getHours() * 2048 + now.getMinutes() * 32 + Math.floor(now.getSeconds() / 2);
+    const dosDate = (Math.max(1980, now.getFullYear()) - 1980) * 512 + (now.getMonth() + 1) * 32 + now.getDate();
     for (const f of files) {
       const data = new Uint8Array(await f.blob.arrayBuffer());
       const name = enc.encode(f.name);
       const crc = crc32(data);
-      const head = [u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)];
+      const head = [u16(20), u16(0x0800), u16(0), u16(dosTime), u16(dosDate), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)];
       const local = [Uint8Array.of(0x50, 0x4b, 0x03, 0x04)].concat(head, [name]);
       local.forEach((p) => parts.push(p));
       parts.push(data);
