@@ -1261,6 +1261,9 @@
         tiles: lay.tiles.map((t) => { const p = toA([t.x, t.y + TILE]); return { x: p[0], y: p[1], w: TILE * kx, h: TILE * ky, cut: !!t.cut }; }),
         cad: null, name: room.name || '部屋',
       };
+      // the room's own centre (the same centre mark as the layout view; it does not move with the layout)
+      const rb = CADParser.bounds(room.vertices);
+      info.center = toA([(rb.minX + rb.maxX) / 2, (rb.minY + rb.maxY) / 2]);
       const bd = this.backdrop;
       if (bd && bd.dataUrl && bd.mmPerPx) {
         try {

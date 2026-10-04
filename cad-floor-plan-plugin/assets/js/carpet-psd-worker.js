@@ -109,6 +109,18 @@
         ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 8;
         ctx.strokeRect(2, 2, w - 4, h - 4);
+        // センター: the room's centre (no drawing: the carpet's centre), white under red so it shows on any colour
+        const c = info ? info.center : null;
+        const cx = c ? c[0] : w / 2, cy = c ? c[1] : h / 2;
+        const m = Math.min(w, h), arm = Math.min(Math.max(300, m * 0.12), m * 0.15), rr = arm * 0.45;
+        const cross = () => { ctx.beginPath(); ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy); ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm); ctx.stroke(); };
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 14; cross();
+        ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 7; cross();
+        ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#dc2626'; ctx.beginPath(); ctx.arc(cx, cy, rr * 0.3, 0, Math.PI * 2); ctx.fill();
+        ctx.font = 'bold ' + Math.round(arm * 0.45) + 'px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+        ctx.lineWidth = 10; ctx.strokeStyle = '#ffffff'; ctx.strokeText('センター', cx + rr * 1.2, cy - rr * 1.2);
+        ctx.fillText('センター', cx + rr * 1.2, cy - rr * 1.2);
       },
     };
   }
@@ -276,7 +288,7 @@
   // On the page (when a worker cannot be started): the same work, a little at a time
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
-      ver: 4,
+      ver: 5,
       run: async (m, progress) => {
         const it = job(m);
         let r = it.next();
@@ -287,8 +299,8 @@
     return;
   }
 
-  // ver: 4 = 4レイヤー（CAD画像・部屋・変換画像・割付）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
-  self.postMessage({ type: 'ready', ver: 4, offscreen: typeof OffscreenCanvas !== 'undefined' });
+  // ver: 5 = 4レイヤー（CAD画像・部屋・変換画像・割付＋センター）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
+  self.postMessage({ type: 'ready', ver: 5, offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
       const it = job(ev.data);

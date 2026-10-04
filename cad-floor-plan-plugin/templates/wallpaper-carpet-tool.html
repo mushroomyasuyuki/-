@@ -1985,7 +1985,7 @@
   // Worker が使えないときは、同じ処理をこの画面で少しずつ行う（どちらも少ないメモリで、仕上がりは同じ）。
   // ?ver= を付けて、ブラウザ・サーバーのキャッシュに残った古い部品（1レイヤーのPSDを作る）を読まないようにする
   const CARPET_PSD_JS = '{{CFP_ASSET_URL}}js/carpet-psd-worker.js?ver={{CFP_VERSION}}';
-  const CARPET_PSD_VER = 4;
+  const CARPET_PSD_VER = 5;
   // 起動して「準備できた」と返ってきた Worker（データを渡す前に確かめる。だめなら null）
   function startCarpetWorker(url) {
     return new Promise((resolve) => {
@@ -2071,7 +2071,7 @@
       let info = null;
       try { info = cadEl ? (cadEl.cfpWidget ? await cadEl.cfpWidget.carpetPsdInfo(imageW, imageH) : null) : null; } catch (e) { info = null; }
       const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
-        info: info, names: { cad: '①CAD画像（図面）', room: '②部屋' + (info ? '（' + info.name + '）' : ''), img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm）', grid: '④割付（50cm角・端で切るタイルは薄い赤）' } },
+        info: info, names: { cad: '①CAD画像（図面）', room: '②部屋' + (info ? '（' + info.name + '）' : ''), img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm）', grid: '④割付（50cm角・端で切るタイルは薄い赤・センター印）' } },
         (v) => { button.textContent = 'PSDを作成中… ' + Math.round(v * 100) + '%'; });
       const used = res.used.map((i) => activeEntries[i]);
       state.lastUsedColorEntries = used;
