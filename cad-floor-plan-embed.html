@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.71.2 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.72.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -3471,6 +3471,50 @@
         + ' つなげた壁の幅の合計 ' + f(g.W) + ' mm ／ 部屋の周長 ' + f(per) + ' mm → 差 ' + (diff > 0 ? '+' : '') + f(diff) + ' mm（' + (Math.round(diff / per * 1000) / 10) + '%）。'
         + countText + pairText + ' ' + sideText + (bad ? ' 壁の選び方・順番や、展開図・平面図の縮尺を確かめてください。' : '');
     }
+    // the corners between joined walls (x in the picture, mm) and whether each is an inside corner (入隅) or an
+    // outside corner (出隅): from the room chosen on the floor plan when its sides line up with the walls
+    _wpCorners(g, shapes) {
+      if (!g.multi) return [];
+      const out = shapes.slice(1).map((sh, i) => ({ x: sh.x0, a: shapes[i].no, b: sh.no, type: '' }));
+      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      const v = room ? room.vertices : null;
+      if (!v || v.length !== g.walls.length) return out;
+      const n = v.length;
+      const sides = v.map((p, i) => { const q = v[(i + 1) % n]; return Math.hypot(q[0] - p[0], q[1] - p[1]); });
+      let area = 0;
+      v.forEach((p, i) => { const q = v[(i + 1) % n]; area += p[0] * q[1] - q[0] * p[1]; });
+      // convex seen from inside the room = 入隅, the other way = 出隅
+      const convex = (j) => {
+        const a = v[(j + n - 1) % n], b = v[j], c = v[(j + 1) % n];
+        const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        return cr * area > 0;
+      };
+      const ws = g.walls.map((x) => x.W);
+      let best = null;
+      [false, true].forEach((rev) => {
+        for (let k = 0; k < n; k++) {
+          const side = (i) => (rev ? sides[(n - 1 - ((i + k) % n) + n) % n] : sides[(i + k) % n]);
+          const err = ws.reduce((t, wv, i) => t + Math.abs(wv - side(i)), 0);
+          if (!best || err < best.err) best = { err, rev, k };
+        }
+      });
+      out.forEach((c, i) => {
+        // the vertex between wall i and wall i+1 (side m then side m+1 in the walking direction)
+        const m = (i + best.k) % n;
+        const vert = best.rev ? (n - 1 - m + n) % n : (m + 1) % n;
+        c.type = convex(vert) ? '入隅' : '出隅';
+      });
+      return out;
+    }
+    // a wallpaper joint (cut line) less than 100 mm from a corner line: shown on the frame and as a warning
+    _wpCornerCheck(g, shapes, cuts) {
+      const MIN = 100;
+      return this._wpCorners(g, shapes).map((c) => {
+        let d = Infinity, at = null;
+        cuts.forEach((x) => { const e = Math.abs(x - c.x); if (e < d) { d = e; at = x; } });
+        return Object.assign(c, { d, at, bad: d < MIN });
+      });
+    }
     // the wall numbers typed for joining (1-based, in order, no duplicates, only walls that exist)
     _wpJoinNums() {
       const all = this._elevAll(), seen = new Set();
@@ -3549,10 +3593,13 @@
       };
       const right = this.$('wp-right').checked;
       const ox = right ? FW - wp.OVERLAP - W : wp.OVERLAP; // the wall's left edge in the picture
+      const cuts = [];
+      for (let i = 1; i < N; i++) cuts.push((right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x);
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
       const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
       const bd = this.elev.backdrop;
       const shapes = this._wpShapes(g, ox);
+      const corners = this._wpCornerCheck(g, shapes, cuts);
       if (showCad && bd) {
         // one blob URL for the elevation picture (a long data URL set on every element again is slow)
         if (this._wpCadSrc !== bd.dataUrl) {
@@ -3617,6 +3664,16 @@
           const cx = (right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x; // the middle of the overlap of two strips
           shapes.forEach((sh) => wp.cutSegments(sh.pts, cx).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple), gFrame)));
         }
+        // the corners (入隅・出隅) between the joined walls: blue, red when a joint is less than 100 mm away
+        corners.forEach((c) => {
+          const y0 = wp.TRIM_TOP, y1 = wp.TRIM_TOP + WH;
+          const col = c.bad ? '#ef4444' : '#2563eb';
+          add('line', { x1: c.x, y1: y0, x2: c.x, y2: y1, stroke: col, 'stroke-width': c.bad ? 4 : 2, 'stroke-dasharray': '10 6', 'vector-effect': 'non-scaling-stroke' }, gFrame);
+          if (c.bad) add('rect', { x: Math.min(c.x, c.at) - 2, y: y0, width: Math.abs(c.at - c.x) + 4, height: WH, fill: 'rgba(239,68,68,0.25)' }, gFrame);
+          const fs = Math.min(160, WH * 0.06);
+          const t = add('text', { x: c.x + 20, y: y1 - fs * 0.6, fill: col, 'font-size': fs, 'font-weight': 'bold' }, gFrame);
+          t.textContent = (c.bad ? '⚠ ' : '') + (c.type || '角') + (c.bad ? ' 継ぎ目まで ' + Math.round(c.d) + 'mm' : '');
+        });
       }
       const fmt = (v) => String(Math.round(v * 10) / 10);
       this.$('wp-note').textContent = (g.multi
@@ -3629,7 +3686,23 @@
         + (g.walls.some((x) => x.W < 300) ? ' ⚠️ 幅が300mmより小さい壁があります。展開図の縮尺が合っていない（1:1 など）可能性があります。展開図だけを表示して「PDFの縮尺」に展開図の縮尺（例: 30、50）を入れると、指定した範囲の大きさも計算し直します。' : '')
         + (src ? '' : '「② 壁紙用デザイン」で画像を選ぶと、壁紙の画像も表示します。');
       this._wpCheckRoom(g);
+      this._wpJointWarn(corners);
       if (!this._wpDragging) this._wp3D(g);
+    }
+    // the warning for joints near a corner (入隅・出隅): less than 100 mm away
+    _wpJointWarn(corners) {
+      const el = this.$('wp-joint-warn');
+      if (!el) return;
+      if (!corners.length) { el.hidden = true; return; }
+      const bad = corners.filter((c) => c.bad);
+      el.hidden = false;
+      el.classList.toggle('is-bad', !!bad.length);
+      const name = (c) => '壁' + c.a + '→' + c.b + (c.type ? 'の' + c.type : 'の角');
+      el.textContent = bad.length
+        ? '⚠️ 壁紙の継ぎ目（カット線）が出隅・入隅に近すぎます（100mm以上離してください）：'
+          + bad.map((c) => name(c) + ' から ' + Math.round(c.d) + 'mm').join('、')
+          + '。「枠を移動」で枠を左右に動かすか、右寄せ／左寄せ・巾・合わせ代を変えてください。'
+        : '✅ 出隅・入隅（' + corners.length + 'か所）から壁紙の継ぎ目まで、すべて100mm以上離れています（いちばん近いところ ' + Math.round(Math.min(...corners.map((c) => c.d))) + 'mm）。';
     }
     async _wpSave() {
       const g = this._wpGeom();
