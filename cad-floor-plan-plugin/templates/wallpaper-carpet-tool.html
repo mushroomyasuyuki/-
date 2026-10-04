@@ -229,12 +229,18 @@
     </div>
     <div class="cfp-resume-note">※この端末のブラウザにも、作業内容を自動で保存しています（同じ端末・同じブラウザなら、次に開いたとき続きから再開できます。<span class="cfp-resume-days">30</span>日で削除）。</div>
   </div>
+  <!-- 仕様・サイズ・お届け先地域（畳んでおく。パイル形状はお見積もり明細でも選べ、地域はご住所から自動で選ぶ） -->
+  <section class="spec-detail-section cc-spec-section">
+    <details class="cfp-fold" id="cc-spec-fold">
+      <summary class="cfp-fold-summary"><h2 class="section-title-dark">仕様・サイズ・お届け先地域 <span id="cc-spec-sum" style="font-size:12px;font-weight:400;color:#a1a1aa;"></span></h2></summary>
   <div class="form-section">
     <div class="form-group"><label for="cc-material">仕様・パイル形状の選択 (サイズ規格: 500mm×500mm)</label><select id="cc-material"><option value="cut">カットパイル（発色・質感重視）※面積に応じて単価変動</option><option value="loop">ループパイル（標準・高耐久・重歩行向け）※面積に応じて単価変動</option></select><small>※1枚あたり500mm×500mmのタイルカーペットです。<br>※ループパイル・カットパイルともに、ご注文面積（ロット）に応じて㎡単価が自動でディスカウントされます。</small></div>
     <div class="grid-2"><div class="form-group"><label for="cc-width">横幅 (W) [mm]</label><input type="number" id="cc-width" value="1000" min="500" step="500"></div><div class="form-group"><label for="cc-height">縦幅 (H) [mm]</label><input type="number" id="cc-height" value="1000" min="500" step="500"></div></div>
     <div class="file-note" id="cc-tile-count" style="text-align:center;margin:-8px 0 18px;">合計カーペット枚数：4枚（横2枚 × 縦2枚）</div>
-    <div class="form-group"><label for="cc-region">お届け先地域（送料/箱）</label><select id="cc-region"><option value="honshu" data-shipping="2000">本州 (送料: ¥2,000 / 箱)</option><option value="hokkaido_shikoku_kyushu" data-shipping="2500">北海道・四国・九州 (送料: ¥2,500 / 箱)</option><option value="okinawa" data-shipping="5500">沖縄 (送料: ¥5,500 / 箱)</option></select><small>※ループパイル：1箱＝20枚（5㎡）換算／カットパイル：1箱＝16枚（4㎡）換算で送料を計算します。<br>※配送はヤマト運輸（クロネコヤマト便）にて発送いたします。</small></div>
+    <div class="form-group"><label for="cc-region">お届け先地域（送料/箱）</label><select id="cc-region"><option value="honshu" data-shipping="2000">本州 (送料: ¥2,000 / 箱)</option><option value="hokkaido_shikoku_kyushu" data-shipping="2500">北海道・四国・九州 (送料: ¥2,500 / 箱)</option><option value="okinawa" data-shipping="5500">沖縄 (送料: ¥5,500 / 箱)</option></select><small>※ループパイル：1箱＝20枚（5㎡）換算／カットパイル：1箱＝16枚（4㎡）換算で送料を計算します。<br>※配送はヤマト運輸（クロネコヤマト便）にて発送いたします。<br>※下の「お届け先ご住所」を入力すると、都道府県から自動で選びます。</small></div>
   </div>
+    </details>
+  </section>
 
   <!-- ▼▼▼ 仕上がり参考例（元画像／オプションカラー少なめ・多め） ▼▼▼ -->
   <section class="spec-detail-section ref-section">
@@ -438,6 +444,7 @@
 
   <div class="estimate-summary">
     <div class="summary-title">お見積もり明細（概算）</div>
+    <div class="summary-row"><div class="summary-label">パイル形状</div><div class="summary-value"><select id="cc-material2" style="width:auto;min-height:0;padding:6px 10px;"><option value="cut">カットパイル（発色・質感重視）</option><option value="loop">ループパイル（標準・高耐久・重歩行向け）</option></select></div></div>
     <div class="summary-row"><div class="summary-label">選択仕様</div><div class="summary-value" id="cc-material-name">ループパイル (500×500mm)</div></div>
     <div class="summary-row"><div class="summary-label">オプションカラー追加料金 (税別)</div><div class="summary-value" id="cc-op-cost">¥0 (有料オプション色0色)</div></div>
     <div class="summary-row"><div class="summary-label">施工面積（目安）</div><div class="summary-value" id="cc-area">1.00 m²</div></div>
@@ -458,7 +465,7 @@
     <div class="form-group"><label for="cc-company">法人名・屋号（法人・店舗様のみ）</label><input type="text" id="cc-company" placeholder="株式会社〇〇"></div>
     <div class="form-group"><label for="cc-tel">電話番号<span class="required">*</span></label><input type="tel" id="cc-tel" placeholder="090-1234-5678"></div>
     <div class="form-group"><label for="cc-email">メールアドレス<span class="required">*</span></label><input type="text" id="cc-email" placeholder="example@yasu-room.com"></div>
-    <div class="form-group"><label for="cc-address">お届け先ご住所<span class="required">*</span></label><input type="text" id="cc-address" placeholder="東京都千代田区1-1-1"></div>
+    <div class="form-group"><label for="cc-address">お届け先ご住所<span class="required">*</span></label><input type="text" id="cc-address" placeholder="東京都千代田区1-1-1"><small id="cc-address-region">※都道府県から入力すると、送料の地域を自動で選びます。</small></div>
     <div class="form-group" style="flex-direction:row;align-items:center;gap:8px;">
       <input type="checkbox" id="cc-receipt" style="width:auto;min-height:auto;">
       <label for="cc-receipt" style="margin:0;">領収書が必要</label>
@@ -802,7 +809,11 @@
     const total = subtotal + shipping + tax;
 
     if ($('cc-subtotal')) $('cc-subtotal').textContent = '¥' + subtotal.toLocaleString();
-    if ($('cc-shipping')) $('cc-shipping').textContent = '¥' + shipping.toLocaleString() + ' (' + boxes + '箱)';
+    const regionName = selectedRegion ? selectedRegion.textContent.split(' (')[0] : '';
+    if ($('cc-shipping')) $('cc-shipping').textContent = '¥' + shipping.toLocaleString() + ' (' + boxes + '箱' + (regionName ? '・' + regionName : '') + ')';
+    // パイル形状の選択（お見積もり明細）と、畳んだ欄の見出しの要約をそろえる
+    if ($('cc-material2')) $('cc-material2').value = materialType;
+    if ($('cc-spec-sum')) $('cc-spec-sum').textContent = '（' + materialName + '・' + Math.round(widthMm) + '×' + Math.round(heightMm) + 'mm・' + regionName + '）';
     if ($('cc-tax')) $('cc-tax').textContent = '¥' + tax.toLocaleString();
     if ($('cc-total')) $('cc-total').textContent = '¥' + total.toLocaleString();
   }
@@ -2991,6 +3002,31 @@
 
     if ($('cc-material')) $('cc-material').onchange = calculateEstimate;
     if ($('cc-region')) $('cc-region').onchange = calculateEstimate;
+    // お見積もり明細のパイル形状：上の「仕様・パイル形状の選択」と同じにする
+    if ($('cc-material2')) $('cc-material2').onchange = (e) => {
+      const m = $('cc-material');
+      if (!m) return;
+      m.value = e.target.value;
+      m.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    // お届け先ご住所の都道府県から、送料の地域を自動で選ぶ
+    if ($('cc-address')) {
+      const pickRegion = () => {
+        const v = $('cc-address').value.replace(/\s/g, '');
+        const note = $('cc-address-region');
+        let r = '';
+        if (/^沖縄/.test(v)) r = 'okinawa';
+        else if (/^(北海道|徳島|香川|愛媛|高知|福岡|佐賀|長崎|熊本|大分|宮崎|鹿児島)/.test(v)) r = 'hokkaido_shikoku_kyushu';
+        else if (/^(青森|岩手|宮城|秋田|山形|福島|茨城|栃木|群馬|埼玉|千葉|東京|神奈川|新潟|富山|石川|福井|山梨|長野|岐阜|静岡|愛知|三重|滋賀|京都|大阪|兵庫|奈良|和歌山|鳥取|島根|岡山|広島|山口)/.test(v)) r = 'honshu';
+        const sel = $('cc-region');
+        if (!r) { if (note) note.textContent = v ? '※都道府県名から入力すると、送料の地域を自動で選びます（いまは「' + (sel ? sel.options[sel.selectedIndex].textContent.split(' (')[0] : '') + '」で計算）。' : '※都道府県から入力すると、送料の地域を自動で選びます。'; return; }
+        if (sel ? sel.value !== r : false) { sel.value = r; calculateEstimate(); }
+        if (note) note.textContent = '✅ 送料の地域：' + sel.options[sel.selectedIndex].textContent + '（ご住所から自動で選びました）';
+      };
+      $('cc-address').addEventListener('input', pickRegion);
+      $('cc-address').addEventListener('change', pickRegion);
+      setTimeout(pickRegion, 0); // 途中保存から再開したときのご住所にも合わせる
+    }
     if ($('cc-width')) $('cc-width').oninput = () => { calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-width')) $('cc-width').onchange = () => { snapSize('cc-width'); calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-height')) $('cc-height').oninput = () => { calculateEstimate(); updateCarpetCanvas(); };
