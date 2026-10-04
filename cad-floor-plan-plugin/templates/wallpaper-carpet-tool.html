@@ -1852,7 +1852,79 @@
   // 絵全体の大きさの canvas を作らない（メモリを使い切って固まるのを防ぐ）。途中で画面に処理を返し、進み具合を知らせる。
   // layers: [{ name, draw(ctx) }]（ctx は絵全体の座標）。compositeDraw(ctx): 統合イメージ（白地の上に全レイヤー）
   // 縦か横が 30000px を超える絵は PSD に入らないので、Photoshop の大きなドキュメント形式（PSB）で書く
+  // 重い処理（CMYK への変換・圧縮・統合イメージの合成・ZIP 用の CRC32）は別スレッド（assets/js/wall-psd-worker.js）で行い、
+  // この画面では絵を描いて画素を読むだけにする（保存中も画面が固まらない）。Worker が使えないときは、この画面で少しずつ行う。
+  const WALL_PSD_JS = '{{CFP_ASSET_URL}}js/wall-psd-worker.js?ver={{CFP_VERSION}}';
+  const WALL_PSD_VER = 1;
+  function startWallWorker(url) {
+    return new Promise((resolve) => {
+      let wk = null;
+      const fail = () => { if (wk) wk.terminate(); resolve(null); };
+      try { wk = new Worker(url); } catch (e) { resolve(null); return; }
+      const timer = setTimeout(fail, 8000);
+      wk.onerror = () => { clearTimeout(timer); fail(); };
+      wk.onmessage = (ev) => { if (ev.data ? ev.data.type === 'ready' : false) { clearTimeout(timer); if (ev.data.ver === WALL_PSD_VER) resolve(wk); else fail(); } };
+    });
+  }
+  async function getWallWorker() {
+    if (!window.Worker) return null;
+    let wk = await startWallWorker(WALL_PSD_JS);
+    if (wk) return wk;
+    // 別のドメイン（CDN など）から読まれて起動できないときは、内容を読み込んでこのページの Worker として起動する
+    try {
+      const text = await (await fetch(WALL_PSD_JS + '.' + Date.now(), { cache: 'no-store' })).text();
+      wk = await startWallWorker(URL.createObjectURL(new Blob([text], { type: 'text/javascript' })));
+    } catch (e) { wk = null; }
+    return wk;
+  }
+  async function writeCmykPsdWorker(wk, width, height, layers, dpi, onProgress) {
+    const call = (msg, transfer) => new Promise((resolve, reject) => {
+      wk.onmessage = (ev) => { const m = ev.data; if (m.type === 'error') reject(new Error(m.message || 'PSDを作成できませんでした')); else resolve(m); };
+      wk.onerror = (e) => reject(new Error((e ? e.message : '') || 'PSDを作成できませんでした'));
+      wk.postMessage(msg, transfer || []);
+    });
+    await call({ type: 'begin', width, height, names: layers.map((L) => L.name), dpi });
+    const TW = 4096, TH = 256;
+    const tile = document.createElement('canvas');
+    tile.width = Math.min(TW, width); tile.height = Math.min(TH, height);
+    const tctx = tile.getContext('2d', { willReadFrequently: true });
+    const bands = Math.ceil(height / TH);
+    let pending = null;
+    for (let b = 0; b !== bands; b++) {
+      const y0 = b * TH, bh = Math.min(TH, height - y0);
+      const bufs = [];
+      for (const L of layers) {
+        const buf = new Uint8ClampedArray(width * bh * 4);
+        for (let x0 = 0; x0 < width; x0 += TW) {
+          const bw = Math.min(TW, width - x0);
+          tctx.setTransform(1, 0, 0, 1, 0, 0);
+          tctx.clearRect(0, 0, tile.width, tile.height);
+          tctx.setTransform(1, 0, 0, 1, -x0, -y0);
+          tctx.save(); L.draw(tctx); tctx.restore();
+          const d = tctx.getImageData(0, 0, bw, bh).data;
+          for (let yy = 0; yy !== bh; yy++) buf.set(d.subarray(yy * bw * 4, (yy + 1) * bw * 4), (yy * width + x0) * 4);
+          await new Promise((res) => setTimeout(res, 0)); // 画面に処理を返す
+        }
+        bufs.push(buf.buffer);
+      }
+      if (pending) await pending; // 別スレッドが前の帯を終えるまで待つ（メモリを使いすぎない）
+      pending = call({ type: 'band', y0, bh, bufs }, bufs);
+      if (onProgress) onProgress((b + 0.5) / bands * 0.97);
+    }
+    if (pending) await pending;
+    if (onProgress) onProgress(0.98);
+    const r = await call({ type: 'end' });
+    tile.width = tile.height = 1;
+    const blob = new Blob(r.parts, { type: 'image/vnd.adobe.photoshop' });
+    blob.cfpCrc = r.crc; // ZIP にまとめるときに使う（もう一度読み直さなくてよい）
+    return blob;
+  }
   async function writeCmykPsdTiled(width, height, layers, compositeDraw, dpi, onProgress) {
+    const wk = await getWallWorker();
+    if (wk) {
+      try { return await writeCmykPsdWorker(wk, width, height, layers, dpi, onProgress); }
+      finally { wk.terminate(); }
+    }
     const TW = 4096, TH = 256;
     const big = width > 30000 || height > 30000;
     const tile = document.createElement('canvas');
@@ -2369,15 +2441,18 @@
     const dosTime = now.getHours() * 2048 + now.getMinutes() * 32 + Math.floor(now.getSeconds() / 2);
     const dosDate = (Math.max(1980, now.getFullYear()) - 1980) * 512 + (now.getMonth() + 1) * 32 + now.getDate();
     for (const f of files) {
-      const data = new Uint8Array(await f.blob.arrayBuffer());
+      // PSD は作るときに CRC32 を計算済み（cfpCrc）。そのときは中身を読み直さない（大きなファイルで固まらない）
+      const known = typeof f.blob.cfpCrc === 'number';
+      const data = known ? f.blob : new Uint8Array(await f.blob.arrayBuffer());
+      const dlen = known ? f.blob.size : data.length;
       const name = enc.encode(f.name);
-      const crc = crc32(data);
-      const head = [u16(20), u16(0x0800), u16(0), u16(dosTime), u16(dosDate), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0)];
+      const crc = known ? f.blob.cfpCrc : crc32(data);
+      const head = [u16(20), u16(0x0800), u16(0), u16(dosTime), u16(dosDate), u32(crc), u32(dlen), u32(dlen), u16(name.length), u16(0)];
       const local = [Uint8Array.of(0x50, 0x4b, 0x03, 0x04)].concat(head, [name]);
       local.forEach((p) => parts.push(p));
       parts.push(data);
       central.push([Uint8Array.of(0x50, 0x4b, 0x01, 0x02), u16(20)].concat(head, [u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
-      offset += local.reduce((s, p) => s + p.length, 0) + data.length;
+      offset += local.reduce((s, p) => s + p.length, 0) + dlen;
     }
     let csize = 0;
     central.forEach((c) => c.forEach((p) => { parts.push(p); csize += p.length; }));
