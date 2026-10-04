@@ -2241,7 +2241,8 @@
     }
   };
   // buildWhole と同じ内容を、タイルに分けて作る（大きな壁でも固まらない）。cadDraw(ctx): CAD図面を絵の座標に描く関数
-  // split: 幅が 20000mm を超えるときは、巾の区切りで 20000mm 以内の PSD に分けて ZIP にまとめる
+  // split: 1ファイルの幅の上限（mm。0 / false なら分けない）。超えるときは巾の区切りで分けて ZIP にまとめる
+  // （GIMP は CMYK の PSD を RGB に変えながら読むため、大きいほど開くのに時間とメモリがかかる）
   WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress, split) {
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
@@ -2262,7 +2263,7 @@
       { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', draw: frame }
     ];
     const comp = (ctx) => { cadL(ctx); design(ctx); frame(ctx); };
-    const MAXW = 20000; // 分けるときの1ファイルの幅の上限（mm）
+    const MAXW = split === true ? 20000 : Math.max(Math.ceil(P.ROLL), +split || 0); // 1ファイルの幅の上限（mm）
     if (split ? FW > MAXW : false) {
       // 巾を左から並べ、1ファイルに入る巾の数ずつ区切る（隣のファイルとは、巾の重なり（合わせ代）の分だけ重なる）
       const xs = [];
@@ -2272,7 +2273,7 @@
       const M = Math.ceil(N / per);
       const files = [];
       const stamp = Date.now();
-      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が 20000mm を超えるため、巾の区切りで ' + M + ' 個の PSD（それぞれ幅 20000mm 以内）に分けました。',
+      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が ' + MAXW + 'mm を超えるため、巾の区切りで ' + M + ' 個の PSD（それぞれ幅 ' + MAXW + 'mm 以内）に分けました。',
         '各PSD：CMYK・1px = 1mm・25.4dpi、レイヤーは ①CAD図面 ②壁紙の画像 ③巾の枠。左から順に並べると、元の1枚の絵になります。',
         '隣り合うPSDは、巾の重なり（合わせ代 ' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
       for (let k = 0; k !== M; k++) {
@@ -2290,7 +2291,7 @@
       const zip = await makeZip(files);
       return {
         name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_' + M + 'files_' + (right ? 'right' : 'left') + '_' + stamp + '.zip',
-        blob: zip, width: FW, height: H, strips: N, split: M
+        blob: zip, width: FW, height: H, strips: N, split: M, maxw: MAXW
       };
     }
     const blob = await writeCmykPsdTiled(FW, H, layerDefs, comp, 25.4, onProgress);

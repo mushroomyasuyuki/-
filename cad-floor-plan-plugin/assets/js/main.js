@@ -1537,14 +1537,14 @@
         }
         const label = g.multi ? '壁 ' + g.walls.map((x) => x.no).join('→') + ' をつなげる・幅の合計 ' + W + 'mm' : '壁の範囲 ' + W + '×' + WH + 'mm';
         const out = await wp.buildWholeAsync(cadDraw, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label,
-          (f) => { btn.textContent = 'PSDを作成中… ' + Math.round(f * 100) + '%'; }, this.$('wp-split').checked);
+          (f) => { btn.textContent = 'PSDを作成中… ' + Math.round(f * 100) + '%'; }, +this.$('wp-split').value || 0);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         this.status('壁紙データを保存しました（' + out.width + ' × ' + out.height + ' mm・1px = 1mm・' + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠）。'
-          + (out.split ? '幅が20000mmを超えるため、巾の区切りで ' + out.split + ' 個のPSD（それぞれ20000mm以内）に分け、ZIPにまとめて保存しました。' : '')
+          + (out.split ? '幅が' + out.maxw + 'mmを超えるため、巾の区切りで ' + out.split + ' 個のPSD（それぞれ' + out.maxw + 'mm以内）に分け、ZIPにまとめて保存しました。' : '')
           + (out.psb ? '幅が30000mmを超えるため、PhotoshopのPSB形式（大きなドキュメント形式）で保存しました。Photoshopで開けます。' : ''), 'success');
       } catch (err) {
         this.status('エラー: 壁紙データを作成できませんでした（' + err.message + '）', 'error');
