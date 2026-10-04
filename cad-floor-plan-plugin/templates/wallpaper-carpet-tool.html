@@ -303,6 +303,10 @@
     </div>
 
   <div id="cc-status" class="status-box"></div>
+  <div class="dither-box cc-var-dither">
+    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>下の3つの変換すべてに反映（上の同じスライダーと連動）。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
+    <input type="range" id="cc-dither2" min="0" max="100" value="0">
+  </div>
   <div class="preview-grid cc-variants">
     <div class="preview-card"><h3>元画像（オリジナル）</h3><canvas id="cc-original"></canvas><div class="used-colors-text" style="text-align:center;">25.4 DPI換算・元データのまま</div></div>
     <div class="preview-card cc-var-card" data-var="std"><h3>① 標準色のみ</h3><div class="cc-var-sub">無償の標準色（基本16色＋OP-03・05）から選んだ16色</div><canvas id="cc-var-std"></canvas><div class="psd-palette-grid" id="cc-var-std-chips"></div><div class="used-colors-text" id="cc-var-std-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="std">この変換で進める</button></div>
@@ -1616,6 +1620,10 @@
       }
       const ditherEl = $('cc-dither');
       const factor = Math.min(1, Math.max(0, (ditherEl ? (parseFloat(ditherEl.value) || 0) : 0) / 100));
+      // 3つの変換の上のスライダーも、同じ値にそろえる（途中保存からの再開などで値が変わったときも）
+      const pct = Math.round(factor * 100);
+      if ($('cc-dither2')) $('cc-dither2').value = pct;
+      if ($('cc-dither2-val')) $('cc-dither2-val').textContent = pct;
       Object.keys(VARIANTS).forEach((v) => {
         const entries = state.variantSets[v].map((i) => ALL_COLORS[i]);
         const { imageData, usedEntries } = getReducedImageData(original, original.width, original.height, factor, entries);
@@ -1634,7 +1642,8 @@
         });
         const paid = usedEntries.filter((c) => c.isOp && c.price > 0).length;
         $('cc-var-' + v + '-text').textContent = '使用 ' + usedEntries.length + '色'
-          + (paid ? '（うち有償オプション ' + paid + '色：' + usedEntries.filter((c) => c.isOp && c.price > 0).map((c) => c.name).join('・') + '）' : '（すべて無償色）');
+          + (paid ? '（うち有償オプション ' + paid + '色：' + usedEntries.filter((c) => c.isOp && c.price > 0).map((c) => c.name).join('・') + '）' : '（すべて無償色）')
+          + '・階調表現 ' + pct + '%';
       });
       if (state.variantAutoApply) {
         // 新しい画像：まず「① 標準色のみ」を選んだ状態にする
@@ -2986,6 +2995,14 @@
     if ($('cc-height')) $('cc-height').oninput = () => { calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-height')) $('cc-height').onchange = () => { snapSize('cc-height'); calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-dither')) $('cc-dither').oninput = (event) => { if($('cc-dither-val')) $('cc-dither-val').textContent = event.target.value; reprocessReduction(); };
+    // 3つの変換の上のスライダー：上のスライダーと同じ値にして、同じように反映する
+    if ($('cc-dither2')) $('cc-dither2').oninput = (event) => {
+      const v = event.target.value;
+      if ($('cc-dither')) $('cc-dither').value = v;
+      if ($('cc-dither-val')) $('cc-dither-val').textContent = v;
+      if ($('cc-dither2-val')) $('cc-dither2-val').textContent = v;
+      reprocessReduction();
+    };
     if ($('cw-reduce-on')) $('cw-reduce-on').addEventListener('change', () => { syncWallReduceUi(); reprocessWallReduction(); });
     syncWallReduceUi();
     if ($('cw-dither')) $('cw-dither').oninput = (event) => { if($('cw-dither-val')) $('cw-dither-val').textContent = event.target.value; reprocessWallReduction(); };
