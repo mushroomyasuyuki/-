@@ -1118,6 +1118,7 @@
       });
       link('wp-ov-r', 'wp-ov');
       link('wp-trim-r', 'wp-trim');
+      if (this.$('wp-side-r')) link('wp-side-r', 'wp-side');
       let freeTimer = null;
       ['wp-free-w', 'wp-free-h'].forEach((n) => this.$(n) && this.$(n).addEventListener('input', () => {
         this._wpView = null;
@@ -1283,6 +1284,7 @@
     _wpClamp(name, v) {
       v = parseFloat(v);
       if (/ov/.test(name)) return Math.min(15, Math.max(6, Math.round((isNaN(v) ? 10 : v) * 2) / 2));
+      if (/side/.test(name)) return Math.min(100, Math.max(10, Math.round((isNaN(v) ? 10 : v) / 5) * 5));
       if (/trim/.test(name)) return Math.min(100, Math.max(30, Math.round((isNaN(v) ? 100 : v) / 5) * 5));
       return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 910 : v)));
     }
@@ -1291,7 +1293,7 @@
     _wpChanged() {
       const wp = window.cfpWallPrint;
       if (!wp) return;
-      wp.set(this.$('wp-roll-r').value, this.$('wp-ov-r').value, this.$('wp-trim-r') ? this.$('wp-trim-r').value : undefined);
+      wp.set(this.$('wp-roll-r').value, this.$('wp-ov-r').value, this.$('wp-trim-r') ? this.$('wp-trim-r').value : undefined, this.$('wp-side-r') ? this.$('wp-side-r').value : undefined);
       this._updateWallTotal();
       if (this.hasTool && this.renderer) this.syncDesigns(true);
       this._wpRender();
@@ -1526,7 +1528,7 @@
       walls.forEach((x) => { x.W = Math.max(1, Math.round(x.w.width)); x.WH = Math.max(1, Math.round(x.w.height)); });
       const W = walls.reduce((t, x) => t + x.W, 0), WH = Math.max(...walls.map((x) => x.WH));
       const H = WH + wp.TRIM_TOP + wp.TRIM_BOTTOM;
-      const N = Math.max(1, Math.ceil((W + wp.OVERLAP - 5) / wp.STEP));
+      const N = wp.count ? wp.count(W) : Math.max(1, Math.ceil((W + wp.OVERLAP - 5) / wp.STEP));
       return { wp, walls, w: walls[0].w, multi: walls.length > 1, W, WH, H, N, FW: Math.round(N * wp.STEP + wp.OVERLAP) };
     }
 
@@ -1592,7 +1594,7 @@
         return e;
       };
       const right = this.$('wp-right').checked;
-      const ox = right ? FW - wp.OVERLAP - W : wp.OVERLAP; // the wall's left edge in the picture
+      const ox = wp.startX(W, FW, right); // the wall's left edge in the picture (the start side margin)
       const cuts = [];
       for (let i = 1; i < N; i++) cuts.push((right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x);
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
@@ -1680,7 +1682,7 @@
       this.$('wp-note').textContent = (g.multi
         ? '壁 ' + g.walls.map((x) => x.no).join(' → ') + '（' + (this.$('wp-ccw').checked ? '左回り' : '右回り') + 'につなげる・' + ((this.$('wp-align') || {}).value === 'top' ? '上（天井）' : '下（床）') + '合わせ） 幅の合計 ' + fmt(W) + ' × 高さ（最大） ' + fmt(WH) + ' mm → '
         : '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → ') + '画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
-        + '巾 ' + wp.ROLL + ' mm・合わせ代（巾が重なる幅） ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP) + ' mm）の真ん中（' + fmt(wp.OVERLAP / 2) + ' mm）のカット線。'
+        + '巾 ' + wp.ROLL + ' mm・合わせ代（巾が重なる幅） ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート・スタート側の端の余白 ' + (wp.SIDE || wp.OVERLAP) + ' mm）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP) + ' mm）の真ん中（' + fmt(wp.OVERLAP / 2) + ' mm）のカット線。'
         + (off.img.x || off.img.y ? ' 画像を動かした量：横 ' + off.img.x + ' mm・縦 ' + off.img.y + ' mm。' : '')
         + ((off.scale || 1) !== 1 ? ' 画像の大きさ ' + Math.round(off.scale * 100) + '%。' : '')
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
@@ -1721,7 +1723,7 @@
       try {
         await new Promise((r) => setTimeout(r, 30));
         const right = this.$('wp-right').checked;
-        const shapes = this._wpShapes(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP);
+        const shapes = this._wpShapes(g, wp.startX(W, g.FW, right));
         // the CAD layer is drawn piece by piece (tiles) by the PSD writer: no canvas as big as the whole picture
         let cadDraw = null;
         const bd = this.elev && !g.walls[0].w.virtual ? this.elev.backdrop : null;
@@ -1848,7 +1850,7 @@
         picked.forEach(({ w }) => {
           width += w.width;
           area += w.width * w.height / 1e6;
-          const n = Math.ceil((w.width + OV - 5) / ROLL);
+          const n = WP.count ? WP.count(w.width) : Math.ceil((w.width + OV - 5) / ROLL);
           strips += n;
           len += n * (w.height + TRIM) / 1000;
         });
@@ -2517,7 +2519,7 @@
       this.renderer.wallSingle = !!(hasWall && rep && !rep.on);
       // the single picture also covers the print margins (top / bottom trim, side overlaps), as in the saved data
       const wp = window.cfpWallPrint;
-      this.renderer.wallTrim = wp ? { side: wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
+      this.renderer.wallTrim = wp ? { side: wp.SIDE || wp.OVERLAP, top: wp.TRIM_TOP, bottom: wp.TRIM_BOTTOM } : null;
       this.renderer.wallShift = window.cfpWallShift || { x: 0, y: 0 };
       if (hasWall || fromEvent) this.renderer.setWallCanvas(hasWall ? wall : null);
       this.renderer.setWallRepeat(this.renderer.wallRepeat ? this.renderer.wallRepeat.w : 0, this.renderer.wallRepeat ? this.renderer.wallRepeat.h : 0,
