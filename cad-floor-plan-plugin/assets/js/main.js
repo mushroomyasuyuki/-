@@ -343,10 +343,26 @@
         ['pan', 'grid', 'design'].forEach((t) => this.$('layout-' + t).classList.toggle('is-on', t === name));
       };
       ['pan', 'grid', 'design'].forEach((t) => this.$('layout-' + t).addEventListener('click', () => ltool(t)));
+      // 画像の大きさ：見積もりツールの「画像の大きさ（拡大・縮小）」と同じ値（1つの設定）。ツールがあるときは
+      // そちらで変換画像そのものを拡大・縮小し（PSD・見積もりの画像と同じ）、割付の上では等倍で重ねる
       this.$('layout-dscale').addEventListener('input', () => {
-        this.design.scale = (parseFloat(this.$('layout-dscale').value) || 100) / 100;
+        const cc = document.getElementById('cc-img-scale');
+        if (cc) {
+          cc.value = this.$('layout-dscale').value;
+          cc.dispatchEvent(new Event('input', { bubbles: true }));
+          this.design.scale = 1;
+        } else this.design.scale = (parseFloat(this.$('layout-dscale').value) || 100) / 100;
         this._renderLayout();
       });
+      const ccScale = document.getElementById('cc-img-scale');
+      if (ccScale) {
+        this.$('layout-dscale').min = ccScale.min;
+        this.$('layout-dscale').max = ccScale.max;
+        ccScale.addEventListener('input', () => {
+          this.$('layout-dscale').value = ccScale.value;
+          this.$('layout-dscale-val').textContent = ccScale.value;
+        });
+      }
       this.$('layout-dopacity').addEventListener('input', () => this._renderLayout());
       this.$('layout-show-design').addEventListener('change', () => this._renderLayout());
       this.$('layout-clip-box').addEventListener('change', () => this._renderLayout());
@@ -360,6 +376,8 @@
         this.imgOffset = { x: 0, y: 0 };
         this.design = { x: 0, y: 0, scale: 1 };
         this.$('layout-dscale').value = 100;
+        const cc = document.getElementById('cc-img-scale');
+        if (cc ? cc.value !== '100' : false) { cc.value = 100; cc.dispatchEvent(new Event('input', { bubbles: true })); }
         this._layoutCommit();
       });
       this.$('layout-show-img').addEventListener('change', () => this._renderLayout());
@@ -782,7 +800,14 @@
         this.gridOffsets = st.gridOffsets || {};
         this.imgOffset = st.imgOffset || { x: 0, y: 0 };
         this.design = st.design || { x: 0, y: 0, scale: 1 };
-        this.$('layout-dscale').value = Math.round(this.design.scale * 100);
+        const cc = document.getElementById('cc-img-scale');
+        if (cc ? this.design.scale !== 1 : false) {
+          // saved before the two sliders were one: the size moves to the estimate tool's slider
+          cc.value = Math.round(this.design.scale * 100);
+          cc.dispatchEvent(new Event('input', { bubbles: true }));
+          this.design.scale = 1;
+        }
+        this.$('layout-dscale').value = Math.round(this._imgScale() * 100);
         this.$('trace').hidden = true;
         this._tracerImage = null;
         await this.loadFile(d.file, { keepRoom: true, keepScale: true, keepManual: true, roomIndex: st.roomIndex });
@@ -2013,6 +2038,13 @@
     // ----------------------------------------------- carpet tile layout (割付)
     // 500 x 500 mm tiles centred on the room (plus the layout's shift). Tiles that touch the room count,
     // the cut ones at the edges as whole tiles. Returns the tiles in mm and the counts.
+    // the image size (1 = 100 %): the estimate tool's slider when there is one (one setting for both), else the layout's
+    _imgScale() {
+      const cc = document.getElementById('cc-img-scale');
+      if (cc) return (parseFloat(cc.value) || 100) / 100 * (this.design.scale || 1);
+      return this.design.scale || 1;
+    }
+
     // the sample room (from the estimate's carpet size) on a page with the estimate tool
     _isSample() {
       return !this.fromFile && this.hasTool && !!(this.data && this.data.metadata && this.data.metadata.source === 'sample');
@@ -2150,6 +2182,7 @@
         add('image', { href: this._designUrl, x: vx, y: vy, width: w, height: h, preserveAspectRatio: 'none',
           opacity: (parseFloat(this.$('layout-dopacity').value) || 80) / 100 }, parent);
       }
+      this.$('layout-dscale').value = Math.round(this._imgScale() * 100);
       this.$('layout-dscale-val').textContent = this.$('layout-dscale').value;
       this.$('layout-dopacity-val').textContent = this.$('layout-dopacity').value;
       const showGrid = this.$('layout-show-grid').checked;
@@ -2185,7 +2218,7 @@
           + '。部屋に敷く枚数 ' + lay.count + ' 枚（うち端で切る ' + lay.cut + ' 枚、薄い赤）。'
           + (off.x || off.y ? '割付のずらし：横 ' + Math.round(off.x) + ' mm・縦 ' + Math.round(off.y) + ' mm。' : '')
           + (hasDesign ? '' : '①でカーペット用のデザイン画像を処理すると、変換画像を重ねて表示します。')
-          + (hasDesign && (this.design.x || this.design.y || this.design.scale !== 1) ? '変換画像：大きさ ' + Math.round(this.design.scale * 100) + '%・ずらし 横 ' + Math.round(this.design.x) + ' mm／縦 ' + Math.round(this.design.y) + ' mm。' : '')
+          + (hasDesign && (this.design.x || this.design.y || this._imgScale() !== 1) ? '変換画像：大きさ ' + Math.round(this._imgScale() * 100) + '%・ずらし 横 ' + Math.round(this.design.x) + ' mm／縦 ' + Math.round(this.design.y) + ' mm。' : '')
         : '';
     }
 
@@ -2307,7 +2340,7 @@
         const parts = await writeBandedPsd(Wpx, Hpx, [
           { name: '①元図面', draw: draw1 },
           { name: '②部屋（' + name + '）', draw: draw2 },
-          { name: '③画像（変換画像・大きさ' + Math.round(this.design.scale * 100) + '%・割付の範囲）', draw: draw3 },
+          { name: '③画像（変換画像・大きさ' + Math.round(this._imgScale() * 100) + '%・割付の範囲）', draw: draw3 },
           { name: '④割付（50cm角 横' + lay.cols + '×縦' + lay.rows + '枚）', draw: draw4 },
           { name: '⑤センター（部屋の中心・固定）', draw: draw5 },
         ], 25.4 * k, (v) => this.status('割付のPSDを作成しています… ' + Math.round(v * 100) + '%', 'loading'));
