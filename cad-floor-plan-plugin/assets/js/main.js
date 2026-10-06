@@ -1119,6 +1119,8 @@
       link('wp-ov-r', 'wp-ov');
       link('wp-trim-r', 'wp-trim');
       if (this.$('wp-side-r')) link('wp-side-r', 'wp-side');
+      if (this.$('wp-out-min-r')) link('wp-out-min-r', 'wp-out-min');
+      if (this.$('wp-in-min-r')) link('wp-in-min-r', 'wp-in-min');
       let freeTimer = null;
       ['wp-free-w', 'wp-free-h'].forEach((n) => this.$(n) && this.$(n).addEventListener('input', () => {
         this._wpView = null;
@@ -1289,6 +1291,8 @@
     _wpClamp(name, v) {
       v = parseFloat(v);
       if (/ov/.test(name)) return Math.min(15, Math.max(6, Math.round((isNaN(v) ? 10 : v) * 2) / 2));
+      if (/out-min/.test(name)) return Math.min(150, Math.max(50, Math.round((isNaN(v) ? 100 : v) / 5) * 5));
+      if (/in-min/.test(name)) return Math.min(75, Math.max(25, Math.round((isNaN(v) ? 50 : v) / 5) * 5));
       if (/side/.test(name)) return Math.min(100, Math.max(10, Math.round((isNaN(v) ? 10 : v) / 5) * 5));
       if (/trim/.test(name)) return Math.min(100, Math.max(30, Math.round((isNaN(v) ? 100 : v) / 5) * 5));
       return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 910 : v)));
@@ -1478,13 +1482,20 @@
       return out;
     }
 
-    // a wallpaper joint (cut line) less than 100 mm from a corner line: shown on the frame and as a warning
+    // the distance a joint must keep from a corner: 出隅 50〜150 mm (100), 入隅 25〜75 mm (50)
+    _wpCornerMin() {
+      const v = (n, def) => (this.$(n + '-r') ? this._wpClamp(n, this.$(n + '-r').value) : def);
+      return { out: v('wp-out-min', 100), in: v('wp-in-min', 50) };
+    }
+
+    // a wallpaper joint (cut line) closer to a corner line than its distance: shown on the frame and as a warning
     _wpCornerCheck(g, shapes, cuts) {
-      const MIN = 100;
+      const lim = this._wpCornerMin();
       return this._wpCorners(g, shapes).map((c) => {
+        const min = c.type === '入隅' ? lim.in : c.type === '出隅' ? lim.out : Math.max(lim.in, lim.out);
         let d = Infinity, at = null;
         cuts.forEach((x) => { const e = Math.abs(x - c.x); if (e < d) { d = e; at = x; } });
-        return Object.assign(c, { d, at, bad: d < MIN });
+        return Object.assign(c, { d, at, min, bad: d < min });
       });
     }
 
@@ -1675,7 +1686,7 @@
           const cx = i * wp.STEP + wp.EDGE; // the middle of the overlap of two strips
           shapes.forEach((sh) => wp.cutSegments(sh.pts, cx).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple), gFrame)));
         }
-        // the corners (入隅・出隅) between the joined walls: blue, red when a joint is less than 100 mm away
+        // the corners (入隅・出隅) between the joined walls: blue, red when a joint is closer than the set distance
         corners.forEach((c) => {
           const y0 = wp.TRIM_TOP, y1 = wp.TRIM_TOP + WH;
           const col = c.bad ? '#ef4444' : '#2563eb';
@@ -1701,7 +1712,7 @@
       if (!this._wpDragging) this._wp3D(g);
     }
 
-    // the warning for joints near a corner (入隅・出隅): less than 100 mm away
+    // the warning for joints near a corner (入隅・出隅): closer than the set distance
     _wpJointWarn(corners) {
       const el = this.$('wp-joint-warn');
       if (!el) return;
@@ -1710,11 +1721,13 @@
       el.hidden = false;
       el.classList.toggle('is-bad', !!bad.length);
       const name = (c) => '壁' + c.a + '→' + c.b + (c.type ? 'の' + c.type : 'の角');
+      const lim = this._wpCornerMin();
+      const rule = '出隅から' + lim.out + 'mm以上・入隅から' + lim.in + 'mm以上';
       el.textContent = bad.length
-        ? '⚠️ 壁紙の継ぎ目（カット線）が出隅・入隅に近すぎます（100mm以上離してください）：'
-          + bad.map((c) => name(c) + ' から ' + Math.round(c.d) + 'mm').join('、')
+        ? '⚠️ 壁紙の継ぎ目（カット線）が出隅・入隅に近すぎます（' + rule + '）：'
+          + bad.map((c) => name(c) + ' から ' + Math.round(c.d) + 'mm（' + c.min + 'mm以上必要）').join('、')
           + '。「枠を移動」で枠を左右に動かすか、右寄せ／左寄せ・巾・合わせ代を変えてください。'
-        : '✅ 出隅・入隅（' + corners.length + 'か所）から壁紙の継ぎ目まで、すべて100mm以上離れています（いちばん近いところ ' + Math.round(Math.min(...corners.map((c) => c.d))) + 'mm）。';
+        : '✅ 出隅・入隅（' + corners.length + 'か所）から壁紙の継ぎ目まで、すべて離れています（' + rule + '。いちばん近いところ ' + Math.round(Math.min(...corners.map((c) => c.d))) + 'mm）。';
     }
 
     // format: 'ai' = Illustrator 用（.ai・PDF互換）、省略 = CMYK の PSD

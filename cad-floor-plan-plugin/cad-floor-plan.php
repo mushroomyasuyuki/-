@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.81.0
+ * Version: 2.81.1
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.81.0');
+define('CFP_VERSION', '2.81.1');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -533,6 +533,8 @@ final class CAD_Floor_Plan_Plugin {
                     <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="7.5"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="7.5"> mm</label>
                     <label>上下の余白（裁断代）<input type="range" data-cfp="wp-trim-r" min="30" max="100" step="5" value="100"> <input type="number" data-cfp="wp-trim" min="30" max="100" step="5" value="100"> mm</label>
                     <label>スタート側の端の余白 <input type="range" data-cfp="wp-side-r" min="10" max="100" step="5" value="10"> <input type="number" data-cfp="wp-side" min="10" max="100" step="5" value="10"> mm</label>
+                    <label title="出隅（外に出っぱった角）から壁紙の継ぎ目（カット線）までの、左右それぞれに必要な距離。これより近いと警告します">出隅から継ぎ目まで（左右） <input type="range" data-cfp="wp-out-min-r" min="50" max="150" step="5" value="100"> <input type="number" data-cfp="wp-out-min" min="50" max="150" step="5" value="100"> mm以上</label>
+                    <label title="入隅（内側にへこんだ角）から壁紙の継ぎ目（カット線）までの、左右それぞれに必要な距離。これより近いと警告します">入隅から継ぎ目まで（左右） <input type="range" data-cfp="wp-in-min-r" min="25" max="75" step="5" value="50"> <input type="number" data-cfp="wp-in-min" min="25" max="75" step="5" value="50"> mm以上</label>
                   </div>
                   <div class="cfp-wp-join">
                     <label class="cfp-check"><input type="checkbox" data-cfp="wp-join"> 壁をつなげる（部屋一周）</label>
