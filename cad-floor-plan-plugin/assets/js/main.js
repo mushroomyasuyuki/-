@@ -1743,13 +1743,21 @@
           };
         }
         const label = g.multi ? '壁 ' + g.walls.map((x) => x.no).join('→') + ' をつなげる・幅の合計 ' + W + 'mm' : '壁の範囲 ' + W + '×' + WH + 'mm';
-        const out = await wp.buildWholeAsync(cadDraw, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label,
-          (f) => { btn.textContent = kind + 'を作成中… ' + Math.round(f * 100) + '%'; }, +this.$('wp-split').value || 0, format);
+        const progress = (f) => { btn.textContent = kind + 'を作成中… ' + Math.round(f * 100) + '%'; };
+        // AI：参考データと同じ形式の確認用シート（全体図・分割図・仕様・寸法。縮尺 1/10）
+        const out = ai && wp.buildAiSheet
+          ? await wp.buildAiSheet({ W, WH, right, shapes: shapes.map((sh) => sh.pts), walls: g.walls.map((x) => ({ W: x.W, WH: x.WH, no: x.no })), off: this._wpO(),
+            name: (this.$('wp-name') || {}).value || '', onProgress: progress })
+          : await wp.buildWholeAsync(cadDraw, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label, progress, +this.$('wp-split').value || 0, format);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        if (out.sheet) {
+          this.status('壁紙の確認用シート（Illustrator用 .ai・PDF互換・縮尺 1/10）を保存しました：全体図・分割図（' + out.strips + ' 巾）・仕様・寸法。レイヤー：グラフィック／分割／仕様／寸法。全体 ' + out.width + ' × ' + out.height + ' mm。', 'success');
+          return;
+        }
         this.status('壁紙データを保存しました（' + (ai ? 'Illustrator用 .ai（PDF互換）・実寸・' : '') + out.width + ' × ' + out.height + ' mm・' + (ai ? '' : '1px = 1mm・') + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠' + (ai ? '（線）' : '') + '）。'
           + (out.split ? '幅が' + out.maxw + 'mmを超えるため、巾の区切りで ' + out.split + ' 個の' + kind + '（それぞれ' + out.maxw + 'mm以内）に分け、ZIPにまとめて保存しました。' : '')
           + (ai ? (out.split ? out.maxw : out.width) > 5080 ? ' 幅が約5mを超える .ai は、Illustratorの「大きなカンバス」（倍率付き）として開かれることがあります。普通のカンバスで開くには「PSDを分ける幅」を5m以内にしてください。' : '' : '')

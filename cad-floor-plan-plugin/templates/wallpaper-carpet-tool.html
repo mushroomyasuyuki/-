@@ -2730,6 +2730,229 @@
     return new Blob(parts, { type: 'application/postscript' });
   }
 
+  // ---- Illustrator 用（.ai）の確認用シート（参考データと同じ形式）----
+  // 縮尺 1/10 の1枚のシートに、上：全体図（画像・壁の範囲・巾の区切り・寸法）、下：分割図（巾ごとに離して並べた画像・
+  // 「N_【案件名】」「天↑地」・寸法）、いちばん下：仕様。レイヤーは「グラフィック」「分割」「仕様」「寸法」（下から）。
+  // 中身は PDF 互換の .ai。画像は CMYK（実寸 1px=1mm の画像をシートに 1/10 で配置。分割図は同じ画像を巾ごとに切り抜いて再利用）。
+  // o: { W, WH, right, shapes, walls: [{ W, WH, no }], off, name, onProgress }
+  WALL_PRINT.buildAiSheet = async function (o) {
+    const P = WALL_PRINT;
+    const off = o.off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
+    const W = o.W, WH = o.WH, right = !!o.right;
+    const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
+    const fr = P.frames(W, right, off.frame ? off.frame.x : 0);
+    const N = fr.N, FW = fr.FW, ox = fr.ox;
+    const name = (o.name || '').trim() || '物件名';
+    const src = P.getSource();
+    const SC = 0.1;                 // 縮尺 1/10（シートの mm ＝ 実寸 mm × 0.1）
+    const GAP = 80;                 // 分割図の巾と巾のすき間（実寸 mm）
+    const MM = 72 / 25.4;
+    const f1 = (v) => String(Math.round(v * 10) / 10);
+    // ---- シートの配置（シートの mm、左上が原点・下向き）----
+    const LM = 45, TOPM = 45;
+    const s1x = LM, s1y = TOPM;                                  // 全体図の左上
+    const s1w = FW * SC, s1h = H * SC;
+    const s2y = s1y + s1h + 22 + 38;                             // 分割図の左上
+    const s2x = LM;
+    const pitch2 = (P.ROLL + GAP) * SC;
+    const s2w = N * pitch2 - GAP * SC, s2h = H * SC;
+    const specY = s2y + s2h + 25;
+    const pageW = Math.max(s1x + s1w, s2x + s2w, 240) + 25;
+    const pageH = specY + 62;
+    const u = Math.max(1, Math.ceil(Math.max(pageW, pageH) * MM / 14000));
+    const kk = MM / u;               // PDF の単位 / シートの mm
+    const Hp = pageH * kk;
+    const n3 = (v) => String(Math.round(v * 1000) / 1000);
+    const X = (x) => n3(x * kk), Y = (y) => n3(Hp - y * kk);
+    const enc = new TextEncoder();
+    const utf16 = (t) => { let h = ''; for (let i = 0; i !== t.length; i++) h += t.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0'); return h; };
+    const objs = []; let nextId = 1;
+    const alloc = () => nextId++;
+    const put = (id, parts) => objs.push({ id, parts });
+    // ---- 画像（全体の絵）を CMYK のタイルにする ----
+    const TW = 4096, tiles = [];
+    const tile = document.createElement('canvas');
+    const xobj = [];
+    const deflate = typeof CompressionStream === 'function';
+    let step = 0;
+    const total = Math.ceil(FW / TW);
+    for (let x0 = 0; x0 < FW; x0 += TW) {
+      const tw = Math.min(TW, FW - x0);
+      tile.width = tw; tile.height = H;
+      const x = tile.getContext('2d', { willReadFrequently: true });
+      x.fillStyle = '#ffffff'; x.fillRect(0, 0, tw, H);
+      x.save(); x.translate(-x0, 0);
+      if (src) drawWallDesign(x, src, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH, 1, FW, H, off.scale || 1);
+      x.restore();
+      const chunks = []; let writer = null, done = null;
+      if (deflate) { const cs = new CompressionStream('deflate'); writer = cs.writable.getWriter(); done = new Response(cs.readable).blob(); }
+      for (let y0 = 0; y0 < H; y0 += 256) {
+        const bh = Math.min(256, H - y0);
+        const d = x.getImageData(0, y0, tw, bh).data;
+        const out = new Uint8Array(tw * bh * 4);
+        let last = -1, c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+        for (let i = 0; i !== d.length; i += 4) {
+          const rr = d[i], gg = d[i + 1], bb = d[i + 2], key = rr * 65536 + gg * 256 + bb;
+          if (key !== last) {
+            last = key;
+            const mx = Math.max(rr, gg, bb);
+            if (mx === 0) { c0 = 0; c1 = 0; c2 = 0; c3 = 255; }
+            else { c0 = Math.round((mx - rr) * 255 / mx); c1 = Math.round((mx - gg) * 255 / mx); c2 = Math.round((mx - bb) * 255 / mx); c3 = 255 - mx; }
+          }
+          out[i] = c0; out[i + 1] = c1; out[i + 2] = c2; out[i + 3] = c3;
+        }
+        if (writer) await writer.write(out); else chunks.push(out);
+        await new Promise((res) => setTimeout(res, 0));
+      }
+      let data;
+      if (writer) { await writer.close(); data = await done; } else data = new Blob(chunks);
+      const id = alloc();
+      put(id, ['<< /Type /XObject /Subtype /Image /Width ' + tw + ' /Height ' + H + ' /ColorSpace /DeviceCMYK /BitsPerComponent 8' + (writer ? ' /Filter /FlateDecode' : '') + ' /Length ' + data.size + ' >>\nstream\n', data, '\nendstream']);
+      xobj.push('/Im' + id + ' ' + id + ' 0 R');
+      tiles.push({ id, x0, w: tw });
+      step++;
+      if (o.onProgress) o.onProgress(step / total * 0.95);
+    }
+    tile.width = tile.height = 1;
+    // 絵（実寸 mm）を、シートの (dx, dy) を左上にして 1/10 で描く。clip: シートの mm の四角 [x, y, w, h]
+    const drawPic = (dx, dy, clip, from, to) => {
+      let s = 'q ' + X(clip[0]) + ' ' + Y(clip[1] + clip[3]) + ' ' + n3(clip[2] * kk) + ' ' + n3(clip[3] * kk) + ' re W n\n';
+      tiles.forEach((t) => {
+        if (t.x0 + t.w < from || t.x0 > to) return;
+        s += 'q ' + n3(t.w * SC * kk) + ' 0 0 ' + n3(H * SC * kk) + ' ' + X(dx + t.x0 * SC) + ' ' + Y(dy + H * SC) + ' cm /Im' + t.id + ' Do Q\n';
+      });
+      return s + 'Q\n';
+    };
+    // ---- 線・文字の道具 ----
+    const K = (c, m, y, k) => n3(c) + ' ' + n3(m) + ' ' + n3(y) + ' ' + n3(k) + ' K\n';
+    const Kf = (c, m, y, k) => n3(c) + ' ' + n3(m) + ' ' + n3(y) + ' ' + n3(k) + ' k\n';
+    const lw = (pt) => n3(pt / u) + ' w\n';
+    const line = (x1, y1, x2, y2) => X(x1) + ' ' + Y(y1) + ' m ' + X(x2) + ' ' + Y(y2) + ' l S\n';
+    const rect = (x, y, w, h) => X(x) + ' ' + Y(y + h) + ' ' + n3(w * kk) + ' ' + n3(h * kk) + ' re S\n';
+    const tw = (t, size) => { let w = 0; for (const ch of t) w += ch.charCodeAt(0) < 128 ? 0.55 : 1; return w * size; };
+    // 文字（size はシートの mm）。align: 'c' 中央 / 'l' 左 / 'r' 右。rot: 90 で縦（左に倒す）
+    const text = (str, x, y, size, align, rot) => {
+      const w = tw(str, size), a = align || 'c';
+      const fs = n3(size * kk);
+      if (rot) {
+        const yy = a === 'c' ? y + w / 2 : y;
+        return 'BT /F1 ' + fs + ' Tf 0 1 -1 0 ' + X(x) + ' ' + Y(yy) + ' Tm <' + utf16(str) + '> Tj ET\n';
+      }
+      const xx = a === 'c' ? x - w / 2 : (a === 'r' ? x - w : x);
+      return 'BT /F1 ' + fs + ' Tf ' + X(xx) + ' ' + Y(y) + ' Td <' + utf16(str) + '> Tj ET\n';
+    };
+    const TS = 3;   // 寸法の文字の大きさ（シートの mm）
+    // 横の寸法線：x1〜x2（シートの mm）、高さ y、数字 v
+    const hdim = (x1, x2, y, v) => line(x1, y, x2, y) + line(x1, y - 1.5, x1, y + 1.5) + line(x2, y - 1.5, x2, y + 1.5) + text(f1(v), (x1 + x2) / 2, y - 1, TS, 'c');
+    const vdim = (x, y1, y2, v) => line(x, y1, x, y2) + line(x - 1.5, y1, x + 1.5, y1) + line(x - 1.5, y2, x + 1.5, y2) + text(f1(v), x - 1, (y1 + y2) / 2, TS, 'c', 90);
+    const px1 = (xr) => s1x + xr * SC, py1 = (yr) => s1y + yr * SC;     // 全体図：絵の実寸 → シート
+    const stripX = (i) => s2x + i * pitch2;                               // 分割図：i 番目の巾の左端
+    const stripNo = (i) => (right ? N - i : i + 1);                       // 貼り始めが 1
+    // ---- レイヤーの中身 ----
+    let gfx = '', div = '', spec = '', dim = '';
+    // グラフィック：全体図と、巾ごとの画像
+    gfx += drawPic(s1x, s1y, [s1x, s1y, s1w, s1h], 0, FW);
+    for (let i = 0; i !== N; i++) {
+      const xs = i * P.STEP, sx = stripX(i);
+      gfx += drawPic(sx - xs * SC, s2y, [sx, s2y, P.ROLL * SC, s2h], xs, xs + P.ROLL);
+    }
+    // 分割：全体図の巾の区切り（カット線）と、分割図の合わせ代の印
+    div += 'q 0 J 0 j ' + K(0, 0, 0, 0.6) + lw(0.5);
+    for (let i = 1; i !== N; i++) { const cx = px1(i * P.STEP + P.EDGE); div += line(cx, s1y, cx, s1y + s1h); }
+    div += K(0, 0, 0, 0.6) + lw(0.35);
+    for (let i = 0; i !== N; i++) {
+      const sx = stripX(i);
+      [P.EDGE, P.ROLL - P.EDGE].forEach((e) => {
+        const cx = sx + e * SC;
+        div += line(cx, s2y - 3, cx, s2y - 0.6) + line(cx, s2y + s2h + 0.6, cx, s2y + s2h + 3);
+      });
+      div += rect(sx, s2y, P.ROLL * SC, s2h);
+    }
+    div += 'Q\n';
+    // 仕様：全体の範囲（マゼンタ）、壁の範囲（シアン）、仕様の欄
+    spec += 'q 0 J 0 j ' + K(0, 1, 0, 0) + lw(0.75) + rect(s1x, s1y, s1w, s1h);
+    spec += K(1, 0, 0, 0) + lw(0.75);
+    (o.shapes || []).forEach((pts) => {
+      spec += pts.map((q, i) => X(px1(q[0])) + ' ' + Y(py1(q[1])) + (i ? ' l' : ' m')).join(' ') + ' h S\n';
+    });
+    const today = new Date();
+    const date = today.getFullYear() + '/' + (today.getMonth() + 1) + '/' + today.getDate();
+    const lines = [
+      '案件名：' + name,
+      '壁：幅 ' + f1(W) + ' × 高さ ' + f1(WH) + ' mm' + ((o.walls || []).length > 1 ? '（壁 ' + o.walls.map((w) => w.no).join('→') + ' をつなげる）' : ''),
+      '巾 ' + f1(P.ROLL) + ' mm ／ 合わせ代 ' + f1(P.OVERLAP) + ' mm ／ ' + f1(P.STEP) + 'ピッチ ／ ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）',
+      '上下の余白 ' + f1(P.TRIM_TOP) + ' mm ／ スタート側の端の余白 ' + f1(P.SIDE) + ' mm ／ 全体 ' + f1(FW) + ' × ' + f1(H) + ' mm',
+      '縮尺 1/10 ／ 作成日 ' + date + ' ／ 確認用'
+    ];
+    spec += K(0, 0, 0, 1) + lw(0.5) + rect(s2x, specY, 200, 50) + Kf(0, 0, 0, 1);
+    spec += text(f1(P.STEP) + 'ピッチ', s2x + 4, specY + 9, 6, 'l');
+    lines.forEach((t, i) => { spec += text(t, s2x + 4, specY + 18 + i * 6.5, 3.6, 'l'); });
+    spec += 'Q\n';
+    // 寸法：全体図の上・左・下、分割図の上（巾ごと）・左、巾の名前
+    dim += 'q 0 J 0 j ' + K(0, 0, 0, 1) + Kf(0, 0, 0, 1) + lw(0.3);
+    const wl = px1(ox), wr = px1(ox + W);
+    dim += hdim(s1x, s1x + s1w, s1y - 30, FW);
+    if (ox > 0.5) dim += hdim(s1x, wl, s1y - 20, ox);
+    dim += hdim(wl, wr, s1y - 20, W);
+    if (FW - ox - W > 0.5) dim += hdim(wr, s1x + s1w, s1y - 20, FW - ox - W);
+    if ((o.walls || []).length > 1) {
+      let acc = ox;
+      o.walls.forEach((w) => { dim += hdim(px1(acc), px1(acc + w.W), s1y - 10, w.W); acc += w.W; });
+    }
+    dim += vdim(s1x - 30, s1y, s1y + s1h, H);
+    dim += vdim(s1x - 18, s1y, py1(P.TRIM_TOP), P.TRIM_TOP) + vdim(s1x - 18, py1(P.TRIM_TOP), py1(P.TRIM_TOP + WH), WH) + vdim(s1x - 18, py1(P.TRIM_TOP + WH), s1y + s1h, P.TRIM_BOTTOM);
+    // 全体図の下：巾ごとに受け持つ壁の幅（壁の端・カット線で区切る）
+    const cuts = [ox];
+    for (let i = 1; i !== N; i++) { const c = i * P.STEP + P.EDGE; if (c > ox + 0.5 ? c < ox + W - 0.5 : false) cuts.push(c); }
+    cuts.push(ox + W);
+    for (let i = 0; i + 1 < cuts.length; i++) dim += hdim(px1(cuts[i]), px1(cuts[i + 1]), s1y + s1h + 10, cuts[i + 1] - cuts[i]);
+    // 分割図：巾ごとに 全幅、合わせ代の半分｜ピッチ｜合わせ代の半分、名前と天地
+    for (let i = 0; i !== N; i++) {
+      const sx = stripX(i), sw = P.ROLL * SC;
+      dim += hdim(sx, sx + sw, s2y - 22, P.ROLL);
+      dim += hdim(sx, sx + P.EDGE * SC, s2y - 12, P.EDGE) + hdim(sx + P.EDGE * SC, sx + sw - P.EDGE * SC, s2y - 12, P.STEP) + hdim(sx + sw - P.EDGE * SC, sx + sw, s2y - 12, P.EDGE);
+      dim += text(stripNo(i) + '_【' + name + '】', sx + 1, s2y - 31, 3, 'l');
+      dim += text('天↑地', sx + sw - 1, s2y - 31, 3, 'r');
+    }
+    dim += vdim(s2x - 18, s2y, s2y + s2h, H);
+    dim += text('全体図（縮尺 1/10）', s1x, s1y - 37, 4.5, 'l');
+    dim += text('分割図（巾ごと・貼る順に ' + (right ? '右' : '左') + 'から 1, 2, 3 …）', s2x, s2y - 38, 4.5, 'l');
+    dim += 'Q\n';
+    // ---- PDF にまとめる ----
+    const names = ['グラフィック', '分割', '仕様', '寸法'];
+    const bodies = [gfx, div, spec, dim];
+    const ocgs = names.map((nm) => { const id = alloc(); put(id, ['<< /Type /OCG /Name <FEFF' + utf16(nm) + '> >>']); return id; });
+    let content = '';
+    bodies.forEach((b, i) => { content += '/OC /L' + i + ' BDC\n' + b + 'EMC\n'; });
+    const fontId = alloc(), cidId = alloc(), fdId = alloc();
+    put(fdId, ['<< /Type /FontDescriptor /FontName /KozGoPr6N-Regular /Flags 4 /FontBBox [-538 -374 1254 1418] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 763 /StemV 116 >>']);
+    put(cidId, ['<< /Type /Font /Subtype /CIDFontType0 /BaseFont /KozGoPr6N-Regular /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /FontDescriptor ' + fdId + ' 0 R /DW 1000 /W [1 95 500 231 632 500] >>']);
+    put(fontId, ['<< /Type /Font /Subtype /Type0 /BaseFont /KozGoPr6N-Regular-UniJIS-UTF16-H /Encoding /UniJIS-UTF16-H /DescendantFonts [' + cidId + ' 0 R] >>']);
+    const contentId = alloc(), pageId = alloc(), pagesId = alloc(), catalogId = alloc(), infoId = alloc();
+    const cbytes = enc.encode(content);
+    put(contentId, ['<< /Length ' + cbytes.length + ' >>\nstream\n', cbytes, '\nendstream']);
+    put(pageId, ['<< /Type /Page /Parent ' + pagesId + ' 0 R /MediaBox [0 0 ' + n3(pageW * kk) + ' ' + n3(Hp) + ']' + (u > 1 ? ' /UserUnit ' + u : '')
+      + ' /Resources << /Font << /F1 ' + fontId + ' 0 R >> /XObject << ' + xobj.join(' ') + ' >> /Properties << ' + ocgs.map((id, i) => '/L' + i + ' ' + id + ' 0 R').join(' ') + ' >> >> /Contents ' + contentId + ' 0 R >>']);
+    put(pagesId, ['<< /Type /Pages /Kids [' + pageId + ' 0 R] /Count 1 >>']);
+    const refs = ocgs.map((id) => id + ' 0 R').join(' ');
+    put(catalogId, ['<< /Type /Catalog /Pages ' + pagesId + ' 0 R /OCProperties << /OCGs [' + refs + '] /D << /Order [' + refs + '] /ON [' + refs + '] >> >> >>']);
+    put(infoId, ['<< /Producer (cad-floor-plan wallpaper) /Title <FEFF' + utf16('確認用 ' + name) + '> >>']);
+    const parts = []; let pos = 0;
+    const add = (p) => { const b = typeof p === 'string' ? enc.encode(p) : p; parts.push(b); pos += b instanceof Blob ? b.size : b.length; };
+    add('%PDF-1.6\n'); add(Uint8Array.of(37, 226, 227, 207, 211, 10));
+    const offs = {};
+    objs.sort((a, b) => a.id - b.id).forEach((ob) => { offs[ob.id] = pos; add(ob.id + ' 0 obj\n'); ob.parts.forEach(add); add('\nendobj\n'); });
+    const xref = pos;
+    let xr = 'xref\n0 ' + nextId + '\n0000000000 65535 f \n';
+    for (let i = 1; i !== nextId; i++) xr += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
+    add(xr + 'trailer\n<< /Size ' + nextId + ' /Root ' + catalogId + ' 0 R /Info ' + infoId + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+    if (o.onProgress) o.onProgress(1);
+    return {
+      name: 'wallpaper_sheet_' + N + 'strips_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + '.ai',
+      blob: new Blob(parts, { type: 'application/postscript' }), width: FW, height: H, strips: N, ai: true, sheet: true
+    };
+  };
+
   // buildWhole と同じ内容を、タイルに分けて作る（大きな壁でも固まらない）。cadDraw(ctx): CAD図面を絵の座標に描く関数
   // split: 1ファイルの幅の上限（mm。0 / false なら分けない）。超えるときは巾の区切りで分けて ZIP にまとめる
   // （GIMP は CMYK の PSD を RGB に変えながら読むため、大きいほど開くのに時間とメモリがかかる）

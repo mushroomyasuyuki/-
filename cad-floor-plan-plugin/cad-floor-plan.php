@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.80.3
+ * Version: 2.81.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.80.3');
+define('CFP_VERSION', '2.81.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -516,7 +516,8 @@ final class CAD_Floor_Plan_Plugin {
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pu" title="上へ">↑ 上</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pd" title="下へ">↓ 下</button>
                     <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save" title="CAD図面・壁紙の画像・巾の枠をレイヤーに分けたPSDで保存します">壁紙データを保存（PSD）</button>
-                    <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save-ai" title="Illustratorで開ける .ai（PDF互換・実寸）で保存します。巾の枠は線（ベクトル）、壁紙の画像はCMYK。分ける幅の設定はPSDと同じです">壁紙データを保存（AI）</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save-ai" title="Illustratorで開ける確認用シート（.ai・PDF互換・縮尺1/10）で保存します。全体図・分割図（巾ごと・「N_【案件名】」「天↑地」）・仕様・寸法。レイヤーはグラフィック／分割／仕様／寸法">壁紙データを保存（AI）</button>
+                    <label class="cfp-check">案件名 <input type="text" data-cfp="wp-name" placeholder="物件名" style="width:140px;min-height:0;padding:2px 6px;"></label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-cad" checked> CAD図面を表示</label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
                     <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像を表示</label>
