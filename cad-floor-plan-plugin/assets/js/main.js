@@ -419,6 +419,7 @@
       try {
         const meta = data.metadata || {};
         const normalized = { rooms: data.rooms.map((r, i) => CADParser.normalizeRoom(r, i)), metadata: meta };
+        if (meta.source === 'sample') this.gridOffsets = {}; // a new sample room: the layout starts at its edges again
         // a drawing read as a picture may have no room yet: the rooms are then traced by hand
         if (!meta.raster || normalized.rooms.length) CADParser.validate(normalized);
         if (!this.renderer) this.renderer = new ThreeRoomRenderer(this.$('canvas'));
@@ -1285,7 +1286,7 @@
     // bleed: the picture is W + 2*bleed by H + 2*bleed (the carpet with a margin on every side)
     async carpetPsdInfo(W, H, bleed) {
       const B = bleed || 0;
-      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      const room = (this.fromFile || this._isSample()) && this.data ? this.data.rooms[this.roomIndex] : null;
       if (!room) return null;
       const lay = this._tileLayout(room);
       if (!lay.box) return null;
@@ -2012,9 +2013,23 @@
     // ----------------------------------------------- carpet tile layout (割付)
     // 500 x 500 mm tiles centred on the room (plus the layout's shift). Tiles that touch the room count,
     // the cut ones at the edges as whole tiles. Returns the tiles in mm and the counts.
+    // the sample room (from the estimate's carpet size) on a page with the estimate tool
+    _isSample() {
+      return !this.fromFile && this.hasTool && !!(this.data && this.data.metadata && this.data.metadata.source === 'sample');
+    }
+
+    // where the layout sits before it is moved: on a drawing, one tile centred on the room centre; on the sample
+    // room (the carpet size itself) the tiles start at the room's edge, so that the count matches the estimate
+    _homeOffset(room) {
+      if (!room || room.id !== 'sample') return { x: 0, y: 0 };
+      const b = CADParser.bounds(room.vertices);
+      const one = (lo, hi) => { let o = ((lo - ((lo + hi) / 2 - TILE / 2)) % TILE + TILE) % TILE; if (o > TILE / 2) o -= TILE; return o; };
+      return { x: one(b.minX, b.maxX), y: one(b.minY, b.maxY) };
+    }
+
     _tileLayout(room, offset) {
       const b = CADParser.bounds(room.vertices);
-      const off = offset || this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
+      const off = offset || this.gridOffsets[this.roomIndex] || this._homeOffset(room);
       const cx = (b.minX + b.maxX) / 2 + off.x, cy = (b.minY + b.maxY) / 2 + off.y;
       // one tile centred on the room centre (a tile edge is on the centre line after a 250 mm shift)
       const tx = cx - TILE / 2, ty = cy - TILE / 2;
@@ -2077,7 +2092,8 @@
       if (!previewOffset) this._floorSoon(); // the 3D floor follows the carpet's place on the layout
       const panel = this.$('layout');
       const room = this.data && this.data.rooms[this.roomIndex];
-      if (!this.fromFile || !room) { panel.hidden = true; return; }
+      // also the sample room made from the carpet size typed in the estimate (仕様サイズ)
+      if (!(this.fromFile || this._isSample()) || !room) { panel.hidden = true; return; }
       panel.hidden = false;
       if (!this.backdrop) this._ensureBackdrop();
       const view = this._layoutView();
@@ -2165,7 +2181,7 @@
       if (previewOffset) return;
       const off = this.gridOffsets[this.roomIndex] || { x: 0, y: 0 };
       this.$('layout-note').textContent = lay.box
-        ? '割付（50cm角・部屋の中心から）：横 ' + lay.cols + ' 枚 × 縦 ' + lay.rows + ' 枚 ＝ 見積もりサイズ ' + fmtMm(lay.cols * TILE) + ' × ' + fmtMm(lay.rows * TILE) + ' mm'
+        ? (this._isSample() ? '仕様サイズのサンプルの部屋（図面なし）の割付（50cm角・部屋の端から）：横 ' : '割付（50cm角・部屋の中心から）：横 ') + lay.cols + ' 枚 × 縦 ' + lay.rows + ' 枚 ＝ 見積もりサイズ ' + fmtMm(lay.cols * TILE) + ' × ' + fmtMm(lay.rows * TILE) + ' mm'
           + '。部屋に敷く枚数 ' + lay.count + ' 枚（うち端で切る ' + lay.cut + ' 枚、薄い赤）。'
           + (off.x || off.y ? '割付のずらし：横 ' + Math.round(off.x) + ' mm・縦 ' + Math.round(off.y) + ' mm。' : '')
           + (hasDesign ? '' : '①でカーペット用のデザイン画像を処理すると、変換画像を重ねて表示します。')
@@ -2179,7 +2195,7 @@
       // sized and placed from the layout at its home position (no shift): moving the layout frame
       // never changes the image's size, aspect ratio or position
       const room = this.data && this.data.rooms[this.roomIndex];
-      const home = (room && this._tileLayout(room, { x: 0, y: 0 }).box) || lay.box;
+      const home = (room && this._tileLayout(room, this._homeOffset(room)).box) || lay.box;
       // the converted image is the carpet size plus a margin (5 mm) on every side
       const bl = (window.cfpCarpetBleed || 0) * 2;
       const w = (home.x1 - home.x0 + bl) * d.scale, h = (home.y1 - home.y0 + bl) * d.scale;
