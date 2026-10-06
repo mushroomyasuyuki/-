@@ -1197,6 +1197,11 @@
         if (drag.mode !== 'view') { // the picture / the frames: shifted in mm; while dragging only the layer moves
           const o = { x: Math.round(drag.o.x + (e.clientX - drag.x) * k), y: Math.round(drag.o.y + (e.clientY - drag.y) * k) };
           this._wpO()[drag.mode] = o;
+          if (drag.mode === 'frame') {
+            // the strips are made again from the frame's place (strips off the wall dropped, new ones added)
+            if (!this._wpRaf) this._wpRaf = requestAnimationFrame(() => { this._wpRaf = 0; this._wpRender(); });
+            return;
+          }
           const layer = svg.querySelector('[data-wp="' + drag.mode + '"]'), r0 = (this._wpRendered || {})[drag.mode] || { x: 0, y: 0 };
           if (layer) layer.setAttribute('transform', 'translate(' + (o.x - r0.x) + ' ' + (o.y - r0.y) + ')');
           return;
@@ -1528,8 +1533,13 @@
       walls.forEach((x) => { x.W = Math.max(1, Math.round(x.w.width)); x.WH = Math.max(1, Math.round(x.w.height)); });
       const W = walls.reduce((t, x) => t + x.W, 0), WH = Math.max(...walls.map((x) => x.WH));
       const H = WH + wp.TRIM_TOP + wp.TRIM_BOTTOM;
-      const N = wp.count ? wp.count(W) : Math.max(1, Math.ceil((W + wp.OVERLAP - 5) / wp.STEP));
-      return { wp, walls, w: walls[0].w, multi: walls.length > 1, W, WH, H, N, FW: Math.round(N * wp.STEP + wp.OVERLAP) };
+      // the moves (picture / frames) are kept per wall
+      const wid = walls.map((x) => x.no).join('-') + '|' + W + 'x' + WH + '|' + (this._elevFile ? this._elevFile.name : '');
+      if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
+      // the strips with the frame's move: strips off the wall are dropped, the uncovered side gets new ones
+      const right = !!(this.$('wp-right') || {}).checked;
+      const fr = wp.frames(W, right, this._wpO().frame.x);
+      return { wp, walls, w: walls[0].w, multi: walls.length > 1, W, WH, H, N: fr.N, FW: fr.FW, ox: fr.ox };
     }
 
     // the wall's part of the elevation picture: [x, y, width, height] in picture pixels
@@ -1578,8 +1588,6 @@
       panel.hidden = false;
       const { wp, w, W, WH, H, N, FW } = g;
       const svg = this.$('wp-svg');
-      const wid = g.walls.map((x) => x.no).join('-') + '|' + W + 'x' + WH + '|' + (this._elevFile ? this._elevFile.name : '');
-      if (this._wpWall !== wid) { this._wpWall = wid; this._wpView = null; } // a different wall: back to the whole view
       this._wpApplyView();
       const off = this._wpO();
       if (!this._wpDragging) this._wpShare(off.img, off.scale || 1);
@@ -1594,9 +1602,9 @@
         return e;
       };
       const right = this.$('wp-right').checked;
-      const ox = wp.startX(W, FW, right); // the wall's left edge in the picture (the start side margin)
+      const ox = g.ox; // the wall's left edge in the picture (the start side margin and the frame's move)
       const cuts = [];
-      for (let i = 1; i < N; i++) cuts.push((right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x);
+      for (let i = 1; i < N; i++) cuts.push(i * wp.STEP + wp.EDGE);
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
       const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
       const bd = this.elev && !g.walls[0].w.virtual ? this.elev.backdrop : null;
@@ -1624,13 +1632,13 @@
       const src = wp.getSource();
       if (showImg && src) {
         const key = [src.width, src.height, W, WH, wp.ROLL, wp.OVERLAP, right ? 'R' : 'L', off.scale || 1, JSON.stringify(window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : 0)].join('|');
-        const uo = this._wpUrlOff || { x: 0, y: 0 };
+        const uo = this._wpUrlOff || { x: 0, y: 0, ox, fw: FW };
         const same = this._wpKey === key && this._wpUrl;
         if (same) {
           // the picture as it was built, moved by what was moved since (a new one is built a moment later)
-          add('image', { href: this._wpUrl, x: off.img.x - uo.x, y: off.img.y - uo.y, width: FW, height: H, preserveAspectRatio: 'none', opacity: (parseFloat(this.$('wp-dopacity').value) || 80) / 100 }, gImg);
+          add('image', { href: this._wpUrl, x: off.img.x - uo.x + (ox - uo.ox), y: off.img.y - uo.y, width: uo.fw, height: H, preserveAspectRatio: 'none', opacity: (parseFloat(this.$('wp-dopacity').value) || 80) / 100 }, gImg);
         }
-        if (!this._wpDragging && (!same || uo.x !== off.img.x || uo.y !== off.img.y)) {
+        if (!this._wpDragging && (!same || uo.x !== off.img.x || uo.y !== off.img.y || uo.ox !== ox || uo.fw !== FW)) {
           clearTimeout(this._wpTimer);
           this._wpTimer = setTimeout(() => {
             // drawn straight at the screen size (not the full 1px = 1mm picture): much lighter for long walls
@@ -1639,7 +1647,7 @@
             small.width = Math.max(1, Math.round(FW * k)); small.height = Math.max(1, Math.round(H * k));
             wp.renderDesign(small, ox + off.img.x, wp.TRIM_TOP + off.img.y, W, WH, k, off.scale || 1);
             this._wpUrl = small.toDataURL('image/jpeg', 0.85);
-            this._wpUrlOff = { x: off.img.x, y: off.img.y };
+            this._wpUrlOff = { x: off.img.x, y: off.img.y, ox, fw: FW };
             this._wpKey = key;
             this._wpRender();
           }, 200);
@@ -1650,8 +1658,8 @@
         const col = (i) => (i % 2 ? '#ff7a00' : '#ff0000');
         for (let i = 0; i < N; i++) {
           const odd = i % 2;
-          const x = right ? FW - wp.ROLL - i * wp.STEP : i * wp.STEP;
-          add('rect', { x: x + off.frame.x + 1.5, y: off.frame.y + 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
+          const x = (right ? N - 1 - i : i) * wp.STEP; // the frame's move is in the strips themselves (g.ox)
+          add('rect', { x: x + 1.5, y: off.frame.y + 1.5 + odd * 4, width: wp.ROLL - 3, height: H - 3 - odd * 8, fill: odd ? 'rgba(255,122,0,0.05)' : 'rgba(255,0,0,0.05)',
             stroke: col(i), 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke' }, gFrame);
         }
         const purple = { stroke: '#d000d0', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' };
@@ -1664,7 +1672,7 @@
         });
         // cut lines: in the middle of the overlap of two neighbouring strips, joined to the wall's top and bottom lines
         for (let i = 1; i < N; i++) {
-          const cx = (right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x; // the middle of the overlap of two strips
+          const cx = i * wp.STEP + wp.EDGE; // the middle of the overlap of two strips
           shapes.forEach((sh) => wp.cutSegments(sh.pts, cx).forEach((sg) => add('line', Object.assign({ x1: cx, y1: sg[0], x2: cx, y2: sg[1] }, purple), gFrame)));
         }
         // the corners (入隅・出隅) between the joined walls: blue, red when a joint is less than 100 mm away
@@ -1723,7 +1731,7 @@
       try {
         await new Promise((r) => setTimeout(r, 30));
         const right = this.$('wp-right').checked;
-        const shapes = this._wpShapes(g, wp.startX(W, g.FW, right));
+        const shapes = this._wpShapes(g, g.ox);
         // the CAD layer is drawn piece by piece (tiles) by the PSD writer: no canvas as big as the whole picture
         let cadDraw = null;
         const bd = this.elev && !g.walls[0].w.virtual ? this.elev.backdrop : null;

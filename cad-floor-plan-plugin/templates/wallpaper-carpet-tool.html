@@ -2447,6 +2447,17 @@
   WALL_PRINT.count = function (W) { return Math.max(1, Math.ceil((this.SIDE + W - 5) / this.STEP)); };
   // 壁の左端の位置（絵の左端から mm）：左寄せスタートはスタート側の余白、右寄せスタートは右端から余白をとった位置
   WALL_PRINT.startX = function (W, FW, right) { return right ? FW - this.SIDE - W : this.SIDE; };
+  // 枠を横に動かした量 fx（mm）も入れた巾の並び：巾は STEP ごとに並び、壁にかからなくなった巾は除き、
+  // 足りなくなった側（壁の端から合わせ代−5mm以上の余白が要る）に巾を足す。
+  // 返り値：N（巾の数）、FW（絵の幅＝最初の巾の左端から最後の巾の右端まで）、ox（絵の中での壁の左端）
+  WALL_PRINT.frames = function (W, right, fx) {
+    const P = this, m = Math.max(0, P.OVERLAP - 5), o = fx || 0;
+    const s0 = right ? W + P.SIDE + o - P.ROLL : o - P.SIDE; // 貼り始めの巾の左端（壁の左端から）
+    const kmin = Math.floor((-m - s0) / P.STEP + 1e-9);
+    const kmax = Math.max(kmin, Math.ceil((W + m - P.ROLL - s0) / P.STEP - 1e-9));
+    const N = kmax - kmin + 1;
+    return { N, FW: Math.round(N * P.STEP + P.OVERLAP), ox: -(s0 + kmin * P.STEP) };
+  };
   WALL_PRINT.set = function (roll, overlap, trim, side) {
     if (side !== undefined) this.SIDE = Math.min(100, Math.max(10, Math.round((parseFloat(side) || 10) / 5) * 5));
     const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
@@ -2548,10 +2559,10 @@
     const ox = P.startX(W, FW, right);
     if (!shapes || !shapes.length) shapes = [[[ox, P.TRIM_TOP], [ox + W, P.TRIM_TOP], [ox + W, P.TRIM_TOP + WH], [ox, P.TRIM_TOP + WH]]];
     for (let i = 0; i !== N; i++) {
-      const x = right ? FW - P.ROLL - i * P.STEP : i * P.STEP;
+      const x = (right ? N - 1 - i : i) * P.STEP; // 横の位置は巾の並び（frames）に入っている
       fx.strokeStyle = i % 2 ? '#ff7a00' : '#ff0000';
       fx.lineWidth = 3;
-      fx.strokeRect(x + fo.x + 1.5, fo.y + 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
+      fx.strokeRect(x + 1.5, fo.y + 1.5 + (i % 2) * 4, P.ROLL - 3, H - 3 - (i % 2) * 8);
     }
     fx.strokeStyle = '#d000d0';
     fx.lineWidth = 2;
@@ -2563,7 +2574,7 @@
     });
     // カット線：隣り合う巾の重なりの真ん中。壁の中にある部分だけ
     for (let i = 1; i !== N; i++) {
-      const cx = (right ? FW - i * P.STEP - P.EDGE : i * P.STEP + P.EDGE) + fo.x;
+      const cx = i * P.STEP + P.EDGE;
       shapes.forEach((pts) => P.cutSegments(pts, cx).forEach((sg) => {
         fx.beginPath();
         fx.moveTo(cx, sg[0]);
@@ -2733,9 +2744,8 @@
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
-    const N = P.count(W);
-    const FW = Math.round(N * P.STEP + P.OVERLAP);
-    const ox = P.startX(W, FW, right);
+    const fr = P.frames(W, right, off.frame ? off.frame.x : 0); // 枠を動かした分も入れた巾の並び
+    const N = fr.N, FW = fr.FW, ox = fr.ox;
     const src = P.getSource();
     const cadL = (ctx) => { if (cadDraw) cadDraw(ctx); };
     const design = (ctx) => {
@@ -2795,9 +2805,8 @@
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
-    const N = P.count(W);
-    const FW = Math.round(N * P.STEP + P.OVERLAP);
-    const ox = P.startX(W, FW, right);
+    const fr = P.frames(W, right, off.frame ? off.frame.x : 0); // 枠を動かした分も入れた巾の並び
+    const N = fr.N, FW = fr.FW, ox = fr.ox;
     const mk = () => { const c = document.createElement('canvas'); c.width = FW; c.height = H; return c; };
     const cadL = mk();
     if (cadFull) cadL.getContext('2d').drawImage(cadFull, 0, 0);
