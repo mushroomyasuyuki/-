@@ -290,6 +290,10 @@
     </div>
     
   <div id="cc-status" class="status-box"></div>
+  <div class="dither-box cc-img-scale-box">
+    <div class="slider-row"><label for="cc-img-scale">画像の大きさ（拡大・縮小）：<span id="cc-img-scale-val">100</span>%</label><span>100% = 指定サイズ＋上下左右5mmいっぱい。小さくして余白が出るところは白</span></div>
+    <input type="range" id="cc-img-scale" min="30" max="300" step="1" value="100">
+  </div>
   <div class="preview-grid cc-variants">
     <div class="preview-card"><h3>元画像（オリジナル）</h3><canvas id="cc-original"></canvas><div class="used-colors-text" style="text-align:center;">25.4 DPI換算・元データのまま</div></div>
     <div class="preview-card cc-var-card" data-var="std"><h3>① 標準色のみ</h3><div class="cc-var-sub">無償の標準色（基本16色＋OP-03・05）から選んだ16色</div><canvas id="cc-var-std"></canvas><div class="psd-palette-grid" id="cc-var-std-chips"></div><div class="used-colors-text" id="cc-var-std-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="std">この変換で進める</button></div>
@@ -1212,12 +1216,18 @@
   // カーペットの画像は、指定サイズ（横幅 × 縦幅。CADの部屋から算出したサイズも同じ）の上下左右に 5mm ずつ足した大きさで作る
   const CARPET_BLEED = 5;
   window.cfpCarpetBleed = CARPET_BLEED;
-  // 元画像を、縦横比を変えずに W × H いっぱいまで引き伸ばす（余白は作らない。はみ出したところは切る）
+  // 元画像を、縦横比を変えずに W × H いっぱいまで引き伸ばす（はみ出したところは切る）。
+  // 「画像の大きさ」（100% = いっぱい）で拡大・縮小し、縮小して余白が出るところは白
+  function carpetImageScale() {
+    const v = parseFloat(($('cc-img-scale') || {}).value);
+    return Math.min(3, Math.max(0.3, (isNaN(v) ? 100 : v) / 100));
+  }
   function drawImageCover(ctx, img, W, H) {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
     if (!iw || !ih) return;
-    const sc = Math.max(W / iw, H / ih);
+    const sc = Math.max(W / iw, H / ih) * carpetImageScale();
     const w = iw * sc, h = ih * sc;
     ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
   }
@@ -2183,7 +2193,7 @@
       let info = null;
       try { info = cadEl ? (cadEl.cfpWidget ? await cadEl.cfpWidget.carpetPsdInfo(sizeW, sizeH, CARPET_BLEED) : null) : null; } catch (e) { info = null; }
       const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
-        info: info, bleed: CARPET_BLEED, names: { cad: '①CAD画像（図面）', room: '②部屋' + (info ? '（' + info.name + '）' : ''), img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm＝' + sizeW + '×' + sizeH + 'mm＋上下左右' + CARPET_BLEED + 'mm）', grid: '④割付（50cm角・端で切るタイルは薄い赤・センター印）' } },
+        info: info, bleed: CARPET_BLEED, names: { cad: '①CAD画像（図面）', room: '②部屋' + (info ? '（' + info.name + '）' : ''), img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm＝' + sizeW + '×' + sizeH + 'mm＋上下左右' + CARPET_BLEED + 'mm' + (carpetImageScale() !== 1 ? '・画像の大きさ ' + Math.round(carpetImageScale() * 100) + '%' : '') + '）', grid: '④割付（50cm角・端で切るタイルは薄い赤・センター印）' } },
         (v) => { button.textContent = 'PSDを作成中… ' + Math.round(v * 100) + '%'; });
       const used = res.used.map((i) => activeEntries[i]);
       state.lastUsedColorEntries = used;
@@ -3180,6 +3190,15 @@
     }
 
     if ($('cc-material')) $('cc-material').onchange = calculateEstimate;
+    // 画像の大きさ（拡大・縮小）：変えたら作り直す（少し待ってまとめて）
+    if ($('cc-img-scale')) {
+      let scaleTimer = null;
+      $('cc-img-scale').addEventListener('input', (e) => {
+        if ($('cc-img-scale-val')) $('cc-img-scale-val').textContent = e.target.value;
+        clearTimeout(scaleTimer);
+        scaleTimer = setTimeout(() => { if (state.loadedImg) updateCarpetCanvas(); }, 120);
+      });
+    }
     if ($('cc-region')) $('cc-region').onchange = calculateEstimate;
     // 元画像を別ウィンドウで表示（ポップアップが止められたときは、この画面の上に大きく表示）
     if ($('cc-show-original')) $('cc-show-original').onclick = () => {
