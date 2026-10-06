@@ -296,7 +296,7 @@
     <input type="range" id="cc-img-scale" min="30" max="300" step="1" value="100">
   </div>
   <div class="preview-grid cc-variants">
-    <div class="preview-card"><h3>元画像（オリジナル）</h3><canvas id="cc-original"></canvas><div class="used-colors-text" style="text-align:center;">25.4 DPI換算・元データのまま</div></div>
+    <div class="preview-card"><h3>元画像（オリジナル）</h3><canvas id="cc-original" style="cursor:crosshair;" title="クリックすると、その色を「守る色」にします"></canvas><div class="used-colors-text" style="text-align:center;">25.4 DPI換算・元データのまま</div><div class="cc-protect"><div class="used-colors-text" style="text-align:left;">🎯 <b>守る色</b>：上の元画像で、残したい色（標識の赤など）をクリックすると、その色を3通りの変換で必ず残します（最大4色）。</div><div id="cc-protect-list" class="psd-palette-grid" style="justify-content:flex-start;"></div></div></div>
     <div class="preview-card cc-var-card" data-var="std"><h3>① 標準色のみ</h3><div class="cc-var-sub">無償の標準色（基本16色＋OP-03・05）から選んだ16色</div><canvas id="cc-var-std"></canvas><div class="psd-palette-grid" id="cc-var-std-chips"></div><div class="used-colors-text" id="cc-var-std-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="std">この変換で進める</button></div>
     <div class="preview-card cc-var-card" data-var="op3"><h3>② 標準色＋オプション3色</h3><div class="cc-var-sub">標準色13色＋有償オプション3色＝計16色</div><canvas id="cc-var-op3"></canvas><div class="psd-palette-grid" id="cc-var-op3-chips"></div><div class="used-colors-text" id="cc-var-op3-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="op3">この変換で進める</button></div>
     <div class="preview-card cc-var-card" data-var="max"><h3>③ 最大表現（計16色）</h3><div class="cc-var-sub">標準色＋オプションカラーの全色から、元画像に最も近い16色を自動選択（有償色が増えると、お見積もりが上がります）</div><canvas id="cc-var-max"></canvas><div class="psd-palette-grid" id="cc-var-max-chips"></div><div class="used-colors-text" id="cc-var-max-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="max">この変換で進める</button></div>
@@ -1286,6 +1286,8 @@
       setStatus('ok', '✅ 画像の読み込み・プレビュー描画が完了しました');
       state.loadedImg = img;
       state.file = file; // 途中保存で保存する元画像
+      state.protect = []; // 守る色は画像ごと
+      if ($('cc-protect-list')) $('cc-protect-list').innerHTML = '';
       updateCarpetCanvas();
       if (typeof done === 'function') done();
       URL.revokeObjectURL(objectUrl);
@@ -1592,18 +1594,33 @@
   }
   // 見え方の違い：明るさ・あざやかさ・色合いを分けて重みを付ける（元の色は印象に合わせて少し動かしてから比べる）
   function lookTarget(lab, L) { return [Math.min(100, lab[0] + L.light), lab[1] * L.chroma, lab[2] * L.chroma]; }
+  // 色みのはっきりした色（標識の赤など）は、明るさより「色の種類（色合い）と鮮やかさ」で見分けられるので、
+  // 鮮やかさが落ちる・色合いがずれるのを重く、明るさの差を軽く見る（暗めの赤が茶色に寄らないように）
   function lookDist(t, p, L) {
     const dL = t[0] - p[0];
     const c1 = Math.hypot(t[1], t[2]), c2 = Math.hypot(p[1], p[2]);
     const dC = c1 - c2;
     const da = t[1] - p[1], db = t[2] - p[2];
     const dH2 = Math.max(0, da * da + db * db - dC * dC);
-    return L.wL * dL * dL + L.wC * dC * dC + L.wH * dH2;
+    const k = Math.min(1, Math.max(0, (c1 - 20) / 40));
+    return L.wL * (1 - 0.5 * k) * dL * dL + L.wC * (dC > 0 ? 1 + 2 * k : 1) * dC * dC + L.wH * (1 + 2 * k) * dH2;
+  }
+  // 守る色に合わせるパレットの色：色の種類（色合い）と鮮やかさをいちばん大事にし、明るさは軽く見る
+  //（暗めの赤を守るなら、明るさが近い茶色ではなく赤にする）
+  function protectDist(t, p) {
+    const dL = t[0] - p[0];
+    const c1 = Math.hypot(t[1], t[2]), c2 = Math.hypot(p[1], p[2]);
+    const dC = c1 - c2;
+    const da = t[1] - p[1], db = t[2] - p[2];
+    const dH2 = Math.max(0, da * da + db * db - dC * dC);
+    return 0.3 * dL * dL + (dC > 0 ? 3 : 0.5) * dC * dC + 4 * dH2;
   }
   // 色の対応表（5bit/チャンネル＝32768色ぶん）。画面・PSD（Worker）で同じ表を使うので、仕上がりがそろう
   const lutCache = new Map();
+  // 守る色（元画像でクリックした色）：その色に近い色（見え方の差 15 以内）は、守る色にいちばん合うパレットの色にする
   function buildLookLut(activeRgb, look) {
-    const key = look + '|' + activeRgb.map((c) => c.join(',')).join(';');
+    const prot = (state.protect || []);
+    const key = look + '|' + activeRgb.map((c) => c.join(',')).join(';') + '|' + prot.map((c) => c.join(',')).join(';');
     if (lutCache.has(key)) return lutCache.get(key);
     const L = LOOKS[look] || LOOKS.natural;
     const pl = activeRgb.map((c) => rgbToLab(c[0], c[1], c[2]));
@@ -1613,6 +1630,20 @@
       let best = 0, bd = Infinity;
       for (let p = 0; p !== pl.length; p++) { const d = lookDist(t, pl[p], L); if (d < bd) { bd = d; best = p; } }
       lut[i] = best;
+    }
+    if (prot.length) {
+      const P = prot.map((c) => {
+        const lab = rgbToLab(c[0], c[1], c[2]), t = lookTarget(lab, L);
+        let best = 0, bd = Infinity;
+        for (let p = 0; p !== pl.length; p++) { const d = protectDist(t, pl[p]); if (d < bd) { bd = d; best = p; } }
+        return { lab, best };
+      });
+      for (let i = 0; i !== 32768; i++) {
+        const lab = rgbToLab((i >> 10) * 8 + 4, ((i >> 5) % 32) * 8 + 4, (i % 32) * 8 + 4);
+        let near = -1, nd = 15 * 15;
+        P.forEach((q, k) => { const d = (lab[0] - q.lab[0]) ** 2 + (lab[1] - q.lab[1]) ** 2 + (lab[2] - q.lab[2]) ** 2; if (d < nd) { nd = d; near = k; } });
+        if (near >= 0) lut[i] = P[near].best;
+      }
     }
     if (lutCache.size > 12) lutCache.clear();
     lutCache.set(key, lut);
@@ -1641,8 +1672,13 @@
         b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++; b[4] += wt;
       }
     }
-    const arr = Array.from(bins.values()).sort((a, b) => b[4] - a[4]).slice(0, 2500);
-    return arr.map((b) => ({ lab: rgbToLab(b[0] / b[3], b[1] / b[3], b[2] / b[3]), w: b[4] }));
+    // 目立つ色（鮮やかな色：標識の赤など）は面積が小さくても重く数える（全体の印象を決めるため）
+    const arr = Array.from(bins.values()).map((b) => {
+      const lab = rgbToLab(b[0] / b[3], b[1] / b[3], b[2] / b[3]);
+      const c = Math.hypot(lab[1], lab[2]);
+      return { lab, w: b[4] * (1 + 1.5 * Math.min(1, Math.max(0, (c - 25) / 45))) };
+    }).sort((a, b) => b.w - a.w).slice(0, 2500);
+    return arr;
   }
 
   // 色同士の関係：はっきり違う代表の色（最大24色）と、画像の中で隣り合っている長さ（柄・文字の境目）を数える。
@@ -1731,6 +1767,16 @@
     let minD = new Float64Array(nb).fill(Infinity);
     const dataCost = (md, row) => { let s = 0; for (let b = 0; b < nb; b++) s += hist[b].w * Math.min(md[b], row[b]); return s; };
     let cur = Infinity;
+    // 守る色：いちばん合うパレットの色を、最初に必ず入れる
+    (state.protect || []).forEach((c) => {
+      const t = lookTarget(rgbToLab(c[0], c[1], c[2]), L);
+      let best = -1, bd = Infinity;
+      pool.forEach((idx) => { if (left ? left[grp(idx)] <= 0 : false) return; const d = protectDist(t, labs[idx]); if (d < bd) { bd = d; best = idx; } });
+      if (best < 0 || sel.indexOf(best) >= 0 || sel.length >= k) return;
+      sel.push(best);
+      if (left) left[grp(best)]--;
+      for (let b = 0; b < nb; b++) minD[b] = Math.min(minD[b], dist[best][b]);
+    });
     while (sel.length < k) {
       let best = -1, bestCost = Infinity;
       pool.forEach((idx) => {
@@ -1747,10 +1793,12 @@
       if (left) left[grp(best)]--;
       for (let b = 0; b < nb; b++) minD[b] = Math.min(minD[b], dist[best][b]);
     }
-    // 入れ替えで改善（同じ種類の中で）
+    // 入れ替えで改善（同じ種類の中で）。守る色で入れた色は入れ替えない
+    const fixed = sel.slice(0, Math.min(sel.length, (state.protect || []).length));
     for (let pass = 0; pass < 3; pass++) {
       let changed = false;
       for (let p = 0; p < sel.length; p++) {
+        if (fixed.indexOf(sel[p]) >= 0) continue;
         const md = new Float64Array(nb).fill(Infinity);
         sel.forEach((idx, q) => { if (q !== p) for (let b = 0; b < nb; b++) md[b] = Math.min(md[b], dist[idx][b]); });
         const others = sel.filter((x, q) => q !== p);
@@ -1789,7 +1837,7 @@
     if (!original || !original.width || !$('cc-var-std')) return;
     try {
       // 画像そのものが変わったときだけ選び直す（CADの縮尺・サイズ変更で表示サイズが変わっても、選んだ変換は保つ）
-      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook();
+      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook() + '|' + (state.protect || []).map((c) => c.join(',')).join(';');
       if (state.variantKey !== key) {
         // 同じ画像で「仕上がりの印象」だけ変えたときは、選んでいた変換（①②③）のまま選び直す
         const sameImg = state.variantKey ? state.variantKey.split('|')[0] === key.split('|')[0] : false;
@@ -3343,11 +3391,11 @@
     // 画像の大きさ（拡大・縮小）：変えたら作り直す（少し待ってまとめて）
     if ($('cc-img-scale')) {
       let scaleTimer = null;
-      $('cc-img-scale').addEventListener('input', (e) => {
+      $('cc-img-scale').oninput = (e) => {
         if ($('cc-img-scale-val')) $('cc-img-scale-val').textContent = e.target.value;
         clearTimeout(scaleTimer);
         scaleTimer = setTimeout(() => { if (state.loadedImg) updateCarpetCanvas(); }, 120);
-      });
+      };
     }
     if ($('cc-region')) $('cc-region').onchange = calculateEstimate;
     // 元画像を別ウィンドウで表示（ポップアップが止められたときは、この画面の上に大きく表示）
@@ -3412,8 +3460,39 @@
     if ($('cc-height')) $('cc-height').oninput = () => { calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-height')) $('cc-height').onchange = () => { snapSize('cc-height'); calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-dither')) $('cc-dither').oninput = (event) => { if($('cc-dither-val')) $('cc-dither-val').textContent = event.target.value; reprocessReduction(); };
+    // 守る色：元画像のクリックした所の色（周り3×3の平均）を加える。チップを押すと外す
+    const renderProtect = () => {
+      const box = $('cc-protect-list');
+      if (!box) return;
+      box.innerHTML = '';
+      (state.protect || []).forEach((c, i) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'psd-color-chip';
+        chip.style.cssText = 'background:rgb(' + c.join(',') + ');border:2px solid #f59e0b;cursor:pointer;position:relative;';
+        chip.title = '守る色 rgb(' + c.join(',') + ')：押すと外します';
+        chip.textContent = '×';
+        chip.style.color = (c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114) > 140 ? '#000' : '#fff';
+        chip.onclick = () => { state.protect.splice(i, 1); renderProtect(); if (state.loadedImg) reprocessReduction(); };
+        box.appendChild(chip);
+      });
+    };
+    // （初期化が2回走っても1回だけ動くよう、onclick に入れる）
+    if ($('cc-original')) $('cc-original').onclick = (e) => {
+      if (!state.loadedImg) return;
+      const cv = $('cc-original'), r = cv.getBoundingClientRect();
+      const x = Math.floor((e.clientX - r.left) / r.width * cv.width), y = Math.floor((e.clientY - r.top) / r.height * cv.height);
+      const d = cv.getContext('2d').getImageData(Math.max(0, x - 1), Math.max(0, y - 1), 3, 3).data;
+      let n = 0; const sum = [0, 0, 0];
+      for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 128) continue; sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; n++; }
+      if (!n) return; // the margin (no colour)
+      const c = sum.map((v) => Math.round(v / n));
+      state.protect = (state.protect || []).concat([c]).slice(-4);
+      renderProtect();
+      reprocessReduction();
+    };
     // 仕上がりの印象：3通りの変換の色を選び直し、色の割り当てもやり直す
-    if ($('cc-look')) $('cc-look').addEventListener('change', () => { if (state.loadedImg) reprocessReduction(); });
+    if ($('cc-look')) $('cc-look').onchange = () => { if (state.loadedImg) reprocessReduction(); };
     // 3つの変換の上のスライダー：上のスライダーと同じ値にして、同じように反映する
     if ($('cc-dither2')) $('cc-dither2').oninput = (event) => {
       const v = event.target.value;
