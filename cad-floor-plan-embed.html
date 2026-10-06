@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.78.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.79.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -139,6 +139,10 @@
 .cad-floor-plan-widget .cfp-wp-ctrl label,.cad-floor-plan-widget .cfp-wp-sliders label{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap}
 .cad-floor-plan-widget .cfp-wp-join input[type=text]{width:150px!important;display:inline-block;padding:2px 6px;min-height:0}
 .cad-floor-plan-widget .cfp-wp-join select{width:auto!important;display:inline-block;padding:2px 6px;min-height:0}
+.cad-floor-plan-widget .cfp-wp-free{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:6px 0 10px;padding:8px 10px;border:1px dashed #f59e0b;border-radius:6px;font-size:13px;color:#e4e4e7}
+.cad-floor-plan-widget .cfp-wp-free input[type=number]{width:90px!important;max-width:90px;display:inline-block;padding:2px 6px;min-height:0}
+.cad-floor-plan-widget .cfp-wp-free input:disabled{opacity:.5}
+.cad-floor-plan-widget .cfp-wp-free .cfp-hint{margin:0}
 </style>
 <div class="cad-floor-plan-widget" data-height="600" data-sample="default">
   <div class="cfp-container">
@@ -3246,6 +3250,15 @@
       link('wp-roll-r', 'wp-roll');
       link('wp-ov-r', 'wp-ov');
       link('wp-trim-r', 'wp-trim');
+      ['wp-free-w', 'wp-free-h'].forEach((n) => this.$(n) && this.$(n).addEventListener('input', () => { this._wpView = null; this._wpRender(); }));
+      if (this.$('wp-free-use')) this.$('wp-free-use').addEventListener('click', () => {
+        // stop using the CAD wall(s): the wall of the typed size
+        this.elevIndex = -1;
+        if (this.$('wp-join')) this.$('wp-join').checked = false;
+        if (this.elev) this._renderElevList();
+        this._wpView = null;
+        this._wpRender();
+      });
       ['wp-show-cad', 'wp-show-img', 'wp-show-frame', 'wp-right'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
       this.$('wp-save').addEventListener('click', () => this._wpSave());
       if (this.$('wp-save-ai')) this.$('wp-save-ai').addEventListener('click', () => this._wpSave('ai'));
@@ -3466,6 +3479,7 @@
     }
     // the wall(s) of the strip frame view shown on the matching walls of the 3D room (the same picture and position)
     _wp3D(g) {
+      if (g ? g.walls[0].w.virtual : false) g = null; // a wall of a typed size is not a wall of the room: the 3D walls keep the usual paper
       const r = this.renderer;
       if (!r || !r.setWallBand) return;
       const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
@@ -3583,7 +3597,8 @@
       return ((this.$('wp-join-list') || {}).value || '').split(/[^0-9]+/).map(Number)
         .filter((n) => n >= 1 && n <= all.length && !seen.has(n) && seen.add(n));
     }
-    // the walls shown: the joined walls (clockwise order) or the wall chosen in the list
+    // the walls shown: the joined walls (clockwise order) or the wall chosen in the list. A wall of the CAD elevation
+    // has priority; without one, a wall of the size typed in the panel (任意サイズ)
     _wpWalls() {
       const all = this._elevAll();
       if (this.$('wp-join') && this.$('wp-join').checked) {
@@ -3593,11 +3608,17 @@
         if (nums.length) return nums.map((n) => ({ w: all[n - 1], no: n }));
       }
       const w = all[this.elevIndex];
-      return w ? [{ w, no: this.elevIndex + 1 }] : [];
+      if (w) return [{ w, no: this.elevIndex + 1 }];
+      return [{ w: this._wpFreeWall(), no: 1 }];
+    }
+    // the wall of the size typed in the panel (used when no wall of a CAD elevation is chosen)
+    _wpFreeWall() {
+      const v = (n, d, lo, hi) => Math.min(hi, Math.max(lo, Math.round(parseFloat((this.$(n) || {}).value) || d)));
+      return { virtual: true, name: '任意サイズの壁', width: v('wp-free-w', 3000, 300, 200000), height: v('wp-free-h', 2400, 300, 10000) };
     }
     _wpGeom() {
       const wp = window.cfpWallPrint;
-      if (!wp || !this.elev) return null;
+      if (!wp || !this.hasTool) return null;
       const walls = this._wpWalls();
       if (!walls.length) return null;
       walls.forEach((x) => { x.W = Math.max(1, Math.round(x.w.width)); x.WH = Math.max(1, Math.round(x.w.height)); });
@@ -3621,7 +3642,7 @@
       return g.walls.map((it) => {
         const x0 = x, y0 = g.wp.TRIM_TOP + (top ? 0 : g.WH - it.WH);
         x += it.W;
-        const box = this._wpCadBox(it.w);
+        const box = it.w.virtual ? [0, 0, it.W, it.WH] : this._wpCadBox(it.w);
         let pts = [[x0, y0], [x0 + it.W, y0], [x0 + it.W, y0 + it.WH], [x0, y0 + it.WH]];
         if (it.w.poly && it.w.poly.length >= 3 && box[2] > 0 && box[3] > 0) {
           const sx = it.W / box[2], sy = it.WH / box[3];
@@ -3629,6 +3650,17 @@
         }
         return { x0, y0, W: it.W, WH: it.WH, box, pts, no: it.no, w: it.w };
       });
+    }
+    // the free size inputs: used without a CAD wall; with one, they show that the CAD wall has priority
+    _wpFreeNote(g) {
+      const note = this.$('wp-free-note');
+      if (!note) return;
+      const free = !!g.walls[0].w.virtual;
+      ['wp-free-w', 'wp-free-h'].forEach((n) => { this.$(n).disabled = !free; });
+      if (this.$('wp-free-use')) this.$('wp-free-use').hidden = free;
+      note.textContent = free
+        ? (this._elevAll().length ? '展開図で壁を選ぶと、その壁のサイズを使います（CADデータが優先）。' : 'CADの展開図を読み込んで壁を選ぶと、その壁のサイズを使います（CADデータが優先）。')
+        : '✅ CADの展開図の壁（' + g.walls.map((x) => x.no).join('→') + '）のサイズを使っています（CADデータが優先。任意のサイズにするには「任意サイズに切り替える」）。';
     }
     _wpRender() {
       const panel = this.$('wp');
@@ -3659,7 +3691,8 @@
       for (let i = 1; i < N; i++) cuts.push((right ? FW - i * wp.STEP - wp.EDGE : i * wp.STEP + wp.EDGE) + off.frame.x);
       add('rect', { x: 0, y: 0, width: FW, height: H, fill: '#ffffff' });
       const showCad = this.$('wp-show-cad').checked, showImg = this.$('wp-show-img').checked, showFrame = this.$('wp-show-frame').checked;
-      const bd = this.elev.backdrop;
+      const bd = this.elev && !g.walls[0].w.virtual ? this.elev.backdrop : null;
+      this._wpFreeNote(g);
       const shapes = this._wpShapes(g, ox);
       const corners = this._wpCornerCheck(g, shapes, cuts);
       if (showCad && bd) {
@@ -3783,7 +3816,7 @@
         const shapes = this._wpShapes(g, right ? g.FW - wp.OVERLAP - W : wp.OVERLAP);
         // the CAD layer is drawn piece by piece (tiles) by the PSD writer: no canvas as big as the whole picture
         let cadDraw = null;
-        const bd = this.elev.backdrop;
+        const bd = this.elev && !g.walls[0].w.virtual ? this.elev.backdrop : null;
         if (bd) {
           const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('図面の画像を読めませんでした')); i.src = bd.dataUrl; });
           cadDraw = (cx) => {

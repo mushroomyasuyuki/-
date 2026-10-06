@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.78.1
+ * Version: 2.79.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.78.1');
+define('CFP_VERSION', '2.79.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -489,52 +489,58 @@ final class CAD_Floor_Plan_Plugin {
                     <svg class="cfp-elev-view" data-cfp="elev-svg" role="img" aria-label="展開図"></svg>
                     <div class="cfp-room-list cfp-elev-list" data-cfp="elev-list"></div>
                   </div>
-                  <div class="cfp-wp" data-cfp="wp" hidden>
-                    <div class="cfp-layout-title">壁紙の巾の枠（切り分けなし・実寸）</div>
-                    <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下の余白（裁断代。初期100mm、「上下の余白」で30〜100mm）」です。「壁をつなげる（部屋一周）」にチェックを入れて壁の番号を順に入れると（右回り／左回りを選べます）、その壁を横に並べ、柄が途切れずに一周つながるように貼ります（高さが違う壁は、下（床）合わせか上（天井）合わせを選べます）。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。マウスホイールか「＋ 拡大／− 縮小」で拡大縮小、「移動」「枠を移動」「画像を移動」を選ぶと、ドラッグか「← 左／右 →／↑ 上／↓ 下」ボタン（矢印キーも可。画像・枠は10mm、Shiftで100mm）で、表示・壁紙の画像・巾の枠をそれぞれ動かせます。「画像の大きさ」で壁紙の画像を拡大縮小、「画像の濃さ」で画面の画像の濃さを変えられます（保存する画像は濃さ100%）。</p>
-                    <div class="cfp-trace-bar">
-                      <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="wp-m-view" title="ドラッグで表示を動かす">移動</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-frame" title="ドラッグで巾の枠を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">枠を移動</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-img" title="ドラッグで壁紙の画像を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">画像を移動</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-reset" title="画像の位置・大きさと枠の位置を元に戻す">位置を戻す</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-fit" title="全体を表示">全体</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zin" title="拡大">＋ 拡大</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zout" title="縮小">− 縮小</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pl" title="左へ">← 左</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pr" title="右へ">右 →</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pu" title="上へ">↑ 上</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pd" title="下へ">↓ 下</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save" title="CAD図面・壁紙の画像・巾の枠をレイヤーに分けたPSDで保存します">壁紙データを保存（PSD）</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save-ai" title="Illustratorで開ける .ai（PDF互換・実寸）で保存します。巾の枠は線（ベクトル）、壁紙の画像はCMYK。分ける幅の設定はPSDと同じです">壁紙データを保存（AI）</button>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-cad" checked> CAD図面を表示</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像を表示</label>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-right"> 枠を右寄せスタート（外すと左寄せ）</label>
-                      <label class="cfp-check" title="GIMPなどで開くと固まる・重いときは、小さく分けてください（1ファイルが小さいほど早く開けます）">PSDを分ける幅 <select data-cfp="wp-split"><option value="20000" selected>20m以内</option><option value="15000">15m以内</option><option value="10000">10m以内</option><option value="5000">5m以内</option><option value="0">分けない（1つのファイル。PSDは30m超でPSB）</option></select>（超えるときはZIPにまとめて保存）</label>
-                    </div>
-                    <div class="cfp-raster-row cfp-layout-sliders cfp-wp-sliders">
-                      <label>画像の大きさ <input type="range" data-cfp="wp-dscale" min="20" max="300" step="1" value="100"> <span data-cfp="wp-dscale-val">100</span>%</label>
-                      <label>画像の濃さ <input type="range" data-cfp="wp-dopacity" min="10" max="100" step="5" value="80"> <span data-cfp="wp-dopacity-val">80</span>%</label>
-                    </div>
-                    <div class="cfp-raster-row cfp-layout-sliders cfp-wp-ctrl">
-                      <label>巾（横幅）<input type="range" data-cfp="wp-roll-r" min="850" max="930" step="1" value="910"> <input type="number" data-cfp="wp-roll" min="850" max="930" step="1" value="910"> mm</label>
-                      <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="10"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="10"> mm</label>
-                      <label>上下の余白（裁断代）<input type="range" data-cfp="wp-trim-r" min="30" max="100" step="5" value="100"> <input type="number" data-cfp="wp-trim" min="30" max="100" step="5" value="100"> mm</label>
-                    </div>
-                    <div class="cfp-wp-join">
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-join"> 壁をつなげる（部屋一周）</label>
-                      <label>壁の番号（時計回りの順）<input type="text" data-cfp="wp-join-list" placeholder="例: 1,2,3,4" inputmode="numeric"></label>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-add" title="展開図の一覧で選んでいる壁の番号を、最後に追加します">＋ 選んでいる壁を追加</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-all" title="一覧のすべての壁を番号順に入れます">全部（番号順）</button>
-                      <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-clear">クリア</button>
-                      <label class="cfp-check"><input type="checkbox" data-cfp="wp-ccw"> 左回り（反時計回り）でつなげる（外すと右回り）</label>
-                      <label>高さが違うとき <select data-cfp="wp-align"><option value="bottom">下（床）合わせ</option><option value="top">上（天井）合わせ</option></select></label>
-                    </div>
-                    <p class="cfp-layout-note" data-cfp="wp-note"></p>
-                    <p class="cfp-wp-warn" data-cfp="wp-warn" hidden></p>
-                    <p class="cfp-wp-warn" data-cfp="wp-joint-warn" hidden></p>
-                    <svg class="cfp-wp-view" data-cfp="wp-svg" role="img" aria-label="壁紙の巾の枠"></svg>
+
+                </div>
+                <div class="cfp-wp" data-cfp="wp" hidden>
+                  <div class="cfp-layout-title">壁紙の巾の枠（切り分けなし・実寸）</div>
+                  <div class="cfp-raster-row cfp-wp-free" data-cfp="wp-free-row">
+                    <label>壁のサイズ（任意）：幅 <input type="number" data-cfp="wp-free-w" min="300" max="200000" step="10" value="3000"> × 高さ <input type="number" data-cfp="wp-free-h" min="300" max="10000" step="10" value="2400"> mm</label>
+                    <span class="cfp-hint" data-cfp="wp-free-note"></span>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-free-use" hidden title="展開図の壁の選択（つなげる壁も）を外して、入力したサイズの壁にします">任意サイズに切り替える</button>
                   </div>
+                  <p class="cfp-hint">選んだ壁に、壁紙のロール（巾）の枠を赤で重ねて表示します。画像は巾ごとに切らず、1枚のまま表示します。高さは「壁の実寸＋上下の余白（裁断代。初期100mm、「上下の余白」で30〜100mm）」です。「壁をつなげる（部屋一周）」にチェックを入れて壁の番号を順に入れると（右回り／左回りを選べます）、その壁を横に並べ、柄が途切れずに一周つながるように貼ります（高さが違う壁は、下（床）合わせか上（天井）合わせを選べます）。「CAD図面」「画像」「枠」を、それぞれ表示／非表示にできます。マウスホイールか「＋ 拡大／− 縮小」で拡大縮小、「移動」「枠を移動」「画像を移動」を選ぶと、ドラッグか「← 左／右 →／↑ 上／↓ 下」ボタン（矢印キーも可。画像・枠は10mm、Shiftで100mm）で、表示・壁紙の画像・巾の枠をそれぞれ動かせます。「画像の大きさ」で壁紙の画像を拡大縮小、「画像の濃さ」で画面の画像の濃さを変えられます（保存する画像は濃さ100%）。</p>
+                  <div class="cfp-trace-bar">
+                    <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="wp-m-view" title="ドラッグで表示を動かす">移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-frame" title="ドラッグで巾の枠を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">枠を移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-m-img" title="ドラッグで壁紙の画像を動かす（← → ↑ ↓ は10mm、Shiftで100mm）">画像を移動</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-reset" title="画像の位置・大きさと枠の位置を元に戻す">位置を戻す</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-fit" title="全体を表示">全体</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zin" title="拡大">＋ 拡大</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-zout" title="縮小">− 縮小</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pl" title="左へ">← 左</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pr" title="右へ">右 →</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pu" title="上へ">↑ 上</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-pd" title="下へ">↓ 下</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save" title="CAD図面・壁紙の画像・巾の枠をレイヤーに分けたPSDで保存します">壁紙データを保存（PSD）</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm cfp-btn-save" data-cfp="wp-save-ai" title="Illustratorで開ける .ai（PDF互換・実寸）で保存します。巾の枠は線（ベクトル）、壁紙の画像はCMYK。分ける幅の設定はPSDと同じです">壁紙データを保存（AI）</button>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-cad" checked> CAD図面を表示</label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-frame" checked> 枠を表示</label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="wp-show-img" checked> 画像を表示</label>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="wp-right"> 枠を右寄せスタート（外すと左寄せ）</label>
+                    <label class="cfp-check" title="GIMPなどで開くと固まる・重いときは、小さく分けてください（1ファイルが小さいほど早く開けます）">PSDを分ける幅 <select data-cfp="wp-split"><option value="20000" selected>20m以内</option><option value="15000">15m以内</option><option value="10000">10m以内</option><option value="5000">5m以内</option><option value="0">分けない（1つのファイル。PSDは30m超でPSB）</option></select>（超えるときはZIPにまとめて保存）</label>
+                  </div>
+                  <div class="cfp-raster-row cfp-layout-sliders cfp-wp-sliders">
+                    <label>画像の大きさ <input type="range" data-cfp="wp-dscale" min="20" max="300" step="1" value="100"> <span data-cfp="wp-dscale-val">100</span>%</label>
+                    <label>画像の濃さ <input type="range" data-cfp="wp-dopacity" min="10" max="100" step="5" value="80"> <span data-cfp="wp-dopacity-val">80</span>%</label>
+                  </div>
+                  <div class="cfp-raster-row cfp-layout-sliders cfp-wp-ctrl">
+                    <label>巾（横幅）<input type="range" data-cfp="wp-roll-r" min="850" max="930" step="1" value="910"> <input type="number" data-cfp="wp-roll" min="850" max="930" step="1" value="910"> mm</label>
+                    <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="10"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="10"> mm</label>
+                    <label>上下の余白（裁断代）<input type="range" data-cfp="wp-trim-r" min="30" max="100" step="5" value="100"> <input type="number" data-cfp="wp-trim" min="30" max="100" step="5" value="100"> mm</label>
+                  </div>
+                  <div class="cfp-wp-join">
+                    <label class="cfp-check"><input type="checkbox" data-cfp="wp-join"> 壁をつなげる（部屋一周）</label>
+                    <label>壁の番号（時計回りの順）<input type="text" data-cfp="wp-join-list" placeholder="例: 1,2,3,4" inputmode="numeric"></label>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-add" title="展開図の一覧で選んでいる壁の番号を、最後に追加します">＋ 選んでいる壁を追加</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-all" title="一覧のすべての壁を番号順に入れます">全部（番号順）</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="wp-join-clear">クリア</button>
+                    <label class="cfp-check"><input type="checkbox" data-cfp="wp-ccw"> 左回り（反時計回り）でつなげる（外すと右回り）</label>
+                    <label>高さが違うとき <select data-cfp="wp-align"><option value="bottom">下（床）合わせ</option><option value="top">上（天井）合わせ</option></select></label>
+                  </div>
+                  <p class="cfp-layout-note" data-cfp="wp-note"></p>
+                  <p class="cfp-wp-warn" data-cfp="wp-warn" hidden></p>
+                  <p class="cfp-wp-warn" data-cfp="wp-joint-warn" hidden></p>
+                  <svg class="cfp-wp-view" data-cfp="wp-svg" role="img" aria-label="壁紙の巾の枠"></svg>
                 </div>
                 <div class="cfp-status" data-cfp="status"></div>
                 <div class="cfp-rooms" data-cfp="rooms" hidden>

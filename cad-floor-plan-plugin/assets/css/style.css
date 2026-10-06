@@ -149,3 +149,7 @@
 .cad-floor-plan-widget .cfp-wp-ctrl label,.cad-floor-plan-widget .cfp-wp-sliders label{display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap}
 .cad-floor-plan-widget .cfp-wp-join input[type=text]{width:150px!important;display:inline-block;padding:2px 6px;min-height:0}
 .cad-floor-plan-widget .cfp-wp-join select{width:auto!important;display:inline-block;padding:2px 6px;min-height:0}
+.cad-floor-plan-widget .cfp-wp-free{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:6px 0 10px;padding:8px 10px;border:1px dashed #f59e0b;border-radius:6px;font-size:13px;color:#e4e4e7}
+.cad-floor-plan-widget .cfp-wp-free input[type=number]{width:90px!important;max-width:90px;display:inline-block;padding:2px 6px;min-height:0}
+.cad-floor-plan-widget .cfp-wp-free input:disabled{opacity:.5}
+.cad-floor-plan-widget .cfp-wp-free .cfp-hint{margin:0}
