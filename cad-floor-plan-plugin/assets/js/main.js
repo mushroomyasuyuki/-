@@ -5,13 +5,17 @@
 (function () {
   'use strict';
 
-  const SAMPLE = {
-    rooms: [{
-      id: 'sample',
-      name: 'サンプル（L字の部屋）',
-      vertices: [[0, 0], [6000, 0], [6000, 2500], [3500, 2500], [3500, 5000], [0, 5000]],
-    }],
-    metadata: { source: 'sample' },
+  // the sample room: a rectangle of the carpet size typed in the estimate (1 m x 1 m at first)
+  const sampleRoom = (w, h) => {
+    w = Math.max(500, Math.round(w || 1000)); h = Math.max(500, Math.round(h || 1000));
+    return {
+      rooms: [{ id: 'sample', name: 'サンプル（' + w + '×' + h + 'mm）', vertices: [[0, 0], [w, 0], [w, h], [0, h]] }],
+      metadata: { source: 'sample' },
+    };
+  };
+  const ccSize = () => {
+    const v = (id) => parseFloat((document.getElementById(id) || {}).value) || 1000;
+    return [v('cc-width'), v('cc-height')];
   };
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -215,7 +219,33 @@
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
       document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpBandKey = null; this._wpRender(); });
-      if (el.dataset.sample !== 'none') this.loadData(SAMPLE, 'サンプル', { fromFile: false });
+      if (el.dataset.sample !== 'none') this.loadData(sampleRoom(...ccSize()), 'サンプル', { fromFile: false });
+      this._bindCcSize();
+    }
+
+    // The carpet size typed in the estimate (仕様サイズ): without a drawing it shapes the sample room;
+    // with a room chosen on a drawing, that room's size has priority and is written back into the fields.
+    _bindCcSize() {
+      const ids = ['cc-width', 'cc-height'];
+      if (!ids.every((id) => document.getElementById(id))) return;
+      let timer = null;
+      const onSize = (e) => {
+        if (!this.renderer) return;
+        if (!this.fromFile) {
+          if (this.data && this.data.metadata && this.data.metadata.source !== 'sample') return;
+          clearTimeout(timer);
+          timer = setTimeout(() => this.loadData(sampleRoom(...ccSize()), 'サンプル', { fromFile: false }), 300);
+          return;
+        }
+        // typed by hand while a room of the drawing is chosen: the drawing's room wins
+        const room = this.data && this.data.rooms[this.roomIndex];
+        if (e.isTrusted && e.type === 'change' && room && this.$('apply-size').checked) {
+          this.reflectSize(room);
+          const n = document.getElementById('cc-cad-size-note');
+          if (n) n.textContent += ' （入力したサイズより、CADで指定した部屋のサイズを優先しています。手で入力したサイズを使うには、CAD画面の「図面のサイズを見積もり…に反映する」のチェックを外してください。）';
+        }
+      };
+      ids.forEach((id) => { const el = document.getElementById(id); el.addEventListener('input', onSize); el.addEventListener('change', onSize); });
     }
 
     _bind() {
@@ -334,7 +364,7 @@
       });
       this.$('layout-show-img').addEventListener('change', () => this._renderLayout());
       this.$('layout-show-grid').addEventListener('change', () => this._renderLayout());
-      this.$('sample-btn').addEventListener('click', () => this.loadData(SAMPLE, 'サンプル', { fromFile: false }));
+      this.$('sample-btn').addEventListener('click', () => this.loadData(sampleRoom(...ccSize()), 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
       this.$('floor-tex').addEventListener('change', (e) => this._texture(e, 'floor'));
@@ -519,6 +549,7 @@
     selectRoom(i, reflect) {
       const room = this.data.rooms[i];
       this.roomIndex = i;
+      if (!this.fromFile) this._ccSizeNote(null);
       this.renderer.loadFloorPlan({ rooms: [room], metadata: this.data.metadata });
 
       const b = CADParser.bounds(room.vertices);
@@ -1964,6 +1995,18 @@
       if (lay.count !== lay.cols * lay.rows) text += ' 部屋に実際に敷く枚数は ' + lay.count + ' 枚（うち端で切る ' + lay.cut + ' 枚）です。';
       if (clamped) text += ' ※お部屋パース・壁紙のサイズは入力欄の上限・下限に丸めました。';
       note.textContent = text;
+      this._ccSizeNote(room, lay, area, w, h);
+    }
+
+    // the note under the estimate's size fields: where the size comes from, and a polygon room
+    _ccSizeNote(room, lay, area, w, h) {
+      const n = document.getElementById('cc-cad-size-note');
+      if (!n) return;
+      if (!room) { n.hidden = true; n.textContent = ''; return; }
+      const poly = room.vertices.length !== 4 || Math.abs(area - w * h) / (w * h) > 0.01;
+      n.hidden = false;
+      n.textContent = '📐 CADで指定した部屋「' + (room.name || '部屋') + '」から算出したサイズです（部屋 ' + fmtMm(w) + '×' + fmtMm(h) + ' mm → 50cm角 横' + lay.cols + '枚×縦' + lay.rows + '枚 = ' + fmtMm(lay.cols * TILE) + '×' + fmtMm(lay.rows * TILE) + ' mm）。'
+        + (poly ? ' ⚠️ 多角形（四角でない）の部屋です。仕様サイズは部屋に外接する四角の大きさで、実際の床面積は ' + fmtArea(area) + '㎡（部屋に敷く枚数 ' + lay.count + ' 枚）です。' : '');
     }
 
     // ----------------------------------------------- carpet tile layout (割付)
