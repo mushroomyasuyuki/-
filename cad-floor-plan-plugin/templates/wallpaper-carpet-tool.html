@@ -11,7 +11,7 @@
 
 .cocoon-carpet-tool input[type=file]{display:block!important;width:100%!important;padding:12px!important;background:#18181b!important;color:#fff!important;border:2px dashed #f39c12!important;border-radius:8px!important;cursor:pointer!important;font-size:14px!important;margin:10px 0!important;box-sizing:border-box!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important}
 
-.file-note{font-size:12px;margin-top:8px;color:#fbbf24}.slider-row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px}.slider-row span{font-size:11px;color:#a1a1aa}.dither-box input[type=range]{width:100%}.palette-select-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.palette-select-chip{width:36px;height:36px;border-radius:6px;border:2px solid #3f3f46;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 0 2px #000}.palette-select-chip.active{border-color:#f39c12;box-shadow:0 0 8px rgba(243,156,18,.6);transform:scale(1.05)}.palette-select-chip.active::after{content:'✓';position:absolute;top:-4px;right:-4px;background:#f39c12;color:#000;font-size:9px;width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center}.palette-select-chip.op-chip{border-color:#3b82f6}.palette-select-chip.op-chip.active::after{background:#3b82f6;color:#fff}.palette-controls{display:flex;gap:10px;margin-bottom:10px}.btn-chip-action{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:4px 10px;font-size:12px;border-radius:4px;cursor:pointer}.btn-chip-action:hover{background:#3f3f46}.btn-chip-action:disabled{opacity:.5;cursor:not-allowed}.status-box{padding:12px 15px;border-radius:6px;margin:0 0 20px;font-weight:700;display:none}.status-box.ok{background:#064e3b;color:#34d399;border:1px solid #059669;display:block}.status-box.err{background:#450a0a;color:#f87171;border:1px solid #dc2626;display:block}.preview-grid{display:flex;gap:15px;margin-bottom:20px}.preview-card{flex:1;border:1px solid #27272a;border-radius:6px;padding:10px;text-align:center;background:#18181b;min-width:0}.preview-card h3{font-size:14px!important;color:#fff!important;margin:0 0 10px!important}
+.file-note{font-size:12px;margin-top:8px;color:#fbbf24}.slider-row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:8px}.slider-row span{font-size:11px;color:#a1a1aa}.dither-box input[type=range]{width:100%}.palette-select-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.palette-select-chip{width:36px;height:36px;border-radius:6px;border:2px solid #3f3f46;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 0 2px #000}.palette-select-chip.active{border-color:#f39c12;box-shadow:0 0 8px rgba(243,156,18,.6);transform:scale(1.05)}.palette-select-chip.active::after{content:'✓';position:absolute;top:-4px;right:-4px;background:#f39c12;color:#000;font-size:9px;width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center}.palette-select-chip.op-chip{border-color:#3b82f6}.palette-select-chip.op-chip.active::after{background:#3b82f6;color:#fff}.palette-controls{display:flex;gap:10px;margin-bottom:10px}.btn-chip-action{background:#27272a;color:#fff;border:1px solid #3f3f46;padding:4px 10px;font-size:12px;border-radius:4px;cursor:pointer}.btn-chip-action:hover{background:#3f3f46}.btn-chip-action:disabled{opacity:.5;cursor:not-allowed}.cc-pal-compact{position:relative;padding:6px 10px 8px;margin:6px 0}.cc-pal-compact label{display:block!important;font-size:12.5px!important;line-height:1.4!important;margin:0!important;padding-right:84px}.cc-pal-compact small{display:block!important;font-size:10.5px!important;line-height:1.35!important;margin:1px 0 0!important}.cc-pal-compact .palette-controls{position:absolute;top:5px;right:8px;margin:0}.cc-pal-compact .btn-chip-action{padding:1px 8px;font-size:11px;line-height:1.6}.cc-pal-compact .palette-select-grid{gap:4px;margin-top:5px}.cc-pal-compact .palette-select-chip{width:26px;height:24px;font-size:6.5px;letter-spacing:-.3px;white-space:nowrap;border-width:2px;line-height:1}.cc-pal-compact .palette-select-chip.active{transform:none}.cc-pal-compact .palette-select-chip.active::after{width:10px;height:10px;font-size:7px;top:-3px;right:-3px}.status-box{padding:12px 15px;border-radius:6px;margin:0 0 20px;font-weight:700;display:none}.status-box.ok{background:#064e3b;color:#34d399;border:1px solid #059669;display:block}.status-box.err{background:#450a0a;color:#f87171;border:1px solid #dc2626;display:block}.preview-grid{display:flex;gap:15px;margin-bottom:20px}.preview-card{flex:1;border:1px solid #27272a;border-radius:6px;padding:10px;text-align:center;background:#18181b;min-width:0}.preview-card h3{font-size:14px!important;color:#fff!important;margin:0 0 10px!important}
 .preview-card canvas{display:block!important;width:100%!important;margin:10px auto!important;border:2px solid #3f3f46;background:#18181b;image-rendering:pixelated;image-rendering:crisp-edges}
 #cc-original{height:auto!important;min-height:200px}
 #cc-reduced{height:auto!important;max-width:100%}
@@ -305,11 +305,8 @@
     <div class="preview-card"><h3>手動で色を選んだ結果（最小1px表現）</h3><canvas id="cc-reduced"></canvas><div class="used-colors"><label>使用されたカラー（抽出結果）：</label><div id="cc-used-colors" class="psd-palette-grid"></div><div id="cc-used-colors-text" class="used-colors-text"></div></div></div>
   </div>
 
-  <div class="palette-controls" style="justify-content:center;margin:4px 0 6px;">
-    <button type="button" id="cc-show-original" class="btn-chip-action" style="padding:8px 16px;font-size:13px;">🖼 元画像を表示（別ウィンドウ）</button>
-  </div>
     <!-- ▼ 標準カラーパレット用セクション ▼ -->
-    <div class="palette-box">
+    <div class="palette-box cc-pal-compact">
       <label>1. 標準カラーパレット（基本色 ＋ 無料オプションカラー OP-03・OP-05）</label>
       <small>※減色時に使用する標準（無料）カラーです。この中やオプションカラーを含めて合計最大16色まで選択して使用できます。</small>
       <div class="palette-controls">
@@ -319,7 +316,7 @@
     </div>
 
     <!-- ▼ オプションカラーパレット用セクション ▼ -->
-    <div class="palette-box" style="margin-top:20px; border-color:#22c55e;">
+    <div class="palette-box cc-pal-compact" style="border-color:#22c55e;">
       <label style="color:#4ade80;">2. オプションカラーパレット（特注カラー・オリジナル配色／OP-01 〜 OP-30 ※OP-03・05を除く）</label>
       <small>※<strong>オプションカラー（特注カラー・オリジナル配色）は有償</strong>です。1回のご注文につき1色 <strong>¥35,000</strong>（面積に関係なく定額）で加算されます（<strong>10㎡以上はオプションカラー3色まで無料！</strong>）。</small>
       <div class="palette-controls">
@@ -328,6 +325,9 @@
       <div id="cc-op-palette-selector" class="palette-select-grid"></div>
     </div>
 
+  <div class="palette-controls" style="justify-content:center;margin:4px 0 6px;">
+    <button type="button" id="cc-show-original" class="btn-chip-action" style="padding:8px 16px;font-size:13px;">🖼 元画像を表示（別ウィンドウ）</button>
+  </div>
   <div class="file-note" style="text-align:center;">※上記プレビュー（印刷イメージ）と実際の仕上がりは、モニターの発色や制作工程の都合上、多少異なる場合がございます。</div>
   </div>
   <!-- ▲▲▲ ① カーペット用デザイン ここまで ▲▲▲ -->
