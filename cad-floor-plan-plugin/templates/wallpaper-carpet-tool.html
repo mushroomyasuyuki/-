@@ -289,6 +289,25 @@
       <input type="range" id="cc-dither" min="0" max="100" value="0">
     </div>
     
+  <div id="cc-status" class="status-box"></div>
+  <div class="dither-box cc-var-dither">
+    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>下の3つの変換すべてと、お見積もり・PSDの画像に反映。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
+    <input type="range" id="cc-dither2" min="0" max="100" value="0">
+  </div>
+  <div class="preview-grid cc-variants">
+    <div class="preview-card"><h3>元画像（オリジナル）</h3><canvas id="cc-original"></canvas><div class="used-colors-text" style="text-align:center;">25.4 DPI換算・元データのまま</div></div>
+    <div class="preview-card cc-var-card" data-var="std"><h3>① 標準色のみ</h3><div class="cc-var-sub">無償の標準色（基本16色＋OP-03・05）から選んだ16色</div><canvas id="cc-var-std"></canvas><div class="psd-palette-grid" id="cc-var-std-chips"></div><div class="used-colors-text" id="cc-var-std-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="std">この変換で進める</button></div>
+    <div class="preview-card cc-var-card" data-var="op3"><h3>② 標準色＋オプション3色</h3><div class="cc-var-sub">標準色13色＋有償オプション3色＝計16色</div><canvas id="cc-var-op3"></canvas><div class="psd-palette-grid" id="cc-var-op3-chips"></div><div class="used-colors-text" id="cc-var-op3-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="op3">この変換で進める</button></div>
+    <div class="preview-card cc-var-card" data-var="max"><h3>③ 最大表現（計16色）</h3><div class="cc-var-sub">標準色＋オプションカラーの全色から、元画像に最も近い16色を自動選択（有償色が増えると、お見積もりが上がります）</div><canvas id="cc-var-max"></canvas><div class="psd-palette-grid" id="cc-var-max-chips"></div><div class="used-colors-text" id="cc-var-max-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="max">この変換で進める</button></div>
+  </div>
+  <div class="file-note cc-var-note" id="cc-var-note" style="text-align:center;margin:-6px 0 14px;">画像を選ぶと、3通りの自動変換を表示します。「この変換で進める」を押した変換が、お見積もり・PSD保存・ご注文の対象になります（色は下のパレットで手動でも変えられます）。</div>
+  <div class="preview-grid cc-manual-card" id="cc-manual-card" hidden>
+    <div class="preview-card"><h3>手動で色を選んだ結果（最小1px表現）</h3><canvas id="cc-reduced"></canvas><div class="used-colors"><label>使用されたカラー（抽出結果）：</label><div id="cc-used-colors" class="psd-palette-grid"></div><div id="cc-used-colors-text" class="used-colors-text"></div></div></div>
+  </div>
+
+  <div class="palette-controls" style="justify-content:center;margin:4px 0 6px;">
+    <button type="button" id="cc-show-original" class="btn-chip-action" style="padding:8px 16px;font-size:13px;">🖼 元画像を表示（別ウィンドウ）</button>
+  </div>
     <!-- ▼ 標準カラーパレット用セクション ▼ -->
     <div class="palette-box">
       <label>1. 標準カラーパレット（基本色 ＋ 無料オプションカラー OP-03・OP-05）</label>
@@ -308,22 +327,6 @@
       </div>
       <div id="cc-op-palette-selector" class="palette-select-grid"></div>
     </div>
-
-  <div id="cc-status" class="status-box"></div>
-  <div class="dither-box cc-var-dither">
-    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>下の3つの変換すべてと、お見積もり・PSDの画像に反映。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
-    <input type="range" id="cc-dither2" min="0" max="100" value="0">
-  </div>
-  <div class="preview-grid cc-variants">
-    <div class="preview-card"><h3>元画像（オリジナル）</h3><canvas id="cc-original"></canvas><div class="used-colors-text" style="text-align:center;">25.4 DPI換算・元データのまま</div></div>
-    <div class="preview-card cc-var-card" data-var="std"><h3>① 標準色のみ</h3><div class="cc-var-sub">無償の標準色（基本16色＋OP-03・05）から選んだ16色</div><canvas id="cc-var-std"></canvas><div class="psd-palette-grid" id="cc-var-std-chips"></div><div class="used-colors-text" id="cc-var-std-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="std">この変換で進める</button></div>
-    <div class="preview-card cc-var-card" data-var="op3"><h3>② 標準色＋オプション3色</h3><div class="cc-var-sub">標準色13色＋有償オプション3色＝計16色</div><canvas id="cc-var-op3"></canvas><div class="psd-palette-grid" id="cc-var-op3-chips"></div><div class="used-colors-text" id="cc-var-op3-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="op3">この変換で進める</button></div>
-    <div class="preview-card cc-var-card" data-var="max"><h3>③ 最大表現（計16色）</h3><div class="cc-var-sub">標準色＋オプションカラーの全色から、元画像に最も近い16色を自動選択（有償色が増えると、お見積もりが上がります）</div><canvas id="cc-var-max"></canvas><div class="psd-palette-grid" id="cc-var-max-chips"></div><div class="used-colors-text" id="cc-var-max-text"></div><button type="button" class="btn-chip-action cc-var-btn" data-var-btn="max">この変換で進める</button></div>
-  </div>
-  <div class="file-note cc-var-note" id="cc-var-note" style="text-align:center;margin:-6px 0 14px;">画像を選ぶと、3通りの自動変換を表示します。「この変換で進める」を押した変換が、お見積もり・PSD保存・ご注文の対象になります（色は下のパレットで手動でも変えられます）。</div>
-  <div class="preview-grid cc-manual-card" id="cc-manual-card" hidden>
-    <div class="preview-card"><h3>手動で色を選んだ結果（最小1px表現）</h3><canvas id="cc-reduced"></canvas><div class="used-colors"><label>使用されたカラー（抽出結果）：</label><div id="cc-used-colors" class="psd-palette-grid"></div><div id="cc-used-colors-text" class="used-colors-text"></div></div></div>
-  </div>
 
   <div class="file-note" style="text-align:center;">※上記プレビュー（印刷イメージ）と実際の仕上がりは、モニターの発色や制作工程の都合上、多少異なる場合がございます。</div>
   </div>
@@ -435,8 +438,8 @@
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
       <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（元データ・全体・910mm幅の連続データ・ZIP）</button>
     </div>
-    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下100mmずつ、1px=1mm）をZIPにまとめて保存します。隣の巾とは合わせ代（初期10mm）だけ重なり（1巾が受け持つ壁は初期900mm。重なりの真ん中がカット線）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
-    <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下100mmずつの裁断代」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
+    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下の余白（初期100mm・壁紙の巾の枠で30〜100mmに変更可）、1px=1mm）をZIPにまとめて保存します。隣の巾とは合わせ代（初期10mm）だけ重なり（1巾が受け持つ壁は初期900mm。重なりの真ん中がカット線）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
+    <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下の余白（裁断代。初期100mm、30〜100mm）」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
       </div>
     </details>
   </section>
@@ -2213,14 +2216,19 @@
   const WALL_PRINT = { ROLL: 910, OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
   WALL_PRINT.EDGE = WALL_PRINT.OVERLAP / 2; // カット線の外側の余白（合わせ代の半分）
   WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP; // 1巾が受け持つ壁の幅（カット線からカット線まで。900mm）
-  // 巾（横幅）は850〜930mm、合わせ代（隣の巾と重なる幅）は6〜15mmを0.5mm刻みで調整できる
-  WALL_PRINT.set = function (roll, overlap) {
+  // 巾（横幅）は850〜930mm、合わせ代（隣の巾と重なる幅）は6〜15mmを0.5mm刻み、上下の余白（裁断代）は30〜100mmを5mm刻みで調整できる
+  WALL_PRINT.set = function (roll, overlap, trim) {
     const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
     const o = Math.min(15, Math.max(6, Math.round((parseFloat(overlap) || 10) * 2) / 2));
     this.ROLL = r;
     this.OVERLAP = o;
     this.EDGE = o / 2;
     this.STEP = r - o;
+    if (trim !== undefined) {
+      const tv = Math.min(100, Math.max(30, Math.round((parseFloat(trim) || 100) / 5) * 5));
+      this.TRIM_TOP = tv;
+      this.TRIM_BOTTOM = tv;
+    }
   };
   window.cfpWallPrint = WALL_PRINT;
 
@@ -2333,10 +2341,164 @@
       }));
     }
   };
+  // ---- Illustrator 用（.ai）の保存 ----
+  // 中身は PDF 互換の .ai（Illustrator で開ける形式）。レイヤー（PDF のオプションコンテンツ）は
+  // ①CAD図面（画像・RGB JPEG）②壁紙の画像（CMYK・可逆圧縮）③巾の枠（ベクトル線・CMYK）の3つ。1mm = 72/25.4 pt の実寸。
+  // 幅が約5m（PDF の1ページの上限 200インチ）を超えるときは、UserUnit（単位の倍率）を使って実寸を保つ。
+  // layers: [{ name, kind: 'jpeg' | 'cmyk' | 'vector', draw(ctx) }]（下から順。ctx は絵の座標・1px = 1mm）
+  async function writeAiPdf(width, height, layers, onProgress) {
+    const MM = 72 / 25.4;
+    const u = Math.max(1, Math.ceil(Math.max(width, height) * MM / 14000));
+    const k = MM / u; // PDF の単位 / mm
+    const Wp = width * k, Hp = height * k;
+    const enc = new TextEncoder();
+    const n3 = (v) => String(Math.round(v * 1000) / 1000);
+    const utf16 = (t) => { let h = 'FEFF'; for (let i = 0; i !== t.length; i++) h += t.charCodeAt(i).toString(16).toUpperCase().padStart(4, '0'); return '<' + h + '>'; };
+    // 色：PSD と同じ単純な RGB → CMYK
+    const cmyk = (r, g, b) => {
+      const mx = Math.max(r, g, b);
+      if (mx === 0) return [0, 0, 0, 1];
+      return [(mx - r) / mx, (mx - g) / mx, (mx - b) / mx, 1 - mx / 255];
+    };
+    const hexCmyk = (hex) => { const v = parseInt(String(hex).replace('#', ''), 16) || 0; return cmyk(Math.floor(v / 65536), Math.floor(v / 256) % 256, v % 256).map((x) => n3(x)).join(' '); };
+    const objs = []; // [{ id, parts }]
+    let nextId = 1;
+    const alloc = () => nextId++;
+    const put = (id, parts) => objs.push({ id, parts });
+    const TW = 4096;
+    const tiles = [];
+    for (let x0 = 0; x0 < width; x0 += TW) tiles.push({ x0, w: Math.min(TW, width - x0) });
+    const tile = document.createElement('canvas');
+    const tctx = () => tile.getContext('2d', { willReadFrequently: true });
+    const content = [];
+    const xobj = [], props = [], ocgs = [];
+    const rasterSteps = layers.filter((L) => L.kind !== 'vector').length * tiles.length;
+    let step = 0;
+    const deflate = typeof CompressionStream === 'function';
+    for (let li = 0; li !== layers.length; li++) {
+      const L = layers[li];
+      const ocg = alloc();
+      put(ocg, ['<< /Type /OCG /Name ' + utf16(L.name) + ' >>']);
+      ocgs.push(ocg);
+      props.push('/L' + li + ' ' + ocg + ' 0 R');
+      content.push('/OC /L' + li + ' BDC\n');
+      if (L.kind === 'vector') {
+        // 線を記録する ctx（canvas と同じ呼び方で、PDF の線にする）
+        const ops = [];
+        const rec = {
+          strokeStyle: '#000000', lineWidth: 1, tx: 0, ty: 0, path: [],
+          translate(x, y) { this.tx += x; this.ty += y; },
+          save() {}, restore() {}, setTransform() {},
+          X(x) { return n3((x + this.tx) * k); }, Y(y) { return n3(Hp - (y + this.ty) * k); },
+          // 分けたファイルでは、このファイルの範囲（横 0〜width）に入らない線は書かない（アートボードの外に線を残さない）
+          lo: Infinity, hi: -Infinity,
+          see(x) { const v = x + this.tx; if (v < this.lo) this.lo = v; if (v > this.hi) this.hi = v; },
+          inside() { return this.hi >= -1 ? this.lo <= width + 1 : false; },
+          beginPath() { this.path = []; this.lo = Infinity; this.hi = -Infinity; },
+          moveTo(x, y) { this.see(x); this.path.push(this.X(x) + ' ' + this.Y(y) + ' m'); },
+          lineTo(x, y) { this.see(x); this.path.push(this.X(x) + ' ' + this.Y(y) + ' l'); },
+          closePath() { this.path.push('h'); },
+          style() { return hexCmyk(this.strokeStyle) + ' K ' + n3(this.lineWidth * k) + ' w\n'; },
+          stroke() { if (this.path.length ? this.inside() : false) ops.push(this.style() + this.path.join(' ') + ' S\n'); },
+          strokeRect(x, y, w, h) {
+            this.lo = Infinity; this.hi = -Infinity; this.see(x); this.see(x + w);
+            if (!this.inside()) return;
+            ops.push(this.style() + this.X(x) + ' ' + this.Y(y + h) + ' ' + n3(w * k) + ' ' + n3(h * k) + ' re S\n');
+          }
+        };
+        L.draw(rec);
+        // 壁の範囲の線がファイルの端をまたぐときは、ファイルの範囲で切り抜く
+        content.push('q 0 0 ' + n3(Wp) + ' ' + n3(Hp) + ' re W n 0 J 0 j\n' + ops.join('') + 'Q\n');
+      } else {
+        for (const t of tiles) {
+          tile.width = t.w; tile.height = height;
+          const x = tctx();
+          x.setTransform(1, 0, 0, 1, 0, 0);
+          x.fillStyle = '#ffffff';
+          x.fillRect(0, 0, t.w, height); // 透明なところは白（CAD の下地・画像の外）
+          x.save(); x.translate(-t.x0, 0); L.draw(x); x.restore();
+          const id = alloc(), nm = '/Im' + id;
+          if (L.kind === 'jpeg') {
+            const blob = await new Promise((res) => tile.toBlob(res, 'image/jpeg', 0.92));
+            if (!blob) throw new Error('画像を用意できませんでした');
+            put(id, ['<< /Type /XObject /Subtype /Image /Width ' + t.w + ' /Height ' + height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + blob.size + ' >>\nstream\n', blob, '\nendstream']);
+          } else {
+            // CMYK（0 = インクなし）。256行ずつ変換して、そのまま圧縮する
+            const chunks = [];
+            let writer = null, done = null;
+            if (deflate) {
+              const cs = new CompressionStream('deflate');
+              writer = cs.writable.getWriter();
+              done = new Response(cs.readable).blob();
+            }
+            for (let y0 = 0; y0 < height; y0 += 256) {
+              const bh = Math.min(256, height - y0);
+              const d = x.getImageData(0, y0, t.w, bh).data;
+              const out = new Uint8Array(t.w * bh * 4);
+              let last = -1, c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+              for (let i = 0; i !== d.length; i += 4) {
+                const rr = d[i], gg = d[i + 1], bb = d[i + 2];
+                const key = rr * 65536 + gg * 256 + bb;
+                if (key !== last) {
+                  last = key;
+                  const mx = Math.max(rr, gg, bb);
+                  if (mx === 0) { c0 = 0; c1 = 0; c2 = 0; c3 = 255; }
+                  else { c0 = Math.round((mx - rr) * 255 / mx); c1 = Math.round((mx - gg) * 255 / mx); c2 = Math.round((mx - bb) * 255 / mx); c3 = 255 - mx; }
+                }
+                out[i] = c0; out[i + 1] = c1; out[i + 2] = c2; out[i + 3] = c3;
+              }
+              if (writer) await writer.write(out); else chunks.push(out);
+              await new Promise((res) => setTimeout(res, 0)); // 画面に処理を返す
+            }
+            let data;
+            if (writer) { await writer.close(); data = await done; } else data = new Blob(chunks);
+            put(id, ['<< /Type /XObject /Subtype /Image /Width ' + t.w + ' /Height ' + height + ' /ColorSpace /DeviceCMYK /BitsPerComponent 8' + (writer ? ' /Filter /FlateDecode' : '') + ' /Length ' + data.size + ' >>\nstream\n', data, '\nendstream']);
+          }
+          xobj.push(nm + ' ' + id + ' 0 R');
+          content.push('q ' + n3(t.w * k) + ' 0 0 ' + n3(height * k) + ' ' + n3(t.x0 * k) + ' 0 cm ' + nm + ' Do Q\n');
+          step++;
+          if (onProgress) onProgress(step / Math.max(1, rasterSteps));
+          await new Promise((res) => setTimeout(res, 0));
+        }
+      }
+      content.push('EMC\n');
+    }
+    tile.width = tile.height = 1;
+    const contentId = alloc(), pageId = alloc(), pagesId = alloc(), catalogId = alloc(), infoId = alloc();
+    const cbytes = enc.encode(content.join(''));
+    put(contentId, ['<< /Length ' + cbytes.length + ' >>\nstream\n', cbytes, '\nendstream']);
+    put(pageId, ['<< /Type /Page /Parent ' + pagesId + ' 0 R /MediaBox [0 0 ' + n3(Wp) + ' ' + n3(Hp) + ']' + (u > 1 ? ' /UserUnit ' + u : '')
+      + ' /Resources << /XObject << ' + xobj.join(' ') + ' >> /Properties << ' + props.join(' ') + ' >> >> /Contents ' + contentId + ' 0 R >>']);
+    put(pagesId, ['<< /Type /Pages /Kids [' + pageId + ' 0 R] /Count 1 >>']);
+    const refs = ocgs.map((o) => o + ' 0 R').join(' ');
+    put(catalogId, ['<< /Type /Catalog /Pages ' + pagesId + ' 0 R /OCProperties << /OCGs [' + refs + '] /D << /Order [' + refs + '] /ON [' + refs + '] >> >> >>']);
+    put(infoId, ['<< /Producer (cad-floor-plan wallpaper) /Title ' + utf16('壁紙データ（巾の枠）' + width + '×' + height + 'mm') + ' >>']);
+    // ファイル：見出し・オブジェクト・相互参照表
+    const parts = [];
+    let pos = 0;
+    const add = (p) => { const b = typeof p === 'string' ? enc.encode(p) : p; parts.push(b); pos += b instanceof Blob ? b.size : b.length; };
+    add('%PDF-1.6\n');
+    add(Uint8Array.of(37, 226, 227, 207, 211, 10));
+    const offs = {};
+    objs.sort((a, b) => a.id - b.id).forEach((o) => { offs[o.id] = pos; add(o.id + ' 0 obj\n'); o.parts.forEach(add); add('\nendobj\n'); });
+    const xref = pos;
+    let xr = 'xref\n0 ' + nextId + '\n0000000000 65535 f \n';
+    for (let i = 1; i !== nextId; i++) xr += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
+    add(xr + 'trailer\n<< /Size ' + nextId + ' /Root ' + catalogId + ' 0 R /Info ' + infoId + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
+    return new Blob(parts, { type: 'application/postscript' });
+  }
+
   // buildWhole と同じ内容を、タイルに分けて作る（大きな壁でも固まらない）。cadDraw(ctx): CAD図面を絵の座標に描く関数
   // split: 1ファイルの幅の上限（mm。0 / false なら分けない）。超えるときは巾の区切りで分けて ZIP にまとめる
   // （GIMP は CMYK の PSD を RGB に変えながら読むため、大きいほど開くのに時間とメモリがかかる）
-  WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress, split) {
+  // format: 'ai' のときは Illustrator 用（.ai・PDF互換）、それ以外は CMYK の PSD
+  WALL_PRINT.buildWholeAsync = async function (cadDraw, W, WH, right, shapes, off, label, onProgress, split, format) {
+    const ai = format === 'ai';
+    const ext = ai ? '.ai' : '.psd';
+    // .ai はレイヤーの種類（画像・ベクトル）を指定して書く
+    const write = (w, h, defs, compDraw, cb) => (ai
+      ? writeAiPdf(w, h, defs.map((L, i) => ({ name: L.name, draw: L.draw, kind: ['jpeg', 'cmyk', 'vector'][i] })), cb)
+      : writeCmykPsdTiled(w, h, defs, compDraw, 25.4, cb));
     off = off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const P = WALL_PRINT;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
@@ -2366,33 +2528,34 @@
       const M = Math.ceil(N / per);
       const files = [];
       const stamp = Date.now();
-      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が ' + MAXW + 'mm を超えるため、巾の区切りで ' + M + ' 個の PSD（それぞれ幅 ' + MAXW + 'mm 以内）に分けました。',
-        '各PSD：CMYK・1px = 1mm・25.4dpi、レイヤーは ①CAD図面 ②壁紙の画像 ③巾の枠。ファイル名の先頭の番号（01, 02 …）の順に左から並べると、元の1枚の絵になります。',
-        '隣り合うPSDは、巾の重なり（合わせ代 ' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
+      const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が ' + MAXW + 'mm を超えるため、巾の区切りで ' + M + ' 個の ' + (ai ? 'AI（Illustrator）ファイル' : 'PSD') + '（それぞれ幅 ' + MAXW + 'mm 以内）に分けました。',
+        (ai ? '各AI：実寸（1mm = 1mm）・PDF互換の .ai、壁紙の画像は CMYK、巾の枠は線（ベクトル）。レイヤーは' : '各PSD：CMYK・1px = 1mm・25.4dpi、レイヤーは') + ' ①CAD図面 ②壁紙の画像 ③巾の枠。ファイル名の先頭の番号（01, 02 …）の順に左から並べると、元の1枚の絵になります。',
+        '隣り合うファイルは、巾の重なり（合わせ代 ' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
       for (let k = 0; k !== M; k++) {
         const first = k * per, last = Math.min(N, (k + 1) * per) - 1;
         const x0 = Math.max(0, Math.floor(xs[first])), x1 = Math.min(FW, Math.ceil(xs[last] + P.ROLL));
         const pw = x1 - x0;
         const sh = (fn) => (ctx) => { ctx.translate(-x0, 0); fn(ctx); };
-        const blob = await writeCmykPsdTiled(pw, H, layerDefs.map((L) => ({ name: L.name, draw: sh(L.draw) })), sh(comp), 25.4,
+        const blob = await write(pw, H, layerDefs.map((L) => ({ name: L.name, draw: sh(L.draw) })), sh(comp),
           (f) => { if (onProgress) onProgress((k + f) / M); });
         // 先頭に通し番号（01_, 02_ …）を付けて、名前順に並べると左から順になるようにする
         const z2 = (v) => String(v).padStart(Math.max(2, String(M).length), '0');
-        const name = z2(k + 1) + '_wallpaper_part' + z2(k + 1) + 'of' + z2(M) + '_strips' + (first + 1) + '-' + (last + 1) + '_x' + x0 + '-' + x1 + 'mm_' + pw + 'x' + H + 'mm.psd';
+        const name = z2(k + 1) + '_wallpaper_part' + z2(k + 1) + 'of' + z2(M) + '_strips' + (first + 1) + '-' + (last + 1) + '_x' + x0 + '-' + x1 + 'mm_' + pw + 'x' + H + 'mm' + ext;
         files.push({ name, blob });
         lines.push((k + 1) + '. ' + name + '（' + (first + 1) + '〜' + (last + 1) + '巾目・全体の左から ' + x0 + '〜' + x1 + 'mm）');
       }
-      files.push({ name: '00_README_分けたPSDについて.txt', blob: new Blob([lines.join('\r\n')], { type: 'text/plain' }) });
+      files.push({ name: '00_README_分けた' + (ai ? 'AI' : 'PSD') + 'について.txt', blob: new Blob([lines.join('\r\n')], { type: 'text/plain' }) });
       const zip = await makeZip(files);
       return {
         name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_' + M + 'files_' + (right ? 'right' : 'left') + '_' + stamp + '.zip',
         blob: zip, width: FW, height: H, strips: N, split: M, maxw: MAXW
       };
     }
-    const blob = await writeCmykPsdTiled(FW, H, layerDefs, comp, 25.4, onProgress);
+    const blob = await write(FW, H, layerDefs, comp, onProgress);
+    const psb = ai ? false : (FW > 30000 || H > 30000);
     return {
-      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + (FW > 30000 || H > 30000 ? '.psb' : '.psd'),
-      blob, width: FW, height: H, strips: N, psb: FW > 30000 || H > 30000
+      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + (ai ? '.ai' : (psb ? '.psb' : '.psd')),
+      blob, width: FW, height: H, strips: N, psb, ai
     };
   };
   // cadFull: CAD図面のレイヤー（絵の大きさのcanvas、壁の位置に描いたもの）。W: 壁の幅（つなげたときは合計）、WH: 壁の高さ（最大）
@@ -2699,7 +2862,7 @@
       // 壁紙は CMYK で保存（ガイド線は C0 M100 Y100 K0 の赤）
       const blob = writeCmykPsd(imageW, imageH, compositeCanvas, [
         { name: '①壁紙デザイン（実寸・幅' + imageW + 'mm×高さ' + imageH + 'mm）', canvas: designCanvas },
-        { name: '②裁断ガイド（赤枠＝壁の範囲・上下100mmの裁断代／縦線＝巾の境目 ' + P.STEP + 'mmごと）', canvas: guideCanvas }
+        { name: '②裁断ガイド（赤枠＝壁の範囲・上下' + P.TRIM_TOP + 'mmの裁断代／縦線＝巾の境目 ' + P.STEP + 'mmごと）', canvas: guideCanvas }
       ], 25.4);
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -3002,6 +3165,38 @@
 
     if ($('cc-material')) $('cc-material').onchange = calculateEstimate;
     if ($('cc-region')) $('cc-region').onchange = calculateEstimate;
+    // 元画像を別ウィンドウで表示（ポップアップが止められたときは、この画面の上に大きく表示）
+    if ($('cc-show-original')) $('cc-show-original').onclick = () => {
+      const img = state.loadedImg;
+      if (!img) { alert('先に画像を選択してください。'); return; }
+      const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+      const title = '元画像（' + w + ' × ' + h + ' px）';
+      // 読み込みに使ったURLはもう使えないので、元のファイルから作り直す（ファイルがなければ画像を描き写す）
+      let url = '';
+      if (state.file) url = URL.createObjectURL(state.file);
+      else { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0); url = c.toDataURL('image/png'); }
+      if (state.file) setTimeout(() => URL.revokeObjectURL(url), 30 * 60 * 1000);
+      const win = window.open('', 'cfp-original', 'width=' + Math.min(1200, Math.max(400, w + 40)) + ',height=' + Math.min(900, Math.max(300, h + 80)) + ',resizable=yes,scrollbars=yes');
+      if (win) {
+        win.document.open();
+        win.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>' + title + '</title><style>body{margin:0;background:#18181b;color:#e4e4e7;font:13px sans-serif;text-align:center}p{margin:8px}img{max-width:100%;height:auto;background:repeating-conic-gradient(#ddd 0 25%,#fff 0 50%) 0 0/20px 20px}img.full{max-width:none}</style></head><body><p>' + title + '（画像をクリックすると、実際の大きさ／画面に合わせる を切り替え）</p><img id="im" alt="元画像"></body></html>');
+        win.document.close();
+        const im = win.document.getElementById('im');
+        im.src = url;
+        im.onclick = () => im.classList.toggle('full');
+        win.focus();
+        return;
+      }
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+      const im = document.createElement('img');
+      im.src = url;
+      im.alt = title;
+      im.style.cssText = 'max-width:95vw;max-height:92vh;background:#fff;';
+      ov.appendChild(im);
+      ov.onclick = () => ov.remove();
+      document.body.appendChild(ov);
+    };
     // お見積もり明細のパイル形状：上の「仕様・パイル形状の選択」と同じにする
     if ($('cc-material2')) $('cc-material2').onchange = (e) => {
       const m = $('cc-material');

@@ -1053,8 +1053,10 @@
       };
       link('wp-roll-r', 'wp-roll');
       link('wp-ov-r', 'wp-ov');
+      link('wp-trim-r', 'wp-trim');
       ['wp-show-cad', 'wp-show-img', 'wp-show-frame', 'wp-right'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
       this.$('wp-save').addEventListener('click', () => this._wpSave());
+      if (this.$('wp-save-ai')) this.$('wp-save-ai').addEventListener('click', () => this._wpSave('ai'));
       // joining several walls (clockwise, round the room)
       const jl = this.$('wp-join-list');
       this.$('wp-join').addEventListener('change', () => this._wpRender());
@@ -1199,6 +1201,7 @@
     _wpClamp(name, v) {
       v = parseFloat(v);
       if (/ov/.test(name)) return Math.min(15, Math.max(6, Math.round((isNaN(v) ? 10 : v) * 2) / 2));
+      if (/trim/.test(name)) return Math.min(100, Math.max(30, Math.round((isNaN(v) ? 100 : v) / 5) * 5));
       return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 910 : v)));
     }
 
@@ -1206,7 +1209,7 @@
     _wpChanged() {
       const wp = window.cfpWallPrint;
       if (!wp) return;
-      wp.set(this.$('wp-roll-r').value, this.$('wp-ov-r').value);
+      wp.set(this.$('wp-roll-r').value, this.$('wp-ov-r').value, this.$('wp-trim-r') ? this.$('wp-trim-r').value : undefined);
       this._updateWallTotal();
       if (this.hasTool && this.renderer) this.syncDesigns(true);
       this._wpRender();
@@ -1589,9 +1592,12 @@
         : '✅ 出隅・入隅（' + corners.length + 'か所）から壁紙の継ぎ目まで、すべて100mm以上離れています（いちばん近いところ ' + Math.round(Math.min(...corners.map((c) => c.d))) + 'mm）。';
     }
 
-    async _wpSave() {
+    // format: 'ai' = Illustrator 用（.ai・PDF互換）、省略 = CMYK の PSD
+    async _wpSave(format) {
       const g = this._wpGeom();
-      const btn = this.$('wp-save');
+      const ai = format === 'ai';
+      const btn = this.$(ai ? 'wp-save-ai' : 'wp-save');
+      const kind = ai ? 'AI' : 'PSD';
       if (!g) return;
       const { wp, w, W, WH } = g;
       const old = btn.textContent;
@@ -1613,14 +1619,15 @@
         }
         const label = g.multi ? '壁 ' + g.walls.map((x) => x.no).join('→') + ' をつなげる・幅の合計 ' + W + 'mm' : '壁の範囲 ' + W + '×' + WH + 'mm';
         const out = await wp.buildWholeAsync(cadDraw, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label,
-          (f) => { btn.textContent = 'PSDを作成中… ' + Math.round(f * 100) + '%'; }, +this.$('wp-split').value || 0);
+          (f) => { btn.textContent = kind + 'を作成中… ' + Math.round(f * 100) + '%'; }, +this.$('wp-split').value || 0, format);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-        this.status('壁紙データを保存しました（' + out.width + ' × ' + out.height + ' mm・1px = 1mm・' + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠）。'
-          + (out.split ? '幅が' + out.maxw + 'mmを超えるため、巾の区切りで ' + out.split + ' 個のPSD（それぞれ' + out.maxw + 'mm以内）に分け、ZIPにまとめて保存しました。' : '')
+        this.status('壁紙データを保存しました（' + (ai ? 'Illustrator用 .ai（PDF互換）・実寸・' : '') + out.width + ' × ' + out.height + ' mm・' + (ai ? '' : '1px = 1mm・') + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠' + (ai ? '（線）' : '') + '）。'
+          + (out.split ? '幅が' + out.maxw + 'mmを超えるため、巾の区切りで ' + out.split + ' 個の' + kind + '（それぞれ' + out.maxw + 'mm以内）に分け、ZIPにまとめて保存しました。' : '')
+          + (ai ? (out.split ? out.maxw : out.width) > 5080 ? ' 幅が約5mを超える .ai は、Illustratorの「大きなカンバス」（倍率付き）として開かれることがあります。普通のカンバスで開くには「PSDを分ける幅」を5m以内にしてください。' : '' : '')
           + (out.psb ? '幅が30000mmを超えるため、PhotoshopのPSB形式（大きなドキュメント形式）で保存しました。Photoshopで開けます。' : ''), 'success');
       } catch (err) {
         this.status('エラー: 壁紙データを作成できませんでした（' + err.message + '）', 'error');
@@ -1736,7 +1743,7 @@
           strips, lengthM: Math.round(len * 10) / 10, files,
         };
         total.text = picked.length + '面（' + files.join('・') + '）幅の合計 ' + fmtMm(total.widthMm) + ' mm／面積の合計 ' + total.areaM2
-          + ' ㎡／' + (window.cfpWallPrint ? window.cfpWallPrint.ROLL : 910) + 'mm幅のロール（合わせ代' + (window.cfpWallPrint ? window.cfpWallPrint.OVERLAP : 10) + 'mm）で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下100mmずつ）';
+          + ' ㎡／' + (window.cfpWallPrint ? window.cfpWallPrint.ROLL : 910) + 'mm幅のロール（合わせ代' + (window.cfpWallPrint ? window.cfpWallPrint.OVERLAP : 10) + 'mm）で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下' + (window.cfpWallPrint ? window.cfpWallPrint.TRIM_TOP : 100) + 'mmずつ）';
         out.textContent = '壁紙の合計: ' + total.text + '。扉・窓などの開口は差し引いていません。';
       } else out.textContent = '壁紙の合計: 一覧の左のチェックで、合計に入れる壁を選んでください。';
       window.cfpWallTotal = total;
