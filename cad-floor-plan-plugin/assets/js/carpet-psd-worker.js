@@ -27,7 +27,8 @@
 
   // reduce to the palette -> three planes (R, G, B), and which palette colours were used.
   // A generator: it pauses every 64 rows (yielding the progress), so that it can also run on the page in small steps.
-  function* quantize(rgba, w, h, pal, dither) {
+  // lut: the colour table made on the page (the same assignment as the screen: look, how colours are seen)
+  function* quantize(rgba, w, h, pal, dither, lut) {
     const n = w * h;
     const R = new Uint8Array(n), G = new Uint8Array(n), B = new Uint8Array(n), A = new Uint8Array(n).fill(255);
     let clear = false; // some pixels are the margin (transparent): no colour there
@@ -44,7 +45,7 @@
           g = Math.min(255, Math.max(0, g + cur[e + 1]));
           b = Math.min(255, Math.max(0, b + cur[e + 2]));
         }
-        const k = nearest(r, g, b, pal), c = pal[k];
+        const k = lut ? lut[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)] : nearest(r, g, b, pal), c = pal[k];
         used[k] = 1;
         const o = y * w + x;
         R[o] = c[0]; G[o] = c[1]; B[o] = c[2];
@@ -264,7 +265,7 @@
 
   // the whole job (a generator: progress values, then { parts, used })
   function* job(m) {
-    const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither);
+    const it = quantize(new Uint8ClampedArray(m.rgba), m.width, m.height, m.palette, m.dither, m.lut || null);
     let r = it.next();
     while (!r.done) { yield r.value; r = it.next(); }
     const q = r.value;
@@ -293,7 +294,7 @@
   // On the page (when a worker cannot be started): the same work, a little at a time
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
-      ver: 7,
+      ver: 8,
       run: async (m, progress) => {
         const it = job(m);
         let r = it.next();
@@ -304,8 +305,8 @@
     return;
   }
 
-  // ver: 7 = 余白（透明）に色を付けない・4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
-  self.postMessage({ type: 'ready', ver: 7, offscreen: typeof OffscreenCanvas !== 'undefined' });
+  // ver: 8 = 色の対応表（印象）・余白（透明）に色を付けない・4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
+  self.postMessage({ type: 'ready', ver: 8, offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
       const it = job(ev.data);

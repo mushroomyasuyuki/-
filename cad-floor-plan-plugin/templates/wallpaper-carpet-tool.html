@@ -329,6 +329,14 @@
   <div class="dither-box cc-var-dither">
     <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>3つの変換すべてと、お見積もり・PSDの画像に反映。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
     <input type="range" id="cc-dither2" min="0" max="100" value="0">
+    <div class="slider-row" style="margin-top:10px;"><label for="cc-look">仕上がりの印象（配色の選び方）：</label>
+      <select id="cc-look" style="width:auto;min-height:0;padding:6px 10px;">
+        <option value="natural" selected>自然（元の印象に近く）</option>
+        <option value="crisp">くっきり（柄・文字を見やすく）</option>
+        <option value="vivid">鮮やか（華やかに）</option>
+        <option value="calm">落ち着き（やわらかく）</option>
+      </select></div>
+    <small style="display:block;color:#a1a1aa;font-size:11px;line-height:1.5;">元の色との近さだけでなく、明るさ・鮮やかさ・色合いの見え方、色同士の関係（違う色が同じ色につぶれない・明るさの順番を保つ）、柄・文字の輪郭、全体の調和（ほとんど使わない色を増やさない）をまとめて評価して、3通りの変換の16色を選び、色を割り当てます。</small>
   </div>
   <div class="palette-controls" style="justify-content:center;margin:4px 0 6px;">
     <button type="button" id="cc-show-original" class="btn-chip-action" style="padding:8px 16px;font-size:13px;">🖼 元画像を表示（別ウィンドウ）</button>
@@ -1308,9 +1316,11 @@
 
   // 減色＋誤差拡散のコアロジック（1ピクセル単位で処理）。
   // data: Uint8ClampedArray（RGBA）, w/h: 対象の幅・高さ, activeRgb: 使用中パレットのRGB配列
-  function quantizeImageDataToPalette(data, w, h, activeRgb, ditherFactor) {
+  // lut: 色の対応表（buildLookLut。印象・色の見え方を考えた割り当て）。無いときは RGB の近さ
+  function quantizeImageDataToPalette(data, w, h, activeRgb, ditherFactor, lut) {
     const outData = new Uint8ClampedArray(data.length);
     const usedIndices = new Set();
+    const pick = lut ? (r, g, b) => lut[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)] : (r, g, b) => findClosestPaletteIndex(r, g, b, activeRgb);
 
     if (ditherFactor <= 0) {
       for (let i = 0; i < data.length; i += 4) {
@@ -1318,7 +1328,7 @@
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
-        const closest = findClosestPaletteIndex(r, g, b, activeRgb);
+        const closest = pick(r, g, b);
         const color = activeRgb[closest];
         usedIndices.add(closest);
         outData[i] = color[0];
@@ -1343,7 +1353,7 @@
           const g = Math.min(255, Math.max(0, buf[j + 1]));
           const b = Math.min(255, Math.max(0, buf[j + 2]));
 
-          const closest = findClosestPaletteIndex(r, g, b, activeRgb);
+          const closest = pick(r | 0, g | 0, b | 0);
           const color = activeRgb[closest];
           usedIndices.add(closest);
 
@@ -1501,7 +1511,8 @@
 
   window.cfpUpdateWallRepeatNote = updateWallRepeatNote;
 
-  function getReducedImageData(sourceCanvasLike, targetW, targetH, ditherFactor, activeEntries) {
+  // opts.lut: 色の対応表（カーペット：印象・色の見え方を考えた割り当て）
+  function getReducedImageData(sourceCanvasLike, targetW, targetH, ditherFactor, activeEntries, opts) {
     const off = document.createElement('canvas');
     off.width = targetW;
     off.height = targetH;
@@ -1512,7 +1523,7 @@
     const imgData = octx.getImageData(0, 0, targetW, targetH);
 
     const activeRgb = activeEntries.map(e => e.rgb);
-    const { outData, usedIndices } = quantizeImageDataToPalette(imgData.data, targetW, targetH, activeRgb, ditherFactor);
+    const { outData, usedIndices } = quantizeImageDataToPalette(imgData.data, targetW, targetH, activeRgb, ditherFactor, opts ? opts.lut : null);
     const usedEntries = Array.from(usedIndices).sort((a, b) => a - b).map(i => activeEntries[i]);
 
     return { imageData: new ImageData(outData, targetW, targetH), usedEntries };
@@ -1565,51 +1576,174 @@
     return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
   }
 
-  // 元画像の色の分布（5bit/チャンネルの箱ごとの平均色と画素数。多い順に最大2500）
-  function colorHistogram(canvas) {
-    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data;
-    const bins = new Map();
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i + 3] < 128) continue;
-      const key = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
-      let b = bins.get(key);
-      if (!b) { b = [0, 0, 0, 0]; bins.set(key, b); }
-      b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++;
+  // ---- 仕上がりの印象（配色の評価のしかた）----
+  // 元の色との数値的な近さだけでなく、明るさ・あざやかさ・色合いの見え方の違い、色同士の関係（違う色が同じ色に
+  // つぶれない・明るさの順番が入れ替わらない）、柄・文字の輪郭（境目の色を重く見る）、全体の調和（ほとんど使わない
+  // 色を増やさない）、求める印象（くっきり・鮮やか・落ち着き）をまとめて評価して、16色を選び、色を割り当てる。
+  const LOOKS = {
+    natural: { label: '自然（元の印象に近く）', wL: 1.0, wC: 1.0, wH: 1.2, chroma: 1.0, light: 0, edge: 1.5, sep: 1.0, order: 1.0 },
+    crisp: { label: 'くっきり（柄・文字を見やすく）', wL: 1.7, wC: 0.8, wH: 1.0, chroma: 1.0, light: 0, edge: 3.0, sep: 2.5, order: 2.5 },
+    vivid: { label: '鮮やか（華やかに）', wL: 0.8, wC: 1.5, wH: 1.4, chroma: 1.25, light: 0, edge: 1.5, sep: 1.2, order: 1.0 },
+    calm: { label: '落ち着き（やわらかく）', wL: 1.0, wC: 1.3, wH: 1.0, chroma: 0.8, light: 3, edge: 1.0, sep: 0.8, order: 1.0 }
+  };
+  function carpetLook() {
+    const v = ($('cc-look') || {}).value;
+    return LOOKS[v] ? v : 'natural';
+  }
+  // 見え方の違い：明るさ・あざやかさ・色合いを分けて重みを付ける（元の色は印象に合わせて少し動かしてから比べる）
+  function lookTarget(lab, L) { return [Math.min(100, lab[0] + L.light), lab[1] * L.chroma, lab[2] * L.chroma]; }
+  function lookDist(t, p, L) {
+    const dL = t[0] - p[0];
+    const c1 = Math.hypot(t[1], t[2]), c2 = Math.hypot(p[1], p[2]);
+    const dC = c1 - c2;
+    const da = t[1] - p[1], db = t[2] - p[2];
+    const dH2 = Math.max(0, da * da + db * db - dC * dC);
+    return L.wL * dL * dL + L.wC * dC * dC + L.wH * dH2;
+  }
+  // 色の対応表（5bit/チャンネル＝32768色ぶん）。画面・PSD（Worker）で同じ表を使うので、仕上がりがそろう
+  const lutCache = new Map();
+  function buildLookLut(activeRgb, look) {
+    const key = look + '|' + activeRgb.map((c) => c.join(',')).join(';');
+    if (lutCache.has(key)) return lutCache.get(key);
+    const L = LOOKS[look] || LOOKS.natural;
+    const pl = activeRgb.map((c) => rgbToLab(c[0], c[1], c[2]));
+    const lut = new Uint8Array(32768);
+    for (let i = 0; i !== 32768; i++) {
+      const t = lookTarget(rgbToLab((i >> 10) * 8 + 4, ((i >> 5) % 32) * 8 + 4, (i % 32) * 8 + 4), L);
+      let best = 0, bd = Infinity;
+      for (let p = 0; p !== pl.length; p++) { const d = lookDist(t, pl[p], L); if (d < bd) { bd = d; best = p; } }
+      lut[i] = best;
     }
-    const arr = Array.from(bins.values()).sort((a, b) => b[3] - a[3]).slice(0, 2500);
-    return arr.map((b) => ({ lab: rgbToLab(b[0] / b[3], b[1] / b[3], b[2] / b[3]), w: b[3] }));
+    if (lutCache.size > 12) lutCache.clear();
+    lutCache.set(key, lut);
+    return lut;
+  }
+  function carpetLut(entries) { return buildLookLut(entries.map((e) => e.rgb), carpetLook()); }
+
+  // 元画像の色の分布（5bit/チャンネルの箱ごとの平均色と重み。多い順に最大2500）。
+  // 重み：画素数＋柄・文字の輪郭（明るさが急に変わるところ）の画素を重く数える（edge）
+  function colorHistogram(canvas, edge) {
+    const cw = canvas.width, ch = canvas.height;
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cw, ch).data;
+    const bins = new Map();
+    const lum = (i) => d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = (y * cw + x) * 4;
+        if (d[i + 3] < 128) continue;
+        let g = 0;
+        if (x + 1 < cw) g = Math.max(g, Math.abs(lum(i) - lum(i + 4)));
+        if (y + 1 < ch) g = Math.max(g, Math.abs(lum(i) - lum(i + cw * 4)));
+        const wt = 1 + (edge || 0) * Math.min(1, g / 48);
+        const key = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
+        let b = bins.get(key);
+        if (!b) { b = [0, 0, 0, 0, 0]; bins.set(key, b); }
+        b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++; b[4] += wt;
+      }
+    }
+    const arr = Array.from(bins.values()).sort((a, b) => b[4] - a[4]).slice(0, 2500);
+    return arr.map((b) => ({ lab: rgbToLab(b[0] / b[3], b[1] / b[3], b[2] / b[3]), w: b[4] }));
   }
 
-  // pool: パレット番号（ALL_COLORS）の配列。quota: { free: n, opt: m }（省略可）。k色を選ぶ。
-  function selectPalette(hist, pool, k, quota) {
+  // 色同士の関係：はっきり違う代表の色（最大24色）と、画像の中で隣り合っている長さ（柄・文字の境目）を数える。
+  // 隣り合う2色が同じ色につぶれると柄が見えなくなるので、境目が長い組ほど重く見る
+  function colorRelations(hist, canvas) {
+    const reps = [];
+    for (let b = 0; b < hist.length; b++) {
+      if (reps.length >= 24) break;
+      const h = hist[b].lab;
+      if (reps.every((r) => { const q = hist[r].lab; return Math.hypot(h[0] - q[0], h[1] - q[1], h[2] - q[2]) > 7; })) reps.push(b);
+    }
+    const n = reps.length;
+    const adj = new Float64Array(n * n);
+    const cw = canvas.width, ch = canvas.height;
+    const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, cw, ch).data;
+    const cache = new Map();
+    const near = (i) => {
+      const key = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
+      let r = cache.get(key);
+      if (r === undefined) {
+        const lab = rgbToLab(d[i], d[i + 1], d[i + 2]);
+        let bd = Infinity; r = 0;
+        reps.forEach((b, k) => { const q = hist[b].lab; const dd = (lab[0] - q[0]) ** 2 + (lab[1] - q[1]) ** 2 + (lab[2] - q[2]) ** 2; if (dd < bd) { bd = dd; r = k; } });
+        cache.set(key, r);
+      }
+      return r;
+    };
+    const step = Math.max(1, Math.round(Math.max(cw, ch) / 500));
+    for (let y = 0; y + step < ch; y += step) {
+      for (let x = 0; x + step < cw; x += step) {
+        const i = (y * cw + x) * 4;
+        if (d[i + 3] < 128) continue;
+        const a = near(i);
+        const j1 = i + step * 4, j2 = i + step * cw * 4;
+        if (d[j1 + 3] >= 128) { const c = near(j1); if (c !== a) { adj[a * n + c]++; adj[c * n + a]++; } }
+        if (d[j2 + 3] >= 128) { const c = near(j2); if (c !== a) { adj[a * n + c]++; adj[c * n + a]++; } }
+      }
+    }
+    const scale = step * step; // the boundary counted on a coarser grid: back to pixels
+    const pairs = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = hist[reps[i]], c = hist[reps[j]];
+      const de = Math.hypot(a.lab[0] - c.lab[0], a.lab[1] - c.lab[1], a.lab[2] - c.lab[2]);
+      pairs.push({ i: reps[i], j: reps[j], de, dl: a.lab[0] - c.lab[0], w: Math.min(a.w, c.w), edge: adj[i * n + j] * scale });
+    }
+    return { reps, pairs };
+  }
+
+  // pool: パレット番号（ALL_COLORS）の配列。quota: { free: n, opt: m }（省略可）。最大 k 色を選ぶ。
+  // 評価 = Σ 重み × 見え方の違い ＋ 色同士の関係の崩れ（違う色がつぶれる・明るさの順番が逆になる）の罰点。
+  // 調和：色を1つ増やしても良くなる量がごくわずかなら、それ以上増やさない（ほとんど使わない色を入れない）
+  function selectPalette(hist, pool, k, quota, look, rel) {
+    const L = LOOKS[look] || LOOKS.natural;
     const nb = hist.length;
     if (!nb) return pool.slice(0, k);
     const labs = {};
     pool.forEach((idx) => { labs[idx] = rgbToLab.apply(null, ALL_COLORS[idx].rgb); });
+    const tg = hist.map((h) => lookTarget(h.lab, L));
     const dist = {};
     pool.forEach((idx) => {
-      const L = labs[idx], row = new Float64Array(nb);
-      for (let b = 0; b < nb; b++) {
-        const h = hist[b].lab, dl = L[0] - h[0], da = L[1] - h[1], db = L[2] - h[2];
-        row[b] = dl * dl + da * da + db * db;
-      }
+      const row = new Float64Array(nb);
+      for (let b = 0; b < nb; b++) row[b] = lookDist(tg[b], labs[idx], L);
       dist[idx] = row;
     });
+    const totalW = hist.reduce((t, h) => t + h.w, 0);
+    const reps = rel ? rel.reps : [], pairs = rel ? rel.pairs : [];
+    const penalty = (sel) => {
+      if (!pairs.length || !sel.length) return 0;
+      const asg = {};
+      reps.forEach((b) => { let best = sel[0], bd = Infinity; sel.forEach((idx) => { if (dist[idx][b] < bd) { bd = dist[idx][b]; best = idx; } }); asg[b] = best; });
+      let pen = 0;
+      pairs.forEach((p) => {
+        const pi = asg[p.i], pj = asg[p.j];
+        // 隣り合う違う色が同じ色につぶれる：柄・文字の境目が消える（境目の長さで重み付け）。離れた色どうしは面積で
+        if (pi === pj) { if (p.de > 8) pen += L.sep * (p.edge * 2 + (p.de > 20 ? p.w * 0.5 : 0)) * p.de * p.de; return; }
+        if (Math.abs(p.dl) > 10) {
+          const ld = labs[pi][0] - labs[pj][0];
+          if (ld * p.dl < 0) pen += L.order * p.w * p.dl * p.dl; // 明るさの順番が逆
+        }
+      });
+      return pen;
+    };
     const grp = (idx) => (idx < FREE_COUNT ? 'free' : 'opt');
     const left = quota ? { free: quota.free, opt: quota.opt } : null;
     const sel = [];
     let minD = new Float64Array(nb).fill(Infinity);
-    const total = (md, row) => { let s = 0; for (let b = 0; b < nb; b++) s += hist[b].w * Math.min(md[b], row[b]); return s; };
+    const dataCost = (md, row) => { let s = 0; for (let b = 0; b < nb; b++) s += hist[b].w * Math.min(md[b], row[b]); return s; };
+    let cur = Infinity;
     while (sel.length < k) {
       let best = -1, bestCost = Infinity;
       pool.forEach((idx) => {
         if (sel.indexOf(idx) >= 0) return;
-        if (left && left[grp(idx)] <= 0) return;
-        const c = total(minD, dist[idx]);
+        if (left ? left[grp(idx)] <= 0 : false) return;
+        const c = dataCost(minD, dist[idx]) + penalty(sel.concat([idx]));
         if (c < bestCost) { bestCost = c; best = idx; }
       });
       if (best < 0) break;
+      // 調和：8色をこえてからは、良くなる量が全体のごくわずか（平均で見え方の差 0.5 ほど）なら増やさない
+      if ((quota ? false : sel.length >= 8) ? cur - bestCost < totalW * 0.1 : false) break;
       sel.push(best);
+      cur = bestCost;
       if (left) left[grp(best)]--;
       for (let b = 0; b < nb; b++) minD[b] = Math.min(minD[b], dist[best][b]);
     }
@@ -1619,12 +1753,13 @@
       for (let p = 0; p < sel.length; p++) {
         const md = new Float64Array(nb).fill(Infinity);
         sel.forEach((idx, q) => { if (q !== p) for (let b = 0; b < nb; b++) md[b] = Math.min(md[b], dist[idx][b]); });
-        let cur = total(md, dist[sel[p]]), bestIdx = sel[p];
+        const others = sel.filter((x, q) => q !== p);
+        let c0 = dataCost(md, dist[sel[p]]) + penalty(sel), bestIdx = sel[p];
         pool.forEach((idx) => {
           if (sel.indexOf(idx) >= 0) return;
-          if (quota && grp(idx) !== grp(sel[p])) return;
-          const c = total(md, dist[idx]);
-          if (c < cur - 1e-6) { cur = c; bestIdx = idx; }
+          if (quota ? grp(idx) !== grp(sel[p]) : false) return;
+          const c = dataCost(md, dist[idx]) + penalty(others.concat([idx]));
+          if (c < c0 - 1e-6) { c0 = c; bestIdx = idx; }
         });
         if (bestIdx !== sel[p]) { sel[p] = bestIdx; changed = true; }
       }
@@ -1634,13 +1769,15 @@
   }
 
   function computeVariantSets(original) {
-    const hist = colorHistogram(original);
+    const look = carpetLook();
+    const hist = colorHistogram(original, LOOKS[look].edge);
+    const rel = colorRelations(hist, original);
     const free = [], opt = [];
     for (let i = 0; i < ALL_COLORS.length; i++) (i < FREE_COUNT ? free : opt).push(i);
     return {
-      std: selectPalette(hist, free, 16, null),
-      op3: selectPalette(hist, free.concat(opt), 16, { free: 13, opt: 3 }),
-      max: selectPalette(hist, free.concat(opt), 16, null)
+      std: selectPalette(hist, free, 16, null, look, rel),
+      op3: selectPalette(hist, free.concat(opt), 16, { free: 13, opt: 3 }, look, rel),
+      max: selectPalette(hist, free.concat(opt), 16, null, look, rel)
     };
   }
 
@@ -1652,11 +1789,16 @@
     if (!original || !original.width || !$('cc-var-std')) return;
     try {
       // 画像そのものが変わったときだけ選び直す（CADの縮尺・サイズ変更で表示サイズが変わっても、選んだ変換は保つ）
-      const key = state.loadedImg ? state.loadedImg.src : '';
+      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook();
       if (state.variantKey !== key) {
+        // 同じ画像で「仕上がりの印象」だけ変えたときは、選んでいた変換（①②③）のまま選び直す
+        const sameImg = state.variantKey ? state.variantKey.split('|')[0] === key.split('|')[0] : false;
+        let keep = null;
+        if (sameImg ? state.variantSets : false) Object.keys(VARIANTS).forEach((v) => { if (sameSet(state.variantSets[v], state.activePaletteIndices)) keep = keep || v; });
         state.variantKey = key;
         state.variantSets = computeVariantSets(original);
-        if (!state.skipAutoVariant) state.variantAutoApply = true;
+        if (keep) state.variantKeep = keep;
+        else if (!state.skipAutoVariant) state.variantAutoApply = true;
         state.skipAutoVariant = false;
       }
       const ditherEl = $('cc-dither');
@@ -1667,7 +1809,7 @@
       if ($('cc-dither2-val')) $('cc-dither2-val').textContent = pct;
       Object.keys(VARIANTS).forEach((v) => {
         const entries = state.variantSets[v].map((i) => ALL_COLORS[i]);
-        const { imageData, usedEntries } = getReducedImageData(original, original.width, original.height, factor, entries);
+        const { imageData, usedEntries } = getReducedImageData(original, original.width, original.height, factor, entries, { lut: carpetLut(entries) });
         const cv = $('cc-var-' + v);
         cv.width = original.width;
         cv.height = original.height;
@@ -1686,6 +1828,12 @@
           + (paid ? '（うち有償オプション ' + paid + '色：' + usedEntries.filter((c) => c.isOp && c.price > 0).map((c) => c.name).join('・') + '）' : '（すべて無償色）')
           + '・階調表現 ' + pct + '%';
       });
+      if (state.variantKeep) {
+        const v = state.variantKeep;
+        state.variantKeep = null;
+        applyVariant(v);
+        return;
+      }
       if (state.variantAutoApply) {
         // 新しい画像：まず「① 標準色のみ」を選んだ状態にする
         state.variantAutoApply = false;
@@ -1751,7 +1899,7 @@
       const ditherAmount = ditherEl ? (parseFloat(ditherEl.value) || 0) : 0;
       const ditherFactor = Math.min(1, Math.max(0, ditherAmount / 100));
 
-      const { imageData, usedEntries } = getReducedImageData(original, w, h, ditherFactor, active);
+      const { imageData, usedEntries } = getReducedImageData(original, w, h, ditherFactor, active, { lut: carpetLut(active) });
 
       reduced.width = w;
       reduced.height = h;
@@ -2107,7 +2255,7 @@
   // Worker が使えないときは、同じ処理をこの画面で少しずつ行う（どちらも少ないメモリで、仕上がりは同じ）。
   // ?ver= を付けて、ブラウザ・サーバーのキャッシュに残った古い部品（1レイヤーのPSDを作る）を読まないようにする
   const CARPET_PSD_JS = '{{CFP_ASSET_URL}}js/carpet-psd-worker.js?ver={{CFP_VERSION}}';
-  const CARPET_PSD_VER = 7;
+  const CARPET_PSD_VER = 8;
   // 起動して「準備できた」と返ってきた Worker（データを渡す前に確かめる。だめなら null）
   function startCarpetWorker(url) {
     return new Promise((resolve) => {
@@ -2194,7 +2342,7 @@
       const cadEl = document.querySelector('.cad-floor-plan-widget');
       let info = null;
       try { info = cadEl ? (cadEl.cfpWidget ? await cadEl.cfpWidget.carpetPsdInfo(sizeW, sizeH, CARPET_BLEED) : null) : null; } catch (e) { info = null; }
-      const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor,
+      const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: activeEntries.map((e) => e.rgb), dither: ditherFactor, lut: carpetLut(activeEntries),
         info: info, bleed: CARPET_BLEED, names: { cad: '①CAD画像（図面）', room: '②部屋' + (info ? '（' + info.name + '）' : ''), img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm＝' + sizeW + '×' + sizeH + 'mm＋上下左右' + CARPET_BLEED + 'mm' + (carpetImageScale() !== 1 ? '・画像の大きさ ' + Math.round(carpetImageScale() * 100) + '%' + (carpetImageScale() < 1 ? '・余白は透明（色なし）' : '') : '') + '）', grid: '④割付（50cm角・端で切るタイルは薄い赤・センター印）' } },
         (v) => { button.textContent = 'PSDを作成中… ' + Math.round(v * 100) + '%'; });
       const used = res.used.map((i) => activeEntries[i]);
@@ -3011,7 +3159,7 @@
       const floorActiveEntries = getActivePaletteEntries();
 
       const { imageData: floorReducedData, usedEntries: floorUsedEntries } =
-        getReducedImageData(state.loadedImg, floorWMm, floorHMm, floorDitherFactor, floorActiveEntries);
+        getReducedImageData(state.loadedImg, floorWMm, floorHMm, floorDitherFactor, floorActiveEntries, { lut: carpetLut(floorActiveEntries) });
       state.lastUsedColorEntries = floorUsedEntries;
       renderUsedColorsUI(floorUsedEntries);
       const floorColorsText = getUsedColorsSummaryText(floorUsedEntries);
@@ -3264,6 +3412,8 @@
     if ($('cc-height')) $('cc-height').oninput = () => { calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-height')) $('cc-height').onchange = () => { snapSize('cc-height'); calculateEstimate(); updateCarpetCanvas(); };
     if ($('cc-dither')) $('cc-dither').oninput = (event) => { if($('cc-dither-val')) $('cc-dither-val').textContent = event.target.value; reprocessReduction(); };
+    // 仕上がりの印象：3通りの変換の色を選び直し、色の割り当てもやり直す
+    if ($('cc-look')) $('cc-look').addEventListener('change', () => { if (state.loadedImg) reprocessReduction(); });
     // 3つの変換の上のスライダー：上のスライダーと同じ値にして、同じように反映する
     if ($('cc-dither2')) $('cc-dither2').oninput = (event) => {
       const v = event.target.value;
