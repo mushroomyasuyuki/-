@@ -29,13 +29,15 @@
   // A generator: it pauses every 64 rows (yielding the progress), so that it can also run on the page in small steps.
   function* quantize(rgba, w, h, pal, dither) {
     const n = w * h;
-    const R = new Uint8Array(n), G = new Uint8Array(n), B = new Uint8Array(n);
+    const R = new Uint8Array(n), G = new Uint8Array(n), B = new Uint8Array(n), A = new Uint8Array(n).fill(255);
+    let clear = false; // some pixels are the margin (transparent): no colour there
     const used = new Uint8Array(pal.length);
     let cur = new Float32Array((w + 2) * 3), next = new Float32Array((w + 2) * 3);
     for (let y = 0; y < h; y++) {
       next.fill(0);
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4, e = (x + 1) * 3;
+        if (rgba[i + 3] < 128) { const o = y * w + x; R[o] = G[o] = B[o] = 255; A[o] = 0; clear = true; continue; }
         let r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
         if (dither > 0) {
           r = Math.min(255, Math.max(0, r + cur[e]));
@@ -60,7 +62,7 @@
     }
     const list = [];
     used.forEach((u, i) => { if (u) list.push(i); });
-    return { R, G, B, used: list };
+    return { R, G, B, A: clear ? A : null, used: list };
   }
 
   // a canvas for drawing one band of a layer: OffscreenCanvas (worker / page) or a page canvas
@@ -192,12 +194,13 @@
       }
       drawn[kind] = { ch, keep };
     }
-    // the reduced picture: R, G, B (opaque)
-    const img = [newChan(), newChan(), newChan()];
+    // the reduced picture: R, G, B (opaque), or with transparency where the margin has no colour
+    const img = planes.A ? [newChan(), newChan(), newChan(), newChan()] : [newChan(), newChan(), newChan()];
     for (let y = 0; y < h; y++) {
       addRow(img[0], y, rleRow(planes.R, y * w));
       addRow(img[1], y, rleRow(planes.G, y * w));
       addRow(img[2], y, rleRow(planes.B, y * w));
+      if (planes.A) addRow(img[3], y, rleRow(planes.A, y * w));
     }
     // the composite: the reduced picture with the grid over it
     const comp = [newChan(), newChan(), newChan()];
@@ -239,7 +242,7 @@
     const L = [
       { name: names.cad, chans: drawn.cad.ch, ids: [-1, 0, 1, 2], flags: 8 },
       { name: names.room, chans: drawn.room.ch, ids: [-1, 0, 1, 2], flags: 8 },
-      { name: names.img, chans: img, ids: [0, 1, 2], flags: 8 },
+      planes.A ? { name: names.img, chans: [img[3], img[0], img[1], img[2]], ids: [-1, 0, 1, 2], flags: 8 } : { name: names.img, chans: img, ids: [0, 1, 2], flags: 8 },
       { name: names.grid, chans: drawn.grid.ch, ids: [-1, 0, 1, 2], flags: 8 },
     ];
     const recs = L.map((l) => record(l.name, l.chans, l.ids, l.flags));
@@ -290,7 +293,7 @@
   // On the page (when a worker cannot be started): the same work, a little at a time
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
-      ver: 6,
+      ver: 7,
       run: async (m, progress) => {
         const it = job(m);
         let r = it.next();
@@ -301,8 +304,8 @@
     return;
   }
 
-  // ver: 6 = 4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
-  self.postMessage({ type: 'ready', ver: 6, offscreen: typeof OffscreenCanvas !== 'undefined' });
+  // ver: 7 = 余白（透明）に色を付けない・4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
+  self.postMessage({ type: 'ready', ver: 7, offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
       const it = job(ev.data);

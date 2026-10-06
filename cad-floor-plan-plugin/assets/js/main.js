@@ -2314,7 +2314,10 @@
       const kx = c.width / (W + B * 2), ky = c.height / (H + B * 2);
       const out = document.createElement('canvas');
       out.width = Math.max(1, Math.round(W * kx)); out.height = Math.max(1, Math.round(H * ky));
-      out.getContext('2d').drawImage(c, B * kx, B * ky, W * kx, H * ky, 0, 0, out.width, out.height);
+      const ox = out.getContext('2d');
+      ox.fillStyle = '#ffffff'; // the margin (no colour) looks white on the 3D floor
+      ox.fillRect(0, 0, out.width, out.height);
+      ox.drawImage(c, B * kx, B * ky, W * kx, H * ky, 0, 0, out.width, out.height);
       return out;
     }
 

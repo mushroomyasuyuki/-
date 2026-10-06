@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.75.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.75.2 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -4395,7 +4395,10 @@
       const kx = c.width / (W + B * 2), ky = c.height / (H + B * 2);
       const out = document.createElement('canvas');
       out.width = Math.max(1, Math.round(W * kx)); out.height = Math.max(1, Math.round(H * ky));
-      out.getContext('2d').drawImage(c, B * kx, B * ky, W * kx, H * ky, 0, 0, out.width, out.height);
+      const ox = out.getContext('2d');
+      ox.fillStyle = '#ffffff'; // the margin (no colour) looks white on the 3D floor
+      ox.fillRect(0, 0, out.width, out.height);
+      ox.drawImage(c, B * kx, B * ky, W * kx, H * ky, 0, 0, out.width, out.height);
       return out;
     }
     syncDesigns(fromEvent) {
