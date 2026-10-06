@@ -257,7 +257,12 @@
     _drawDraft() {
       this.draft.textContent = '';
       const sw = { 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke', fill: 'none' };
-      if (this.drag && this.drag.cur) {
+      if (this.drag && this.drag.cur ? this.tool !== 'rect' : false) {
+        // circle / ellipse: the shape inside the dragged box
+        const e = this._roundBox(this.drag.start, this.drag.cur);
+        this.draft.appendChild(el('ellipse', Object.assign({ cx: e.cx, cy: e.cy, rx: e.rx, ry: e.ry,
+          stroke: '#f59e0b', 'stroke-dasharray': '6 4', fill: '#f59e0b', 'fill-opacity': 0.15 }, { 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' })));
+      } else if (this.drag && this.drag.cur) {
         const [x0, y0] = this.drag.start, [x1, y1] = this.drag.cur;
         this.draft.appendChild(el('rect', Object.assign({
           x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0),
@@ -272,6 +277,20 @@
           cx: p[0], cy: p[1], r: i === 0 ? r * 1.4 : r, fill: i === 0 ? '#ef4444' : '#f59e0b', stroke: '#fff', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke',
         })));
       }
+    }
+
+    // circle: the largest circle in the dragged box (centred in it); ellipse: the ellipse filling the box
+    _roundBox(a, b) {
+      let rx = Math.abs(b[0] - a[0]) / 2, ry = Math.abs(b[1] - a[1]) / 2;
+      if (this.tool === 'circle') rx = ry = Math.min(rx, ry);
+      return { cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2, rx, ry };
+    }
+
+    // the circle / ellipse as a polygon (64 corners): rooms and walls are polygons
+    _roundPoly(e) {
+      const n = 64, out = [];
+      for (let i = 0; i < n; i++) { const t = i / n * Math.PI * 2; out.push([e.cx + e.rx * Math.cos(t), e.cy + e.ry * Math.sin(t)]); }
+      return out;
     }
 
     _finishPoly() {
@@ -332,7 +351,7 @@
           svg.setPointerCapture(e.pointerId);
           return;
         }
-        if (this.tool === 'rect') {
+        if (this.tool === 'rect' || this.tool === 'circle' || this.tool === 'ellipse') {
           this.drag = { start: p, cur: null, sx: e.clientX, sy: e.clientY };
           svg.setPointerCapture(e.pointerId);
         } else if (this.tool === 'poly') {
@@ -412,7 +431,9 @@
           const cur = this._clamp(this._pt(e));
           const moved = Math.hypot(e.clientX - d.sx, e.clientY - d.sy);
           this._drawDraft();
-          if (moved >= 8 && Math.abs(cur[0] - d.start[0]) > 1 && Math.abs(cur[1] - d.start[1]) > 1) {
+          if (moved >= 8 && Math.abs(cur[0] - d.start[0]) > 1 && Math.abs(cur[1] - d.start[1]) > 1 && this.tool !== 'rect') {
+            this.onCommit(this._roundPoly(this._roundBox(d.start, cur)));
+          } else if (moved >= 8 && Math.abs(cur[0] - d.start[0]) > 1 && Math.abs(cur[1] - d.start[1]) > 1) {
             const x0 = Math.min(d.start[0], cur[0]), x1 = Math.max(d.start[0], cur[0]);
             const y0 = Math.min(d.start[1], cur[1]), y1 = Math.max(d.start[1], cur[1]);
             this.onCommit([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);

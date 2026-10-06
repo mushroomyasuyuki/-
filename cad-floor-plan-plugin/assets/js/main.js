@@ -6,12 +6,12 @@
   'use strict';
 
   // the sample room: a rectangle of the carpet size typed in the estimate (1 m x 1 m at first)
-  const sampleRoom = (w, h) => {
+  // wh: the wall height (the wallpaper strip frame's wall of a typed size, when that is used)
+  const sampleRoom = (w, h, wh) => {
     w = Math.max(500, Math.round(w || 1000)); h = Math.max(500, Math.round(h || 1000));
-    return {
-      rooms: [{ id: 'sample', name: 'サンプル（' + w + '×' + h + 'mm）', vertices: [[0, 0], [w, 0], [w, h], [0, h]] }],
-      metadata: { source: 'sample' },
-    };
+    const room = { id: 'sample', name: 'サンプル（' + w + '×' + h + 'mm）', vertices: [[0, 0], [w, 0], [w, h], [0, h]] };
+    if (wh > 0) room.walls = [0, 1, 2, 3].map((i) => ({ from: i, to: (i + 1) % 4, height: Math.round(wh) }));
+    return { rooms: [room], metadata: { source: 'sample' } };
   };
   const ccSize = () => {
     const v = (id) => parseFloat((document.getElementById(id) || {}).value) || 1000;
@@ -219,7 +219,7 @@
       this._bind();
       document.addEventListener('cfp:designs-updated', () => this.syncDesigns(true));
       document.addEventListener('cfp:designs-updated', () => { this._wpKey = null; this._wpBandKey = null; this._wpRender(); });
-      if (el.dataset.sample !== 'none') this.loadData(sampleRoom(...ccSize()), 'サンプル', { fromFile: false });
+      if (el.dataset.sample !== 'none') this.loadData(sampleRoom(...ccSize(), this._sampleWallH()), 'サンプル', { fromFile: false });
       this._bindCcSize();
     }
 
@@ -234,7 +234,7 @@
         if (!this.fromFile) {
           if (this.data && this.data.metadata && this.data.metadata.source !== 'sample') return;
           clearTimeout(timer);
-          timer = setTimeout(() => this.loadData(sampleRoom(...ccSize()), 'サンプル', { fromFile: false }), 300);
+          timer = setTimeout(() => this.loadData(sampleRoom(...ccSize(), this._sampleWallH()), 'サンプル', { fromFile: false }), 300);
           return;
         }
         // typed by hand while a room of the drawing is chosen: the drawing's room wins
@@ -300,17 +300,17 @@
         await this.openTracer(true);
         if (this.tracer) {
           this.tracer.setTool('rect');
-          ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => { const b = this.$('tool-' + t); if (b) b.classList.toggle('is-on', t === 'rect'); });
+          ['pan', 'rect', 'poly', 'circle', 'ellipse', 'move', 'edit'].forEach((t) => { const b = this.$('tool-' + t); if (b) b.classList.toggle('is-on', t === 'rect'); });
         }
-        this.status('図面の上で、追加する床（部屋）を四角（対角の2点をドラッグ）か多角形（角を順にクリック）で囲んでください。', 'success');
+        this.status('図面の上で、追加する床（部屋）を四角・円・楕円（対角の2点をドラッグ）か多角形（角を順にクリック）で囲んでください。', 'success');
       });
       this.$('trace-close').addEventListener('click', () => { this.$('trace').hidden = true; });
       const tool = (name) => {
         if (!this.tracer) return;
         this.tracer.setTool(name);
-        ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'circle', 'ellipse', 'move', 'edit'].forEach((t) => this.$('tool-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
+      ['pan', 'rect', 'poly', 'circle', 'ellipse', 'move', 'edit'].forEach((t) => this.$('tool-' + t).addEventListener('click', () => tool(t)));
       this.$('zoom-in').addEventListener('click', () => this.tracer && this.tracer.zoom(0.7));
       this.$('zoom-out').addEventListener('click', () => this.tracer && this.tracer.zoom(1.4));
       this.$('zoom-fit').addEventListener('click', () => this.tracer && this.tracer.fit());
@@ -322,9 +322,9 @@
       const etool = (name) => {
         if (!this.elevTracer) return;
         this.elevTracer.setTool(name);
-        ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
+        ['pan', 'rect', 'poly', 'circle', 'ellipse', 'move', 'edit'].forEach((t) => this.$('elev-' + t).classList.toggle('is-on', t === name));
       };
-      ['pan', 'rect', 'poly', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
+      ['pan', 'rect', 'poly', 'circle', 'ellipse', 'move', 'edit'].forEach((t) => this.$('elev-' + t).addEventListener('click', () => etool(t)));
       this.$('elev-fit').addEventListener('click', () => this.elevTracer && this.elevTracer.fit());
       this.$('elev-zin').addEventListener('click', () => this.elevTracer && this.elevTracer.zoom(0.7));
       this.$('elev-zout').addEventListener('click', () => this.elevTracer && this.elevTracer.zoom(1.4));
@@ -382,7 +382,7 @@
       });
       this.$('layout-show-img').addEventListener('change', () => this._renderLayout());
       this.$('layout-show-grid').addEventListener('change', () => this._renderLayout());
-      this.$('sample-btn').addEventListener('click', () => this.loadData(sampleRoom(...ccSize()), 'サンプル', { fromFile: false }));
+      this.$('sample-btn').addEventListener('click', () => this.loadData(sampleRoom(...ccSize(), this._sampleWallH()), 'サンプル', { fromFile: false }));
       this.$('reset-btn').addEventListener('click', () => this.renderer && this.renderer.resetCamera());
       this.$('save-btn').addEventListener('click', () => this.saveJSON());
       this.$('floor-tex').addEventListener('change', (e) => this._texture(e, 'floor'));
@@ -1111,7 +1111,16 @@
       link('wp-roll-r', 'wp-roll');
       link('wp-ov-r', 'wp-ov');
       link('wp-trim-r', 'wp-trim');
-      ['wp-free-w', 'wp-free-h'].forEach((n) => this.$(n) && this.$(n).addEventListener('input', () => { this._wpView = null; this._wpRender(); }));
+      let freeTimer = null;
+      ['wp-free-w', 'wp-free-h'].forEach((n) => this.$(n) && this.$(n).addEventListener('input', () => {
+        this._wpView = null;
+        this._wpRender();
+        // the 3D sample room takes the typed wall height (the band of the wall is put on its best matching wall)
+        if (n === 'wp-free-h' ? this._isSample() : false) {
+          clearTimeout(freeTimer);
+          freeTimer = setTimeout(() => this.loadData(sampleRoom(...ccSize(), this._sampleWallH()), 'サンプル', { fromFile: false }), 300);
+        }
+      }));
       if (this.$('wp-free-use')) this.$('wp-free-use').addEventListener('click', () => {
         // stop using the CAD wall(s): the wall of the typed size
         this.elevIndex = -1;
@@ -1350,10 +1359,9 @@
 
     // the wall(s) of the strip frame view shown on the matching walls of the 3D room (the same picture and position)
     _wp3D(g) {
-      if (g ? g.walls[0].w.virtual : false) g = null; // a wall of a typed size is not a wall of the room: the 3D walls keep the usual paper
       const r = this.renderer;
       if (!r || !r.setWallBand) return;
-      const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
+      const room = (this.fromFile || this._isSample()) && this.data ? this.data.rooms[this.roomIndex] : null;
       const src = g ? g.wp.getSource() : null;
       if (!g || !room || !src) {
         if (this._wpBand) { this._wpBand = null; this._wpBandKey = null; r.setWallBand(null); }
@@ -1486,6 +1494,15 @@
       const w = all[this.elevIndex];
       if (w) return [{ w, no: this.elevIndex + 1 }];
       return [{ w: this._wpFreeWall(), no: 1 }];
+    }
+
+    // the sample room's wall height: the wall of a typed size of the strip frame when that is used (3D follows it)
+    _sampleWallH() {
+      const f = this.$('wp-free-h');
+      if (!f || !this.hasTool) return 0;
+      const all = this._elevAll();
+      const cad = (this.$('wp-join') && this.$('wp-join').checked && this._wpJoinNums().length) || !!all[this.elevIndex];
+      return cad ? 0 : this._wpFreeWall().height;
     }
 
     // the wall of the size typed in the panel (used when no wall of a CAD elevation is chosen)

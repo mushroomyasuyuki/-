@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.79.0
+ * Version: 2.80.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.79.0');
+define('CFP_VERSION', '2.80.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -432,6 +432,8 @@ final class CAD_Floor_Plan_Plugin {
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-pan">移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="tool-rect">四角</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-poly">多角形</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-circle" title="ドラッグした四角の中に入る円で囲みます">円</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-ellipse" title="ドラッグした四角いっぱいの楕円で囲みます">楕円</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-move" title="手で指定した部屋（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">部屋を移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="tool-edit" title="手で指定した部屋の角（白い丸）をドラッグして形を変えます。辺の中央の四角をドラッグすると角を追加、角をダブルクリックすると削除">形を変える</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="zoom-fit">全体</button>
@@ -463,6 +465,8 @@ final class CAD_Floor_Plan_Plugin {
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-pan">移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm is-on" data-cfp="elev-rect">四角</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-poly">多角形</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-circle" title="ドラッグした四角の中に入る円で壁紙の範囲を囲みます">円</button>
+                    <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-ellipse" title="ドラッグした四角いっぱいの楕円で壁紙の範囲を囲みます">楕円</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-move" title="手で指定した壁紙の範囲（緑の枠）をドラッグして、図面はそのままに枠だけ動かします">壁を移動</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-edit" title="手で指定した範囲の角（白い丸）をドラッグして形を変えます。辺の中央の四角をドラッグすると角を追加、角をダブルクリックすると削除">形を変える</button>
                     <button type="button" class="cfp-btn cfp-btn-sm" data-cfp="elev-fit">全体</button>
