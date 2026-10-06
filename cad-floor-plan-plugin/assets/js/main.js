@@ -2031,6 +2031,7 @@
     }
 
     _renderLayout(previewOffset) {
+      if (!previewOffset) this._floorSoon(); // the 3D floor follows the carpet's place on the layout
       const panel = this.$('layout');
       const room = this.data && this.data.rooms[this.roomIndex];
       if (!this.fromFile || !room) { panel.hidden = true; return; }
@@ -2305,6 +2306,39 @@
      * wallpaper designs from #cc-reduced / #cw-reduced on the 3D floor and walls.
      * fromEvent: the tool re-processed a design, so an emptied canvas clears the texture too.
      */
+    // The 3D floor texture spans the room's bounding box. The carpet image is put there at its real size and
+    // place (as on the tile layout view: the layout box + the 5 mm margin, moved / scaled there), so its
+    // aspect ratio is kept whatever the room's shape. Where the image does not reach, the floor is white.
+    _floorCanvas(c) {
+      const room = this.data && this.data.rooms[this.roomIndex];
+      if (!room) return this._noBleed(c);
+      const lay = this._tileLayout(room);
+      if (!lay.box) return this._noBleed(c);
+      const b = CADParser.bounds(room.vertices);
+      const bw = b.maxX - b.minX, bh = b.maxY - b.minY;
+      if (!(bw > 0) || !(bh > 0)) return this._noBleed(c);
+      const k = 2048 / Math.max(bw, bh); // px per mm
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(bw * k)); out.height = Math.max(1, Math.round(bh * k));
+      const x = out.getContext('2d');
+      x.fillStyle = '#ffffff';
+      x.fillRect(0, 0, out.width, out.height);
+      const dr = this._designRect(lay, c);
+      x.imageSmoothingEnabled = false; // keep the reduced colours crisp
+      x.drawImage(c, (dr.x0 - b.minX) * k, (b.maxY - dr.y1) * k, dr.w * k, dr.h * k);
+      return out;
+    }
+
+    // a floor update shortly after the layout changed (the carpet moved, scaled or the layout frame moved)
+    _floorSoon() {
+      clearTimeout(this._floorTimer);
+      this._floorTimer = setTimeout(() => {
+        const floor = document.getElementById('cc-reduced');
+        if (!this.renderer || !floor || !floor.width || !canvasHasContent(floor)) return;
+        this.renderer.setFloorCanvas(this._floorCanvas(floor));
+      }, 200);
+    }
+
     // the converted carpet image has a 5 mm margin on every side; the 3D floor shows only the carpet itself
     _noBleed(c) {
       const B = window.cfpCarpetBleed || 0;
@@ -2328,7 +2362,7 @@
       if (!this.renderer || (!floor && !wall)) return;
       const hasFloor = !!floor && floor.width > 0 && floor.height > 0 && canvasHasContent(floor);
       const hasWall = !!wall && wall.width > 0 && wall.height > 0 && canvasHasContent(wall);
-      if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? this._noBleed(floor) : null);
+      if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? this._floorCanvas(floor) : null);
       // wallpaper pattern: repeated at its real size, aspect ratio kept (setting of the tool's ② panel)
       const rep = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : null;
       if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm * (rep.scale || 1), h: rep.mm * (rep.scale || 1) * wall.height / wall.width };
