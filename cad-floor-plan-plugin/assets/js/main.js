@@ -1109,6 +1109,13 @@
         N.addEventListener('change', () => { N.value = R.value = this._wpClamp(N.id || num, N.value); this._wpChanged(); });
       };
       link('wp-roll-r', 'wp-roll');
+      // 巾は 910mm / 900mm から選ぶ。合わせ代は 910mm なら 7.5mm、900mm なら 10mm に自動で合わせる（そのあと手で変えることもできる）
+      if (this.$('wp-roll-sel')) this.$('wp-roll-sel').addEventListener('change', () => {
+        const roll = this.$('wp-roll-sel').value, ov = roll === '900' ? 10 : 7.5;
+        this.$('wp-roll-r').value = this.$('wp-roll').value = roll;
+        this.$('wp-ov-r').value = this.$('wp-ov').value = ov;
+        this._wpChanged();
+      });
       link('wp-ov-r', 'wp-ov');
       link('wp-trim-r', 'wp-trim');
       let freeTimer = null;

@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.80.0
+ * Version: 2.80.1
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.80.0');
+define('CFP_VERSION', '2.80.1');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -528,8 +528,8 @@ final class CAD_Floor_Plan_Plugin {
                     <label>画像の濃さ <input type="range" data-cfp="wp-dopacity" min="10" max="100" step="5" value="80"> <span data-cfp="wp-dopacity-val">80</span>%</label>
                   </div>
                   <div class="cfp-raster-row cfp-layout-sliders cfp-wp-ctrl">
-                    <label>巾（横幅）<input type="range" data-cfp="wp-roll-r" min="850" max="930" step="1" value="910"> <input type="number" data-cfp="wp-roll" min="850" max="930" step="1" value="910"> mm</label>
-                    <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="10"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="10"> mm</label>
+                    <label>巾（横幅）<select data-cfp="wp-roll-sel"><option value="910" selected>910mm（合わせ代 7.5mm）</option><option value="900">900mm（合わせ代 10mm）</option></select><input type="hidden" data-cfp="wp-roll-r" value="910"><input type="hidden" data-cfp="wp-roll" value="910"></label>
+                    <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="7.5"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="7.5"> mm</label>
                     <label>上下の余白（裁断代）<input type="range" data-cfp="wp-trim-r" min="30" max="100" step="5" value="100"> <input type="number" data-cfp="wp-trim" min="30" max="100" step="5" value="100"> mm</label>
                   </div>
                   <div class="cfp-wp-join">

@@ -2438,10 +2438,10 @@
   // =====================================================================
   // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代。巾（初期910mm）は隣の巾と合わせ代（初期10mm）だけ重なり、
   // 重なりの真ん中がカット線（枠の端から合わせ代の半分＝EDGE）。壁の左右の余白は合わせ代と同じ幅（10mm）
-  const WALL_PRINT = { ROLL: 910, OVERLAP: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
+  const WALL_PRINT = { ROLL: 910, OVERLAP: 7.5, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
   WALL_PRINT.EDGE = WALL_PRINT.OVERLAP / 2; // カット線の外側の余白（合わせ代の半分）
   WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP; // 1巾が受け持つ壁の幅（カット線からカット線まで。900mm）
-  // 巾（横幅）は850〜930mm、合わせ代（隣の巾と重なる幅）は6〜15mmを0.5mm刻み、上下の余白（裁断代）は30〜100mmを5mm刻みで調整できる
+  // 巾（横幅）は画面では 910mm / 900mm から選ぶ（合わせ代は 7.5mm / 10mm に自動。範囲としては850〜930mm）、合わせ代（隣の巾と重なる幅）は6〜15mmを0.5mm刻み、上下の余白（裁断代）は30〜100mmを5mm刻みで調整できる
   WALL_PRINT.set = function (roll, overlap, trim) {
     const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
     const o = Math.min(15, Math.max(6, Math.round((parseFloat(overlap) || 10) * 2) / 2));
