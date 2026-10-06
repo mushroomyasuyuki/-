@@ -305,10 +305,6 @@
     <div class="preview-card"><h3>手動で色を選んだ結果（最小1px表現）</h3><canvas id="cc-reduced"></canvas><div class="used-colors"><label>使用されたカラー（抽出結果）：</label><div id="cc-used-colors" class="psd-palette-grid"></div><div id="cc-used-colors-text" class="used-colors-text"></div></div></div>
   </div>
 
-  <div class="dither-box cc-var-dither">
-    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>上の3つの変換すべてと、お見積もり・PSDの画像に反映。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
-    <input type="range" id="cc-dither2" min="0" max="100" value="0">
-  </div>
     <!-- ▼ 標準カラーパレット用セクション ▼ -->
     <div class="palette-box cc-pal-compact">
       <label>1. 標準カラーパレット（基本色 ＋ 無料オプションカラー OP-03・OP-05）</label>
@@ -329,6 +325,10 @@
       <div id="cc-op-palette-selector" class="palette-select-grid"></div>
     </div>
 
+  <div class="dither-box cc-var-dither">
+    <div class="slider-row"><label for="cc-dither2">ドットによる階調表現（誤差拡散）量：<span id="cc-dither2-val">0</span>%</label><span>3つの変換すべてと、お見積もり・PSDの画像に反映。0% = メリハリ表現 / 100% = 滑らか表現</span></div>
+    <input type="range" id="cc-dither2" min="0" max="100" value="0">
+  </div>
   <div class="palette-controls" style="justify-content:center;margin:4px 0 6px;">
     <button type="button" id="cc-show-original" class="btn-chip-action" style="padding:8px 16px;font-size:13px;">🖼 元画像を表示（別ウィンドウ）</button>
   </div>
