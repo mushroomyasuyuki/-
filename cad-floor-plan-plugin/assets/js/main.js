@@ -1251,14 +1251,16 @@
 
     // For the carpet print PSD of the estimate tool: the chosen room's tile layout in the carpet's own picture
     // (left top = 0, mm, Y down, scaled to W x H): the drawing's part under it, the room outline and the tiles.
-    async carpetPsdInfo(W, H) {
+    // bleed: the picture is W + 2*bleed by H + 2*bleed (the carpet with a margin on every side)
+    async carpetPsdInfo(W, H, bleed) {
+      const B = bleed || 0;
       const room = this.fromFile && this.data ? this.data.rooms[this.roomIndex] : null;
       if (!room) return null;
       const lay = this._tileLayout(room);
       if (!lay.box) return null;
       const bw = lay.box.x1 - lay.box.x0, bh = lay.box.y1 - lay.box.y0;
       const kx = W / bw, ky = H / bh;
-      const toA = ([x, y]) => [(x - lay.box.x0) * kx, (lay.box.y1 - y) * ky];
+      const toA = ([x, y]) => [(x - lay.box.x0) * kx + B, (lay.box.y1 - y) * ky + B];
       const info = {
         room: room.vertices.map(toA),
         tiles: lay.tiles.map((t) => { const p = toA([t.x, t.y + TILE]); return { x: p[0], y: p[1], w: TILE * kx, h: TILE * ky, cut: !!t.cut }; }),
@@ -1273,7 +1275,8 @@
           const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = bd.dataUrl; });
           const s = bd.mmPerPx;
           const io = this.imgOffset || { x: 0, y: 0 }; // the drawing moved in the layout view
-          info.cad = { bitmap: await createImageBitmap(img), sx: (lay.box.x0 - io.x) / s, sy: bd.heightPx - (lay.box.y1 + io.y) / s, sw: bw / s, sh: bh / s };
+          const ex = B / kx, ey = B / ky; // the margin in drawing mm
+          info.cad = { bitmap: await createImageBitmap(img), sx: (lay.box.x0 - ex - io.x) / s, sy: bd.heightPx - (lay.box.y1 + ey + io.y) / s, sw: (bw + ex * 2) / s, sh: (bh + ey * 2) / s };
         } catch (err) { console.warn(err); }
       }
       return info;
@@ -2133,7 +2136,9 @@
       // never changes the image's size, aspect ratio or position
       const room = this.data && this.data.rooms[this.roomIndex];
       const home = (room && this._tileLayout(room, { x: 0, y: 0 }).box) || lay.box;
-      const w = (home.x1 - home.x0) * d.scale, h = (home.y1 - home.y0) * d.scale;
+      // the converted image is the carpet size plus a margin (5 mm) on every side
+      const bl = (window.cfpCarpetBleed || 0) * 2;
+      const w = (home.x1 - home.x0 + bl) * d.scale, h = (home.y1 - home.y0 + bl) * d.scale;
       const cx = (home.x0 + home.x1) / 2 + d.x, cy = (home.y0 + home.y1) / 2 + d.y;
       return { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2, w, h };
     }
@@ -2300,6 +2305,19 @@
      * wallpaper designs from #cc-reduced / #cw-reduced on the 3D floor and walls.
      * fromEvent: the tool re-processed a design, so an emptied canvas clears the texture too.
      */
+    // the converted carpet image has a 5 mm margin on every side; the 3D floor shows only the carpet itself
+    _noBleed(c) {
+      const B = window.cfpCarpetBleed || 0;
+      const W = parseFloat((document.getElementById('cc-width') || {}).value) || 0;
+      const H = parseFloat((document.getElementById('cc-height') || {}).value) || 0;
+      if (!B || !W || !H) return c;
+      const kx = c.width / (W + B * 2), ky = c.height / (H + B * 2);
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(W * kx)); out.height = Math.max(1, Math.round(H * ky));
+      out.getContext('2d').drawImage(c, B * kx, B * ky, W * kx, H * ky, 0, 0, out.width, out.height);
+      return out;
+    }
+
     syncDesigns(fromEvent) {
       const floor = document.getElementById('cc-reduced');
       const wall = document.getElementById('cw-reduced');
@@ -2307,7 +2325,7 @@
       if (!this.renderer || (!floor && !wall)) return;
       const hasFloor = !!floor && floor.width > 0 && floor.height > 0 && canvasHasContent(floor);
       const hasWall = !!wall && wall.width > 0 && wall.height > 0 && canvasHasContent(wall);
-      if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? floor : null);
+      if (hasFloor || fromEvent) this.renderer.setFloorCanvas(hasFloor ? this._noBleed(floor) : null);
       // wallpaper pattern: repeated at its real size, aspect ratio kept (setting of the tool's ② panel)
       const rep = window.cfpGetWallRepeat ? window.cfpGetWallRepeat() : null;
       if (hasWall && rep && rep.on) this.renderer.wallRepeat = { w: rep.mm * (rep.scale || 1), h: rep.mm * (rep.scale || 1) * wall.height / wall.width };

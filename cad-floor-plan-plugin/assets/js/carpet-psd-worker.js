@@ -72,12 +72,14 @@
   }
 
   // the drawn layers, in the carpet's picture (mm = px, Y down). info: { cad, room, tiles } (see main.js carpetPsdInfo)
-  function layerDraws(w, h, info) {
+  // bleed: the margin (px = mm) around the carpet; the grid and the carpet outline are inside it
+  function layerDraws(w, h, info, bleed) {
+    const B = bleed || 0;
     const tiles = info ? info.tiles : null;
     const grid = [];
     if (tiles ? tiles.length : false) tiles.forEach((t) => grid.push(t));
     else { // no drawing: 50 cm tiles from the top left of the carpet
-      for (let y = 0; y < h; y += 500) for (let x = 0; x < w; x += 500) grid.push({ x, y, w: 500, h: 500, cut: false });
+      for (let y = B; y < h - B; y += 500) for (let x = B; x < w - B; x += 500) grid.push({ x, y, w: Math.min(500, w - B - x), h: Math.min(500, h - B - y), cut: false });
     }
     return {
       cad: (ctx) => {
@@ -108,7 +110,7 @@
         grid.forEach((t) => ctx.strokeRect(t.x, t.y, t.w, t.h));
         ctx.strokeStyle = '#dc2626';
         ctx.lineWidth = 8;
-        ctx.strokeRect(2, 2, w - 4, h - 4);
+        ctx.strokeRect(B + 2, B + 2, w - B * 2 - 4, h - B * 2 - 4);
         // センター: the room's centre (no drawing: the carpet's centre), white under red so it shows on any colour
         const c = info ? info.center : null;
         const cx = c ? c[0] : w / 2, cy = c ? c[1] : h / 2;
@@ -127,7 +129,7 @@
 
   // the PSD: 4 layers (①CAD画像 ②部屋 ③変換画像 ④割付, bottom to top) + the composite (変換画像 + 割付).
   // The drawn layers are made 256 rows at a time, so no picture as big as the carpet is held for them.
-  function* writePsd(w, h, planes, info, names) {
+  function* writePsd(w, h, planes, info, names, bleed) {
     const big = w > 30000 || h > 30000;
     const parts = [];
     const be = (bytes, v) => { const u = new Uint8Array(bytes); for (let i = bytes - 1; i >= 0; i--) { u[i] = v % 256; v = Math.floor(v / 256); } return u; };
@@ -156,7 +158,7 @@
     const addRow = (ch, y, row) => { ch.counts.set(be(RB, row.length), y * RB); ch.chunks.push(row); ch.size += row.length; };
     const chanLen = (c) => 2 + c.counts.length + c.size;
 
-    const draws = layerDraws(w, h, info);
+    const draws = layerDraws(w, h, info, bleed);
     const TH = 256;
     const band = makeCanvas(w, TH);
     const bctx = band.getContext('2d', { willReadFrequently: true });
@@ -264,7 +266,7 @@
     while (!r.done) { yield r.value; r = it.next(); }
     const q = r.value;
     const names = Object.assign({ cad: '①CAD画像', room: '②部屋', img: '③変換画像（減色・実寸）', grid: '④割付（50cm角）' }, m.names || {});
-    const wt = writePsd(m.width, m.height, q, m.info || null, names);
+    const wt = writePsd(m.width, m.height, q, m.info || null, names, m.bleed || 0);
     let p = wt.next();
     while (!p.done) { yield p.value; p = wt.next(); }
     return { parts: pack(p.value), used: q.used };
@@ -288,7 +290,7 @@
   // On the page (when a worker cannot be started): the same work, a little at a time
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
-      ver: 5,
+      ver: 6,
       run: async (m, progress) => {
         const it = job(m);
         let r = it.next();
@@ -299,8 +301,8 @@
     return;
   }
 
-  // ver: 5 = 4レイヤー（CAD画像・部屋・変換画像・割付＋センター）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
-  self.postMessage({ type: 'ready', ver: 5, offscreen: typeof OffscreenCanvas !== 'undefined' });
+  // ver: 6 = 4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
+  self.postMessage({ type: 'ready', ver: 6, offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
       const it = job(ev.data);
