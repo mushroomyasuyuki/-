@@ -130,6 +130,7 @@ final class SS_Router {
             SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、表示する権限がありません。', 404, SS_Router::url('login'), 'ログインページへ');
         }
 
+        SS_Auth::touch_last_seen($user);
         $path = trim((string) get_query_var('ss_path'), '/');
         if (!preg_match('/^[A-Za-z0-9\/_-]*$/', $path)) {
             $path = '-';

@@ -185,6 +185,16 @@ final class SS_Auth {
         exit;
     }
 
+    /** 最終利用日を記録する（1日に1回だけ書き込む。ログイン状態を保ったまま使い続けている場合も数えるため）。 */
+    public static function touch_last_seen(array $user) {
+        global $wpdb;
+        $today = gmdate('Y-m-d');
+        if (!empty($user['last_login_at']) && substr($user['last_login_at'], 0, 10) >= $today) {
+            return;
+        }
+        $wpdb->update(SS_System::table('users'), array('last_login_at' => SS_System::now()), array('id' => (int) $user['id']));
+    }
+
     /** ログイン後に移動する先 */
     public static function landing_url($wp_user_id) {
         $row = SS_System::user_by_wp_id($wp_user_id);
