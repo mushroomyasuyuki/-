@@ -141,7 +141,7 @@ final class SS_Rest {
             if (strtolower($existing['email']) !== strtolower($email)) {
                 $other = email_exists($email);
                 if ($other && (int) $other !== (int) $existing['wp_user_id']) {
-                    return new WP_Error('email_used', 'このメールアドレスは登録できません。', array('status' => 409));
+                    return new WP_Error('email_used', 'このメールアドレスは使用できません。すでにこのシステムで使われている可能性があります（ご自身や管理者のメールアドレスは招待できません）。別のメールアドレスをお試しください。', array('status' => 409));
                 }
                 wp_update_user(array('ID' => (int) $existing['wp_user_id'], 'user_email' => $email, 'user_login' => $email));
                 $repo->update('users', (int) $existing['id'], array('email' => $email));
@@ -151,7 +151,7 @@ final class SS_Rest {
             $user_id = (int) $existing['id'];
         } else {
             if (email_exists($email) || username_exists($email)) {
-                return new WP_Error('email_used', 'このメールアドレスは登録できません。', array('status' => 409));
+                return new WP_Error('email_used', 'このメールアドレスは使用できません。すでにこのシステムで使われている可能性があります（ご自身や管理者のメールアドレスは招待できません）。別のメールアドレスをお試しください。', array('status' => 409));
             }
             $wp_user_id = wp_insert_user(array(
                 'user_login'   => $email,
