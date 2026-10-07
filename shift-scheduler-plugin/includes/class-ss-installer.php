@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '1';
+    const DB_VERSION = '2';
 
     public static function activate() {
         self::create_tables();
@@ -133,6 +133,73 @@ final class SS_Installer {
   processed_at datetime NOT NULL,
   PRIMARY KEY  (id),
   UNIQUE KEY event_id (event_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}patterns (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  name varchar(60) NOT NULL,
+  short_name varchar(10) NOT NULL DEFAULT '',
+  start_time varchar(5) NOT NULL,
+  end_time varchar(5) NOT NULL,
+  break_minutes smallint(5) unsigned NOT NULL DEFAULT 0,
+  crosses_midnight tinyint(1) NOT NULL DEFAULT 0,
+  counts_as_night tinyint(1) NOT NULL DEFAULT 0,
+  color varchar(7) NOT NULL DEFAULT '#6aa84f',
+  active tinyint(1) NOT NULL DEFAULT 1,
+  sort_order int(11) NOT NULL DEFAULT 0,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_active (tenant_id, active, sort_order)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}rules (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  type varchar(40) NOT NULL,
+  params longtext NULL,
+  hard tinyint(1) NOT NULL DEFAULT 1,
+  weight smallint(5) unsigned NOT NULL DEFAULT 1,
+  active tinyint(1) NOT NULL DEFAULT 1,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_type (tenant_id, type)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}request_periods (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  deadline date NOT NULL,
+  status varchar(10) NOT NULL DEFAULT 'open',
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_status (tenant_id, status, start_date)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}requests (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  period_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  date date NOT NULL,
+  kind varchar(10) NOT NULL,
+  note varchar(200) NOT NULL DEFAULT '',
+  submitted_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_request (tenant_id, period_id, staff_id, date),
+  KEY by_period (tenant_id, period_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}request_submissions (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  period_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  submitted_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_submission (tenant_id, period_id, staff_id)
 ) $c;";
 
         foreach ($sql as $statement) {

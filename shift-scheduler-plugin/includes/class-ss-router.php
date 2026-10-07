@@ -152,20 +152,31 @@ final class SS_Router {
                 'plans'       => SS_Tenants::plans(),
             )));
         }
-        if ($path === 'staff') {
-            if (!current_user_can('shift_manage_staff')) {
-                SS_View::message('権限がありません', 'この画面は管理者のみ利用できます。', 403, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
+        $pages = array(
+            'staff'       => array('cap' => 'shift_manage_staff', 'template' => 'app-staff', 'title' => 'スタッフ管理', 'script' => 'staff.js', 'page' => 'staff'),
+            'patterns'    => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => '勤務区分', 'script' => 'pages.js', 'page' => 'patterns'),
+            'rules'       => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'ルール設定', 'script' => 'pages.js', 'page' => 'rules'),
+            'requests'    => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => '希望の収集', 'script' => 'pages.js', 'page' => 'requests'),
+            'me/requests' => array('cap' => 'shift_submit_requests', 'needs_staff' => true, 'template' => 'app-page', 'title' => '希望休の提出', 'script' => 'pages.js', 'page' => 'me-requests'),
+        );
+        if (isset($pages[$path])) {
+            $def = $pages[$path];
+            if (!current_user_can($def['cap']) || (!empty($def['needs_staff']) && empty($user['staff_id']))) {
+                SS_View::message('権限がありません', 'この画面は利用できません。', 403, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
             }
             $config = array(
+                'page'     => $def['page'],
                 'rest'     => esc_url_raw(rest_url('shift/v1/')),
                 'nonce'    => wp_create_nonce('wp_rest'),
                 'writable' => SS_Tenants::is_writable($tenant),
                 'limit'    => SS_Tenants::staff_limit($tenant),
+                'industry' => $tenant['industry'],
+                'today'    => wp_date('Y-m-d'),
             );
-            SS_View::render('app-staff', array_merge($common, array(
-                'title'   => 'スタッフ管理',
+            SS_View::render($def['template'], array_merge($common, array(
+                'title'   => $def['title'],
                 'config'  => $config,
-                'scripts' => SS_URL . 'assets/staff.js?ver=' . SS_VERSION,
+                'scripts' => SS_URL . 'assets/' . $def['script'] . '?ver=' . SS_VERSION,
             )));
         }
         SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、準備中です。', 404, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
@@ -175,6 +186,15 @@ final class SS_Router {
         $items = array(array('', 'ダッシュボード'));
         if (current_user_can('shift_manage_staff')) {
             $items[] = array('staff', 'スタッフ');
+        }
+        if (current_user_can('shift_manage_schedule')) {
+            $items[] = array('patterns', '勤務区分');
+            $items[] = array('rules', 'ルール');
+            $items[] = array('requests', '希望の収集');
+        }
+        $me = SS_Context::user();
+        if ($me && !empty($me['staff_id']) && current_user_can('shift_submit_requests')) {
+            $items[] = array('me/requests', '希望休の提出');
         }
         $nav = array();
         foreach ($items as $item) {

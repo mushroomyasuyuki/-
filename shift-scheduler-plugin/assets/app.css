@@ -32,3 +32,18 @@ body.ss{margin:0;background:var(--ss-bg);color:var(--ss-text);font:16px/1.6 -app
 .ss-table th,.ss-table td{padding:10px 8px;border-bottom:1px solid var(--ss-line);text-align:left;vertical-align:middle}
 .ss-table td .ss-btn{margin-right:6px}
 .ss-muted{color:var(--ss-sub)}
+.ss-h2{font-size:1.1rem;margin:24px 0 8px}
+.ss-steps{padding-left:1.4em;line-height:2}
+.ss-section{margin-top:28px}
+.ss-swatch{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:middle;margin-right:6px;border:1px solid var(--ss-line)}
+.ss-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ss-form-row .ss-actions{grid-column:1/-1}
+.ss-badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.8rem;background:var(--ss-bg);border:1px solid var(--ss-line)}
+.ss-badge-ok{background:var(--ss-ok-bg);color:var(--ss-ok);border-color:transparent}
+.ss-day{display:grid;grid-template-columns:7.5em 9em 1fr;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--ss-line)}
+.ss-day.is-sun .ss-day-label{color:var(--ss-err)}
+.ss-day.is-sat .ss-day-label{color:#2b6cb0}
+.ss-day select,.ss-day input{width:100%;padding:8px;border:1px solid var(--ss-line);border-radius:8px;background:var(--ss-bg);color:var(--ss-text);font:inherit}
+.ss-form-row input[type=number],.ss-form-row input[type=date],.ss-form-row input[type=color]{width:100%;padding:10px 12px;border:1px solid var(--ss-line);border-radius:8px;background:var(--ss-bg);color:var(--ss-text);font:inherit}
+.ss-form-row input[type=color]{padding:2px;height:42px}
+@media (max-width:600px){.ss-day{grid-template-columns:1fr 1fr}.ss-day input{grid-column:1/-1}}

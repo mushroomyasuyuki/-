@@ -18,7 +18,7 @@ class SS_Repo_Exception extends Exception {
 
 final class SS_Repo {
     /** お客様ごとに分離するテーブル（`shift_` 接頭辞を除いた名前） */
-    const TABLES = array('staff', 'users');
+    const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions');
 
     private $tenant_id;
 
@@ -110,6 +110,22 @@ final class SS_Repo {
         $t = $this->table($table);
         $r = $wpdb->delete($t, array('id' => (int) $id, 'tenant_id' => $this->tenant_id));
         return $r !== false && $r > 0;
+    }
+
+    /** 条件に合う行をまとめて削除する（必ずお客様IDで絞り込み。条件が空の呼び出しは不可）。 */
+    public function delete_where($table, array $where) {
+        global $wpdb;
+        $t = $this->table($table);
+        unset($where['tenant_id']);
+        if (!$where) {
+            throw new SS_Repo_Exception('delete_where requires a condition');
+        }
+        list($sql, $args) = $this->where($where);
+        $n = $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$t} WHERE tenant_id = %d{$sql}",
+            array_merge(array($this->tenant_id), $args)
+        ));
+        return $n === false ? 0 : (int) $n;
     }
 
     private function table($name) {

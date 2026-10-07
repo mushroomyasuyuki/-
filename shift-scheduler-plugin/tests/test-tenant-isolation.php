@@ -27,6 +27,7 @@ class FakeWpdb {
     public function insert($t, $data) { $this->log[] = array('insert', $t, $data); $this->insert_id = 1; return 1; }
     public function update($t, $data, $where) { $this->log[] = array('update', $t, $data, $where); return 1; }
     public function delete($t, $where) { $this->log[] = array('delete', $t, $where); return 1; }
+    public function query($sql) { $this->log[] = array('query', $sql); return 1; }
 }
 
 $wpdb = new FakeWpdb();
@@ -77,6 +78,20 @@ check('update data drops tenant_id', !isset($wpdb->log[0][2]['tenant_id']));
 $wpdb->log = array();
 $repo->delete('staff', 5);
 check('delete where has tenant', $wpdb->log[0][2] === array('id' => 5, 'tenant_id' => 7));
+
+// 条件つき一括削除：tenant_id の条件が必ず付く。条件なしは拒否
+$wpdb->log = array();
+$repo->delete_where('requests', array('period_id' => 3, 'staff_id' => 4, 'tenant_id' => 99));
+check('delete_where has tenant', strpos($wpdb->log[0][1], 'DELETE FROM wp_shift_requests WHERE tenant_id = 7') === 0 && strpos($wpdb->log[0][1], 'tenant_id = 99') === false);
+expect_exception('delete_where without condition rejected', function () use ($repo) { $repo->delete_where('requests', array()); });
+expect_exception('delete_where with only tenant_id rejected', function () use ($repo) { $repo->delete_where('requests', array('tenant_id' => 7)); });
+
+// フェーズ2のテーブルもお客様で絞り込まれる
+foreach (array('patterns', 'rules', 'request_periods', 'requests', 'request_submissions') as $tbl) {
+    $wpdb->log = array();
+    $repo->all($tbl);
+    check("phase2 table {$tbl} filtered by tenant", strpos($wpdb->log[0][1], 'tenant_id = 7') !== false);
+}
 
 // 取り扱えないテーブル・不正な列名・お客様未確定
 expect_exception('unscoped table rejected', function () use ($repo) { $repo->find('tenants', 1); });

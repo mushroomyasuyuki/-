@@ -148,6 +148,7 @@ final class SS_Auth {
                 'trial_start' => SS_System::now(),
                 'trial_end'   => gmdate('Y-m-d H:i:s', strtotime('+' . (int) SS_TRIAL_MONTHS . ' months')),
             ), array('id' => (int) $tenant['id']));
+            SS_Presets::apply(SS_Repo::for_tenant((int) $tenant['id']), $tenant['industry']); // 業種ごとの初期設定
         }
         $wpdb->update(SS_System::table('users'), array('status' => 'active'), array('id' => (int) $user['id']));
 
