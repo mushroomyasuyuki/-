@@ -59,6 +59,13 @@ final class SS_Rest_Plan {
             array('methods' => 'GET', 'callback' => array(__CLASS__, 'period_status'), 'permission_callback' => $read),
         ));
 
+        register_rest_route(self::NS, '/periods/(?P<id>\d+)/requests', array(
+            array('methods' => 'GET', 'callback' => array(__CLASS__, 'period_requests'), 'permission_callback' => $read),
+        ));
+        register_rest_route(self::NS, '/periods/(?P<id>\d+)/bulk', array(
+            array('methods' => 'POST', 'callback' => array(__CLASS__, 'bulk_requests'), 'permission_callback' => $write),
+        ));
+
         register_rest_route(self::NS, '/me/periods', array(
             array('methods' => 'GET', 'callback' => array(__CLASS__, 'my_periods'), 'permission_callback' => array(__CLASS__, 'can_read_mine')),
         ));
@@ -462,6 +469,141 @@ final class SS_Rest_Plan {
         return rest_ensure_response(array('staff' => $out));
     }
 
+    /** 日ごとの「希望休」「出勤不可」の一覧（管理者が確認する用） */
+    public static function period_requests(WP_REST_Request $req) {
+        $repo = SS_Repo::current();
+        $id = (int) $req['id'];
+        if (!$repo->find('request_periods', $id)) {
+            return new WP_Error('not_found', '見つかりません。', array('status' => 404));
+        }
+        $names = array();
+        foreach ($repo->all('staff', array(), 'id', 'ASC', 1000) as $s) {
+            $names[(int) $s['id']] = $s['name'];
+        }
+        $days = array();
+        $offset = 0;
+        do {
+            $rows = $repo->all('requests', array('period_id' => $id), 'date', 'ASC', 1000, $offset);
+            foreach ($rows as $r) {
+                $d = $r['date'];
+                if (!isset($days[$d])) {
+                    $days[$d] = array('date' => $d, 'off' => array(), 'ng' => array());
+                }
+                $days[$d][$r['kind']][] = array(
+                    'name' => isset($names[(int) $r['staff_id']]) ? $names[(int) $r['staff_id']] : '（不明）',
+                    'admin' => $r['source'] === 'admin',
+                );
+            }
+            $offset += 1000;
+        } while (count($rows) === 1000 && $offset < 20000);
+        ksort($days);
+        return rest_ensure_response(array('days' => array_values($days)));
+    }
+
+    /**
+     * 管理者による一括設定：日付の範囲（＋曜日の指定）× 全員または選んだスタッフ。
+     * action=set で「希望休」「出勤不可」を設定、action=clear で管理者が設定した分を解除する。
+     * 同じ日にスタッフ自身が入力済みの分は、設定時に上書きされる。
+     */
+    public static function bulk_requests(WP_REST_Request $req) {
+        $repo = SS_Repo::current();
+        $id = (int) $req['id'];
+        $period = $repo->find('request_periods', $id);
+        if (!$period) {
+            return new WP_Error('not_found', '見つかりません。', array('status' => 404));
+        }
+        $p = $req->get_json_params();
+        $p = is_array($p) ? $p : array();
+        $action = isset($p['action']) ? (string) $p['action'] : '';
+        if (!in_array($action, array('set', 'clear'), true)) {
+            return new WP_Error('invalid', '操作が正しくありません。', array('status' => 400));
+        }
+        $start = isset($p['start_date']) && $p['start_date'] !== '' ? (string) $p['start_date'] : $period['start_date'];
+        $end = isset($p['end_date']) && $p['end_date'] !== '' ? (string) $p['end_date'] : $period['end_date'];
+        if (!self::valid_date($start) || !self::valid_date($end) || $end < $start
+            || $start < $period['start_date'] || $end > $period['end_date']) {
+            return new WP_Error('invalid', '日付は、この期間の中で指定してください。', array('status' => 400));
+        }
+        $weekdays = array();
+        if (!empty($p['weekdays']) && is_array($p['weekdays'])) {
+            foreach ($p['weekdays'] as $w) {
+                if (is_numeric($w) && (int) $w >= 0 && (int) $w <= 6) {
+                    $weekdays[(int) $w] = true;
+                }
+            }
+        }
+        $dates = array();
+        for ($t = strtotime($start . ' UTC'); $t <= strtotime($end . ' UTC'); $t += 86400) {
+            if (!$weekdays || isset($weekdays[(int) gmdate('w', $t)])) {
+                $dates[] = gmdate('Y-m-d', $t);
+            }
+        }
+        if (!$dates) {
+            return new WP_Error('invalid', '対象になる日がありません。', array('status' => 400));
+        }
+
+        // 対象のスタッフ（自社の有効なスタッフだけ。他社のIDなどは無視される）
+        $active = array();
+        foreach ($repo->all('staff', array('active' => 1), 'sort_order', 'ASC', 1000) as $s) {
+            $active[(int) $s['id']] = true;
+        }
+        if (!isset($p['staff_ids']) || $p['staff_ids'] === 'all') {
+            $ids = array_keys($active);
+        } elseif (is_array($p['staff_ids'])) {
+            $ids = array();
+            foreach ($p['staff_ids'] as $sid) {
+                if (isset($active[(int) $sid])) {
+                    $ids[(int) $sid] = (int) $sid;
+                }
+            }
+            $ids = array_values($ids);
+        } else {
+            $ids = array();
+        }
+        if (!$ids) {
+            return new WP_Error('invalid', '対象のスタッフがいません。', array('status' => 400));
+        }
+        if (count($dates) * count($ids) > 3000) {
+            return new WP_Error('invalid', '対象が多すぎます。日付の範囲を分けて設定してください。', array('status' => 400));
+        }
+        $all_staff = count($ids) === count($active);
+
+        if ($action === 'set') {
+            $kind = isset($p['kind']) ? (string) $p['kind'] : '';
+            if (!in_array($kind, array('off', 'ng'), true)) {
+                return new WP_Error('invalid', '種類が正しくありません。', array('status' => 400));
+            }
+            $note = mb_substr(trim(sanitize_text_field(isset($p['note']) ? (string) $p['note'] : '')), 0, 200);
+            $now = SS_System::now();
+            foreach ($dates as $d) {
+                if ($all_staff) {
+                    $repo->delete_where('requests', array('period_id' => $id, 'date' => $d));
+                } else {
+                    foreach ($ids as $sid) {
+                        $repo->delete_where('requests', array('period_id' => $id, 'staff_id' => $sid, 'date' => $d));
+                    }
+                }
+                foreach ($ids as $sid) {
+                    $repo->insert('requests', array(
+                        'period_id' => $id, 'staff_id' => $sid, 'date' => $d,
+                        'kind' => $kind, 'note' => $note, 'source' => 'admin', 'submitted_at' => $now,
+                    ));
+                }
+            }
+        } else {
+            foreach ($dates as $d) {
+                if ($all_staff) {
+                    $repo->delete_where('requests', array('period_id' => $id, 'date' => $d, 'source' => 'admin'));
+                } else {
+                    foreach ($ids as $sid) {
+                        $repo->delete_where('requests', array('period_id' => $id, 'staff_id' => $sid, 'date' => $d, 'source' => 'admin'));
+                    }
+                }
+            }
+        }
+        return rest_ensure_response(array('ok' => true, 'dates' => count($dates), 'staff' => count($ids)));
+    }
+
     private static function present_period(array $r) {
         return array(
             'id' => (int) $r['id'], 'start_date' => $r['start_date'], 'end_date' => $r['end_date'],
@@ -516,7 +658,7 @@ final class SS_Rest_Plan {
         }
         $items = array();
         foreach ($repo->all('requests', array('period_id' => $period_id, 'staff_id' => $staff_id), 'date', 'ASC', 100) as $r) {
-            $items[] = array('date' => $r['date'], 'kind' => $r['kind'], 'note' => $r['note']);
+            $items[] = array('date' => $r['date'], 'kind' => $r['kind'], 'note' => $r['note'], 'source' => $r['source']);
         }
         return rest_ensure_response(array(
             'period' => self::present_period($period),
@@ -561,16 +703,26 @@ final class SS_Rest_Plan {
         }
         $period_id = (int) $period['id'];
         $now = SS_System::now();
-        $repo->delete_where('requests', array('period_id' => $period_id, 'staff_id' => $staff_id));
+        // 管理者が設定した日は、スタッフの提出では変更できない（管理者の設定を優先）
+        $locked = array();
+        foreach ($repo->all('requests', array('period_id' => $period_id, 'staff_id' => $staff_id, 'source' => 'admin'), 'date', 'ASC', 100) as $r) {
+            $locked[$r['date']] = true;
+        }
+        $repo->delete_where('requests', array('period_id' => $period_id, 'staff_id' => $staff_id, 'source' => 'staff'));
+        $skipped = 0;
         foreach ($clean as $c) {
+            if (isset($locked[$c['date']])) {
+                $skipped++;
+                continue;
+            }
             $repo->insert('requests', array(
                 'period_id' => $period_id, 'staff_id' => $staff_id, 'date' => $c['date'],
-                'kind' => $c['kind'], 'note' => $c['note'], 'submitted_at' => $now,
+                'kind' => $c['kind'], 'note' => $c['note'], 'source' => 'staff', 'submitted_at' => $now,
             ));
         }
         $repo->delete_where('request_submissions', array('period_id' => $period_id, 'staff_id' => $staff_id));
         $repo->insert('request_submissions', array('period_id' => $period_id, 'staff_id' => $staff_id, 'submitted_at' => $now));
-        return rest_ensure_response(array('ok' => true, 'saved' => count($clean)));
+        return rest_ensure_response(array('ok' => true, 'saved' => count($clean) - $skipped, 'skipped' => $skipped));
     }
 
     /* ---------- 補助 ---------- */

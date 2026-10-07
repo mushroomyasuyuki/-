@@ -318,8 +318,8 @@
     }
 
     function openDetail(p) {
-      api('GET', 'periods/' + p.id + '/status').then(function (r) {
-        detail = { period: p, staff: r.staff };
+      Promise.all([api('GET', 'periods/' + p.id + '/status'), api('GET', 'periods/' + p.id + '/requests')]).then(function (rs) {
+        detail = { period: p, staff: rs[0].staff, days: rs[1].days };
         load();
       }).catch(fail);
     }
@@ -332,10 +332,74 @@
           td(s.submitted ? s.count + '日' : '')
         ]);
       });
-      return el('div', { class: 'ss-section' }, [
+      function names(list) {
+        return list.map(function (x) { return x.name + (x.admin ? '（管理者設定）' : ''); }).join('、');
+      }
+      var dayRows = detail.days.map(function (d) {
+        return el('tr', {}, [td(jpDate(d.date)), td(names(d.off)), td(names(d.ng))]);
+      });
+      var box = el('div', { class: 'ss-section' }, [
         el('h2', { class: 'ss-h2', text: jpDate(detail.period.start_date) + '〜 の提出状況' }),
-        table(['名前', '状態', '休み・不可の日数'], rows, 'スタッフがいません。')
+        table(['名前', '状態', '休み・不可の日数'], rows, 'スタッフがいません。'),
+        el('h2', { class: 'ss-h2', text: '日ごとの希望休・出勤不可' }),
+        table(['日付', '希望休', '出勤不可'], dayRows, 'まだ入力がありません。')
       ]);
+      if (cfg.writable) { box.appendChild(bulkForm()); }
+      return box;
+    }
+
+    /** 管理者が、全員（または選んだスタッフ）の休みをまとめて設定・解除する */
+    function bulkForm() {
+      var per = detail.period;
+      var wdBoxes = WEEK.map(function (w, i) {
+        return el('label', { class: 'ss-inline' }, [el('input', { type: 'checkbox', name: 'wd', value: String(i) }), w]);
+      });
+      var staffBoxes = detail.staff.map(function (s) {
+        return el('label', { class: 'ss-inline' }, [el('input', { type: 'checkbox', name: 'sid', value: String(s.staff_id) }), s.name]);
+      });
+      var staffBox = el('div', { hidden: true }, staffBoxes);
+      var f = el('form', { class: 'ss-form ss-form-row' }, [
+        el('h2', { class: 'ss-h2', text: '休みをまとめて設定（管理者）', style: 'grid-column:1/-1' }),
+        el('p', { class: 'ss-sub', style: 'grid-column:1/-1', text: '定休日や年末年始など、全員（または選んだ人）の休みをまとめて入れます。同じ日にスタッフが入力済みの分は、上書きされます。管理者が設定した日は、スタッフは変更できません。' }),
+        field('開始日', el('input', { type: 'date', name: 'start_date', value: per.start_date, min: per.start_date, max: per.end_date })),
+        field('終了日', el('input', { type: 'date', name: 'end_date', value: per.end_date, min: per.start_date, max: per.end_date })),
+        el('div', { style: 'grid-column:1/-1' }, [el('span', { class: 'ss-sub', text: '曜日で絞る（選ばなければ毎日）：' })].concat(wdBoxes)),
+        field('種類', el('select', { name: 'kind' }, [el('option', { value: 'off', text: '希望休（休み）' }), el('option', { value: 'ng', text: '出勤不可' })])),
+        field('メモ（任意）', el('input', { type: 'text', name: 'note', maxlength: 200, placeholder: '定休日、年末年始 など' })),
+        el('div', { style: 'grid-column:1/-1' }, [
+          el('label', { class: 'ss-inline' }, [el('input', { type: 'radio', name: 'target', value: 'all', checked: true, onchange: function () { staffBox.hidden = true; } }), 'スタッフ全員']),
+          el('label', { class: 'ss-inline' }, [el('input', { type: 'radio', name: 'target', value: 'some', onchange: function () { staffBox.hidden = false; } }), '選んだスタッフ']),
+          staffBox
+        ]),
+        el('div', { class: 'ss-actions' }, [
+          el('button', { type: 'submit', class: 'ss-btn', text: '休みを設定' }),
+          btn('管理者が設定した休みを解除', function () { submit('clear'); }, true)
+        ])
+      ]);
+
+      function submit(action) {
+        var e = f.elements;
+        var weekdays = [].slice.call(f.querySelectorAll('input[name=wd]:checked')).map(function (x) { return parseInt(x.value, 10); });
+        var some = e.target.value === 'some';
+        var ids = [].slice.call(f.querySelectorAll('input[name=sid]:checked')).map(function (x) { return parseInt(x.value, 10); });
+        if (some && !ids.length) { say('スタッフを選んでください。'); return; }
+        var label = action === 'set' ? '設定' : '解除';
+        if (!window.confirm((some ? ids.length + '名' : '全員') + 'の休みを' + label + 'します。よろしいですか？')) { return; }
+        api('POST', 'periods/' + per.id + '/bulk', {
+          action: action, start_date: e.start_date.value, end_date: e.end_date.value,
+          weekdays: weekdays, kind: e.kind.value, note: e.note.value, staff_ids: some ? ids : 'all'
+        }).then(function (r) {
+          say(r.dates + '日分を' + label + 'しました。', true);
+          return api('GET', 'periods/' + per.id + '/status').then(function (st) {
+            return api('GET', 'periods/' + per.id + '/requests').then(function (rq) {
+              detail = { period: per, staff: st.staff, days: rq.days };
+              return load();
+            });
+          });
+        }).catch(fail);
+      }
+      f.addEventListener('submit', function (ev) { ev.preventDefault(); submit('set'); });
+      return f;
     }
 
     function form() {
@@ -410,17 +474,18 @@
       while (d <= r.period.end_date) {
         (function (date) {
           var dow = parseDate(date).getUTCDay();
-          var cur = chosen[date] || { kind: '', note: '' };
-          var sel = el('select', { 'data-date': date, disabled: !editable }, [
+          var cur = chosen[date] || { kind: '', note: '', source: 'staff' };
+          var locked = cur.source === 'admin';
+          var sel = el('select', { 'data-date': date, disabled: !editable || locked }, [
             el('option', { value: '', text: '—' }),
             el('option', { value: 'off', text: '希望休' }),
             el('option', { value: 'ng', text: '出勤不可' })
           ]);
           sel.value = cur.kind;
-          var note = el('input', { type: 'text', maxlength: 200, placeholder: 'メモ（任意）', value: cur.note, disabled: !editable });
-          rows.push({ date: date, sel: sel, note: note });
+          var note = el('input', { type: 'text', maxlength: 200, placeholder: locked ? '管理者が設定した日です' : 'メモ（任意）', value: cur.note, disabled: !editable || locked });
+          rows.push({ date: date, sel: sel, note: note, locked: locked });
           box.appendChild(el('div', { class: 'ss-day' + (dow === 0 ? ' is-sun' : dow === 6 ? ' is-sat' : '') }, [
-            el('span', { class: 'ss-day-label', text: jpDate(date) }), sel, note
+            el('span', { class: 'ss-day-label', text: jpDate(date) + (locked ? '（管理者設定）' : '') }), sel, note
           ]));
         })(d);
         d = addDays(d, 1);
@@ -430,7 +495,7 @@
         box.appendChild(el('div', { class: 'ss-actions ss-section' }, [btn(r.submitted ? '修正して提出' : '提出する', function () {
           var items = [];
           rows.forEach(function (x) {
-            if (x.sel.value) { items.push({ date: x.date, kind: x.sel.value, note: x.note.value }); }
+            if (x.sel.value && !x.locked) { items.push({ date: x.date, kind: x.sel.value, note: x.note.value }); }
           });
           api('PUT', 'me/requests', { period_id: r.period.id, items: items })
             .then(function () { say('提出しました（' + items.length + '日）。', true); return load(); }).catch(fail);

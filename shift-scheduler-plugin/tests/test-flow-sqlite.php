@@ -61,7 +61,7 @@ class FakeWpdb {
             'patterns' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, short_name, start_time, end_time, break_minutes, crosses_midnight, counts_as_night, color, active, sort_order, created_at',
             'rules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, type, params, hard, weight, active, created_at',
             'request_periods' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, start_date, end_date, deadline, status, created_at',
-            'requests' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, period_id, staff_id, date, kind, note, submitted_at',
+            'requests' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, period_id, staff_id, date, kind, note, source DEFAULT "staff", submitted_at',
             'request_submissions' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, period_id, staff_id, submitted_at',
         );
         foreach ($t as $name => $cols) { $this->pdo->exec("CREATE TABLE wp_shift_{$name} ({$cols})"); }
@@ -229,6 +229,56 @@ as_user(2);
 check('after deadline rejects submission', code(SS_Rest_Plan::save_my_requests(req(array('period_id' => $a_period, 'items' => array())))) === 'closed');
 check('after deadline period not listed', count(SS_Rest_Plan::my_periods()['periods']) === 0);
 $GLOBALS['today'] = '2026-10-20';
+
+/* ---- 管理者による一括設定 ---- */
+as_user(1);
+$cnt = function ($where) use ($A) { return scalar("SELECT COUNT(*) FROM wp_shift_requests WHERE tenant_id = {$A} AND " . $where); };
+// この時点：A太郎は 11-15 に自分で「希望休」を提出済み（source=staff）
+$r = SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'start_date' => '2026-11-14', 'end_date' => '2026-11-16', 'weekdays' => array(0), 'kind' => 'off', 'note' => '定休日', 'staff_ids' => 'all'), array('id' => $a_period)));
+check('bulk set (Sundays only) affects 1 date x 2 staff', code($r) === 'ok' && $r['dates'] === 1 && $r['staff'] === 2);
+check('bulk set overwrote staff row (no duplicates)', $cnt("date = '2026-11-15' AND period_id = {$a_period}") === 2 && $cnt("date = '2026-11-15' AND source = 'admin'") === 2);
+check('bulk set did not touch other dates', $cnt("date IN ('2026-11-14','2026-11-16')") === 0);
+
+as_user(2); // A太郎：管理者設定の日は変更できず、他の日は保存される
+$r = SS_Rest_Plan::save_my_requests(req(array('period_id' => $a_period, 'items' => array(array('date' => '2026-11-15', 'kind' => 'ng'), array('date' => '2026-11-20', 'kind' => 'off')))));
+check('staff submit skips admin-locked date', code($r) === 'ok' && $r['saved'] === 1 && $r['skipped'] === 1);
+check('admin row kept as off', $cnt("staff_id = {$a_staff} AND date = '2026-11-15' AND source = 'admin' AND kind = 'off'") === 1);
+$mine = SS_Rest_Plan::my_requests(req(array(), array('period_id' => $a_period)));
+$srcs = array(); foreach ($mine['items'] as $it) { $srcs[$it['date']] = $it['source']; }
+check('my_requests exposes source', $srcs['2026-11-15'] === 'admin' && $srcs['2026-11-20'] === 'staff');
+$r = SS_Rest_Plan::save_my_requests(req(array('period_id' => $a_period, 'items' => array())));
+check('staff clearing own requests keeps admin rows', $cnt("staff_id = {$a_staff} AND source = 'admin'") === 1 && $cnt("staff_id = {$a_staff} AND source = 'staff'") === 0);
+
+as_user(1);
+$days = SS_Rest_Plan::period_requests(req(array(), array('id' => $a_period)))['days'];
+check('period_requests lists admin-set day with both staff', count($days) === 1 && $days[0]['date'] === '2026-11-15' && count($days[0]['off']) === 2 && $days[0]['off'][0]['admin'] === true);
+
+// 選んだスタッフだけ（他社のスタッフIDは無視される）
+$r = SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'start_date' => '2026-11-23', 'end_date' => '2026-11-23', 'kind' => 'ng', 'staff_ids' => array($a_staff, $b_staff)), array('id' => $a_period)));
+check('bulk selected: other-tenant staff id ignored', code($r) === 'ok' && $r['staff'] === 1 && $cnt("date = '2026-11-23'") === 1 && scalar("SELECT COUNT(*) FROM wp_shift_requests WHERE tenant_id = {$B} AND date = '2026-11-23'") === 0);
+$r = SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'start_date' => '2026-11-23', 'end_date' => '2026-11-23', 'kind' => 'off', 'staff_ids' => array($b_staff)), array('id' => $a_period)));
+check('bulk with only other-tenant staff rejected', code($r) === 'invalid');
+
+// 解除：管理者が設定した分だけ消える（スタッフ自身の分は残る）
+SS_Rest_Plan::save_my_requests(req(array('period_id' => $a_period, 'items' => array())));
+as_user(2);
+SS_Rest_Plan::save_my_requests(req(array('period_id' => $a_period, 'items' => array(array('date' => '2026-11-20', 'kind' => 'off')))));
+as_user(1);
+$r = SS_Rest_Plan::bulk_requests(req(array('action' => 'clear', 'start_date' => '2026-11-01', 'end_date' => '2026-11-30', 'staff_ids' => 'all'), array('id' => $a_period)));
+check('bulk clear removes admin rows only', code($r) === 'ok' && $cnt("source = 'admin'") === 0 && $cnt("source = 'staff' AND date = '2026-11-20'") === 1);
+
+// 不正な指定
+check('bulk date outside period rejected', code(SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'start_date' => '2026-12-01', 'end_date' => '2026-12-05', 'kind' => 'off'), array('id' => $a_period)))) === 'invalid');
+check('bulk with no matching weekday rejected', code(SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'start_date' => '2026-11-16', 'end_date' => '2026-11-16', 'weekdays' => array(0), 'kind' => 'off'), array('id' => $a_period)))) === 'invalid');
+check('bulk bad kind rejected', code(SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'kind' => 'prefer'), array('id' => $a_period)))) === 'invalid');
+check('bulk bad action rejected', code(SS_Rest_Plan::bulk_requests(req(array('action' => 'delete_all'), array('id' => $a_period)))) === 'invalid');
+
+// 他社の管理者は、Aの期間に一括設定も一覧取得もできない
+as_user(3);
+check('B cannot bulk-set on A period', code(SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'kind' => 'off', 'staff_ids' => 'all'), array('id' => $a_period)))) === 'not_found');
+check('B cannot list A period requests', code(SS_Rest_Plan::period_requests(req(array(), array('id' => $a_period)))) === 'not_found');
+check('B data untouched by A bulk operations', scalar("SELECT COUNT(*) FROM wp_shift_requests WHERE tenant_id = {$B}") === 1);
+as_user(1);
 
 // 期間の削除は自社の希望だけを消す
 as_user(1);

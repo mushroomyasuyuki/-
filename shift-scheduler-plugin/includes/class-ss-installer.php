@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '2';
+    const DB_VERSION = '3';
 
     public static function activate() {
         self::create_tables();
@@ -186,6 +186,7 @@ final class SS_Installer {
   date date NOT NULL,
   kind varchar(10) NOT NULL,
   note varchar(200) NOT NULL DEFAULT '',
+  source varchar(10) NOT NULL DEFAULT 'staff',
   submitted_at datetime NOT NULL,
   PRIMARY KEY  (id),
   UNIQUE KEY uniq_request (tenant_id, period_id, staff_id, date),
