@@ -87,10 +87,10 @@
   }
 
   function invite(s) {
-    var email = window.prompt('招待するメールアドレスを入力してください。', s.email || '');
+    var email = window.prompt('招待するメールアドレスを入力してください。\n（ご自身のメールアドレスを入れると、メールを送らずに自分のアカウントをこのスタッフに紐づけます）', s.email || '');
     if (!email) { return; }
     api('POST', 'staff/' + s.id + '/invite', { email: email })
-      .then(function () { say('招待メールを送信しました。', true); return load(); })
+      .then(function (d) { say(d && d.linked ? 'ご自身のアカウントをこのスタッフに紐づけました。' : '招待メールを送信しました。', true); return load(); })
       .catch(function (e) { say(e.message); });
   }
 

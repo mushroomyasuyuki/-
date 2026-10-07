@@ -133,6 +133,21 @@ final class SS_Rest {
         }
 
         $existing = self::user_of($repo, $id);
+
+        // ご自身（ログイン中の管理者）のメールアドレスの場合：招待メールは送らず、このスタッフに自分のアカウントを紐づける
+        $me = SS_Context::user();
+        if ($me && strtolower($me['email']) === strtolower($email)) {
+            if (!empty($me['staff_id']) && (int) $me['staff_id'] !== $id) {
+                return new WP_Error('already_linked', 'ご自身のアカウントは、すでに別のスタッフに紐づいています。', array('status' => 409));
+            }
+            if ($existing && (int) $existing['id'] !== (int) $me['id']) {
+                return new WP_Error('already', 'このスタッフには、すでに別のアカウントが紐づいています。', array('status' => 409));
+            }
+            $repo->update('users', (int) $me['id'], array('staff_id' => $id));
+            SS_Context::reset();
+            return rest_ensure_response(array('ok' => true, 'linked' => true));
+        }
+
         if ($existing && $existing['status'] === 'active') {
             return new WP_Error('already', 'このスタッフはすでに登録済みです。', array('status' => 409));
         }
