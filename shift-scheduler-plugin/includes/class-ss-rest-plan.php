@@ -160,7 +160,7 @@ final class SS_Rest_Plan {
         return rest_ensure_response(array('added' => $n));
     }
 
-    private static function present_pattern(array $r) {
+    public static function present_pattern(array $r) {
         return array(
             'id' => (int) $r['id'], 'name' => $r['name'], 'short_name' => $r['short_name'],
             'start_time' => $r['start_time'], 'end_time' => $r['end_time'],
@@ -235,7 +235,11 @@ final class SS_Rest_Plan {
     /* ---------- ルール ---------- */
 
     public static function list_rules() {
-        $repo = SS_Repo::current();
+        return rest_ensure_response(self::rules_data(SS_Repo::current()));
+    }
+
+    /** ルール一覧（全体ルールと必要人数）。シフト表の画面からも使う。 */
+    public static function rules_data(SS_Repo $repo) {
         $rows = $repo->all('rules', array(), 'id', 'ASC', 500);
         $defs = SS_Presets::global_rule_defs();
         $global = array();
@@ -252,7 +256,7 @@ final class SS_Rest_Plan {
         foreach ($defs as $type => $d) {
             $out_defs[] = array_merge(array('type' => $type), $d);
         }
-        return rest_ensure_response(array('global' => (object) $global, 'defs' => $out_defs, 'required_staff' => $required));
+        return array('global' => (object) $global, 'defs' => $out_defs, 'required_staff' => $required);
     }
 
     /** 全体ルールをまとめて保存。値が空のものは、そのルールを外す。 */

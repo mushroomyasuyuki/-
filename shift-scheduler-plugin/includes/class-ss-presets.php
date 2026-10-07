@@ -13,7 +13,7 @@ final class SS_Presets {
             'min_rest_hours'       => array('label' => '勤務と勤務の間の休息', 'unit' => '時間以上', 'min' => 0, 'max' => 24),
             'monthly_days_off'     => array('label' => '月の公休日数', 'unit' => '日以上', 'min' => 0, 'max' => 31),
             'max_nights_month'     => array('label' => '月の夜勤回数の上限', 'unit' => '回', 'min' => 0, 'max' => 31),
-            'after_night_off'      => array('label' => '夜勤明けの翌日は休み', 'unit' => '（1=する）', 'min' => 0, 'max' => 1),
+            'after_night_off'      => array('label' => '夜勤の後は、明けと翌日を休みにする（夜勤→明け→休み）', 'unit' => '1=する', 'min' => 0, 'max' => 1),
         );
     }
 

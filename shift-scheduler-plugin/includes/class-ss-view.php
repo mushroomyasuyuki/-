@@ -18,7 +18,7 @@ final class SS_View {
         include $ss_file;
         $content = ob_get_clean();
         $title = isset($vars['title']) ? $vars['title'] : 'シフト作成';
-        $scripts = isset($vars['scripts']) ? $vars['scripts'] : '';
+        $scripts = isset($vars['scripts']) ? (array) $vars['scripts'] : array();
         include SS_DIR . 'templates/layout.php';
         exit;
     }

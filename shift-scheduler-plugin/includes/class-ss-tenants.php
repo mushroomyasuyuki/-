@@ -60,4 +60,25 @@ final class SS_Tenants {
         $t = SS_System::table('plans');
         return $wpdb->get_results("SELECT * FROM {$t} WHERE active = 1 ORDER BY sort_order ASC, id ASC", ARRAY_A);
     }
+
+    public static function settings(array $tenant) {
+        $v = !empty($tenant['settings']) ? json_decode($tenant['settings'], true) : array();
+        return is_array($v) ? $v : array();
+    }
+
+    /** スタッフが見られる範囲：all=全員のシフト／self=自分のシフトのみ */
+    public static function staff_view(array $tenant) {
+        $s = self::settings($tenant);
+        return isset($s['staff_view']) && $s['staff_view'] === 'self' ? 'self' : 'all';
+    }
+
+    public static function save_settings($tenant_id, array $changes) {
+        global $wpdb;
+        $tenant = SS_System::tenant_by_id($tenant_id);
+        if (!$tenant) {
+            return false;
+        }
+        $merged = array_merge(self::settings($tenant), $changes);
+        return $wpdb->update(SS_System::table('tenants'), array('settings' => wp_json_encode($merged)), array('id' => (int) $tenant_id)) !== false;
+    }
 }

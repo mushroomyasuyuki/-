@@ -35,9 +35,10 @@ function add_action() {}
 function add_filter() {}
 $GLOBALS['today'] = '2026-10-20';
 function wp_date($fmt) { return $GLOBALS['today']; }
+function wp_json_decode($j, $a = false) { return json_decode($j, $a); }
 $GLOBALS['uid'] = 0;
 $GLOBALS['caps'] = array(
-    'owner' => array('shift_manage_staff', 'shift_manage_schedule', 'shift_submit_requests', 'shift_view'),
+    'owner' => array('shift_manage_staff', 'shift_manage_schedule', 'shift_submit_requests', 'shift_view', 'shift_manage_settings'),
     'staff' => array('shift_submit_requests', 'shift_view'),
 );
 $GLOBALS['wp_roles'] = array(); // wp_user_id => role
@@ -63,6 +64,8 @@ class FakeWpdb {
             'request_periods' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, start_date, end_date, deadline, status, created_at',
             'requests' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, period_id, staff_id, date, kind, note, source DEFAULT "staff", submitted_at',
             'request_submissions' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, period_id, staff_id, submitted_at',
+            'schedules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, start_date, end_date, status, published_at, created_by, created_at',
+            'entries' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, schedule_id, staff_id, date, pattern_id, start_time, end_time, break_minutes, locked, note, created_at',
         );
         foreach ($t as $name => $cols) { $this->pdo->exec("CREATE TABLE wp_shift_{$name} ({$cols})"); }
     }
@@ -96,7 +99,7 @@ class FakeWpdb {
 }
 $wpdb = new FakeWpdb();
 
-foreach (array('system', 'context', 'repo', 'tenants', 'presets', 'rest', 'rest-plan') as $f) {
+foreach (array('system', 'context', 'repo', 'tenants', 'presets', 'rest', 'rest-plan', 'rest-schedule') as $f) {
     require __DIR__ . "/../includes/class-ss-{$f}.php";
 }
 
@@ -280,6 +283,104 @@ check('B cannot list A period requests', code(SS_Rest_Plan::period_requests(req(
 check('B data untouched by A bulk operations', scalar("SELECT COUNT(*) FROM wp_shift_requests WHERE tenant_id = {$B}") === 1);
 as_user(1);
 
+/* ---- シフト表 ---- */
+as_user(1);
+check('create schedule: bad range rejected', code(SS_Rest_Schedule::create_schedule(req(array('start_date' => '2026-11-30', 'end_date' => '2026-11-01')))) === 'invalid');
+check('create schedule: over 62 days rejected', code(SS_Rest_Schedule::create_schedule(req(array('start_date' => '2026-11-01', 'end_date' => '2027-02-01')))) === 'invalid');
+$r = SS_Rest_Schedule::create_schedule(req(array('start_date' => '2026-11-01', 'end_date' => '2026-11-30')));
+$a_sch = $r['schedule']['id'];
+check('create schedule ok (draft)', code($r) === 'ok' && $r['schedule']['status'] === 'draft');
+as_user(3);
+$r = SS_Rest_Schedule::create_schedule(req(array('start_date' => '2026-11-01', 'end_date' => '2026-11-30')));
+$b_sch = $r['schedule']['id'];
+$b_pat = SS_Rest_Plan::list_patterns()['patterns'][0]['id'];
+check('B list_schedules sees only own', count(SS_Rest_Schedule::list_schedules()['schedules']) === 1);
+
+as_user(1);
+$a_pat = SS_Rest_Plan::list_patterns()['patterns'][0]['id'];
+$ok_entries = array(
+    array('staff_id' => $a_staff, 'date' => '2026-11-02', 'pattern_id' => $a_pat),
+    array('staff_id' => $a_staff, 'date' => '2026-11-03', 'start_time' => '10:30', 'end_time' => '14:00', 'break_minutes' => 30, 'locked' => true, 'note' => '研修'),
+    array('staff_id' => $a_staff, 'date' => '2026-11-04', 'start_time' => '', 'end_time' => '', 'locked' => true),   // 固定の休み
+    array('staff_id' => $a_staff, 'date' => '2026-11-05', 'start_time' => '', 'end_time' => ''),                      // 固定でない休み：保存されない
+    array('staff_id' => $a_staff2, 'date' => '2026-11-02', 'pattern_id' => $a_pat),
+);
+$r = SS_Rest_Schedule::replace_entries(req(array('entries' => $ok_entries), array('id' => $a_sch)));
+check('replace entries saves 4 (non-locked off skipped)', code($r) === 'ok' && $r['saved'] === 4);
+$g = SS_Rest_Schedule::get_schedule(req(array(), array('id' => $a_sch)));
+$byDate = array(); foreach ($g['entries'] as $e) { if ($e['staff_id'] === $a_staff) { $byDate[$e['date']] = $e; } }
+check('pattern entry took times from pattern', $byDate['2026-11-02']['start_time'] !== '' && $byDate['2026-11-02']['pattern_id'] === $a_pat);
+check('custom entry kept (locked, note, break)', $byDate['2026-11-03']['pattern_id'] === null && $byDate['2026-11-03']['locked'] === true && $byDate['2026-11-03']['break_minutes'] === 30 && $byDate['2026-11-03']['note'] === '研修');
+check('locked off stored with empty times', $byDate['2026-11-04']['start_time'] === '' && $byDate['2026-11-04']['locked'] === true);
+check('get_schedule returns staff, patterns, rules, requests', count($g['staff']) === 2 && count($g['patterns']) === 3 && isset($g['rules']['global']) && is_array($g['requests']));
+
+// 管理者の設定が、スタッフ自身の希望より優先して返る
+SS_Rest_Plan::bulk_requests(req(array('action' => 'set', 'start_date' => '2026-11-20', 'end_date' => '2026-11-20', 'kind' => 'ng', 'staff_ids' => array($a_staff)), array('id' => $a_period)));
+$g = SS_Rest_Schedule::get_schedule(req(array(), array('id' => $a_sch)));
+$hit = array_values(array_filter($g['requests'], function ($x) use ($a_staff) { return $x['staff_id'] === $a_staff && $x['date'] === '2026-11-20'; }));
+check('requests merged: admin-set wins', count($hit) === 1 && $hit[0]['kind'] === 'ng' && $hit[0]['source'] === 'admin');
+
+// 検証：他社のスタッフ・勤務区分、期間外、不正な時刻は拒否。拒否したときは、元の保存内容が残る
+$bad = function ($e) use ($a_sch) { return code(SS_Rest_Schedule::replace_entries(req(array('entries' => array($e)), array('id' => $a_sch)))); };
+check('entry with other-tenant staff rejected', $bad(array('staff_id' => $b_staff, 'date' => '2026-11-02', 'pattern_id' => $a_pat)) === 'invalid');
+check('entry with other-tenant pattern rejected', $bad(array('staff_id' => $a_staff, 'date' => '2026-11-02', 'pattern_id' => $b_pat)) === 'invalid');
+check('entry outside schedule range rejected', $bad(array('staff_id' => $a_staff, 'date' => '2026-12-01', 'pattern_id' => $a_pat)) === 'invalid');
+check('entry with odd time rejected', $bad(array('staff_id' => $a_staff, 'date' => '2026-11-02', 'start_time' => '09:10', 'end_time' => '12:00')) === 'invalid');
+check('entry with same start/end rejected', $bad(array('staff_id' => $a_staff, 'date' => '2026-11-02', 'start_time' => '09:00', 'end_time' => '09:00')) === 'invalid');
+check('entry with bad break rejected', $bad(array('staff_id' => $a_staff, 'date' => '2026-11-02', 'pattern_id' => $a_pat, 'break_minutes' => 999)) === 'invalid');
+check('rejected save keeps previous entries', scalar("SELECT COUNT(*) FROM wp_shift_entries WHERE tenant_id = {$A} AND schedule_id = {$a_sch}") === 4);
+
+// 他社の管理者は、Aのシフト表を読めない・変えられない・消せない
+as_user(3);
+check('B cannot get A schedule', code(SS_Rest_Schedule::get_schedule(req(array(), array('id' => $a_sch)))) === 'not_found');
+check('B cannot replace A entries', code(SS_Rest_Schedule::replace_entries(req(array('entries' => array()), array('id' => $a_sch)))) === 'not_found');
+check('B cannot publish A schedule', code(SS_Rest_Schedule::update_schedule(req(array('status' => 'published'), array('id' => $a_sch)))) === 'not_found');
+check('B cannot delete A schedule', code(SS_Rest_Schedule::delete_schedule(req(array(), array('id' => $a_sch)))) === 'not_found');
+check('A entries untouched by B attempts', scalar("SELECT COUNT(*) FROM wp_shift_entries WHERE tenant_id = {$A} AND schedule_id = {$a_sch}") === 4);
+
+// 全面置き換え：少ない内容で保存すると、前の内容は消える
+as_user(1);
+$r = SS_Rest_Schedule::replace_entries(req(array('entries' => array(array('staff_id' => $a_staff, 'date' => '2026-11-10', 'pattern_id' => $a_pat))), array('id' => $a_sch)));
+check('replace is a full replace', $r['saved'] === 1 && scalar("SELECT COUNT(*) FROM wp_shift_entries WHERE tenant_id = {$A} AND schedule_id = {$a_sch}") === 1);
+SS_Rest_Schedule::replace_entries(req(array('entries' => $ok_entries), array('id' => $a_sch)));
+
+// 公開とスタッフの閲覧
+as_user(2);
+check('staff sees no schedule while draft', count(SS_Rest_Schedule::my_schedules()['schedules']) === 0 && code(SS_Rest_Schedule::my_schedule(req(array(), array('id' => $a_sch)))) === 'not_found');
+as_user(1);
+$r = SS_Rest_Schedule::update_schedule(req(array('status' => 'published'), array('id' => $a_sch)));
+check('publish', $r['schedule']['status'] === 'published' && $r['schedule']['published_at'] !== null);
+as_user(2);
+check('staff sees published schedule', count(SS_Rest_Schedule::my_schedules()['schedules']) === 1);
+$v = SS_Rest_Schedule::my_schedule(req(array(), array('id' => $a_sch)));
+check('staff view=all: all staff and entries', $v['scope'] === 'all' && count($v['staff']) === 2 && count($v['entries']) === 4);
+as_user(1);
+check('settings: bad value rejected', code(SS_Rest_Schedule::save_settings(req(array('staff_view' => 'x')))) === 'invalid');
+check('settings: save self', code(SS_Rest_Schedule::save_settings(req(array('staff_view' => 'self')))) === 'ok' && SS_Rest_Schedule::get_settings()['staff_view'] === 'self');
+as_user(2);
+$v = SS_Rest_Schedule::my_schedule(req(array(), array('id' => $a_sch)));
+$ids = array_map(function ($s) { return $s['id']; }, $v['staff']);
+$eids = array_unique(array_map(function ($e) { return $e['staff_id']; }, $v['entries']));
+check('staff view=self: own row only (staff list and entries)', $v['scope'] === 'self' && $ids === array($a_staff) && $eids === array($a_staff) && count($v['entries']) === 3);
+as_user(1);
+$v = SS_Rest_Schedule::my_schedule(req(array(), array('id' => $a_sch)));
+check('manager still sees everyone when view=self', $v['scope'] === 'all' && count($v['staff']) === 2 && count($v['entries']) === 4);
+check('staff cannot read/write settings', (function () { as_user(2); return !SS_Rest_Schedule::can_read_settings() && !SS_Rest_Schedule::can_write_settings(); })());
+as_user(1);
+check('owner can write settings', SS_Rest_Schedule::can_write_settings());
+SS_Rest_Schedule::save_settings(req(array('staff_view' => 'all')));
+
+// 他社のスタッフは、Aの公開シフトを見られない
+as_user(4);
+check('B staff cannot see A published schedule', count(SS_Rest_Schedule::my_schedules()['schedules']) === 0 && code(SS_Rest_Schedule::my_schedule(req(array(), array('id' => $a_sch)))) === 'not_found');
+
+// 削除
+as_user(3);
+SS_Rest_Schedule::replace_entries(req(array('entries' => array(array('staff_id' => $b_staff, 'date' => '2026-11-02', 'pattern_id' => $b_pat))), array('id' => $b_sch)));
+as_user(1);
+SS_Rest_Schedule::delete_schedule(req(array(), array('id' => $a_sch)));
+check('delete schedule removes its entries only', scalar("SELECT COUNT(*) FROM wp_shift_entries WHERE tenant_id = {$A}") === 0 && scalar("SELECT COUNT(*) FROM wp_shift_entries WHERE tenant_id = {$B}") === 1 && scalar("SELECT COUNT(*) FROM wp_shift_schedules WHERE tenant_id = {$B}") === 1);
+
 // 期間の削除は自社の希望だけを消す
 as_user(1);
 SS_Rest_Plan::delete_period(req(array(), array('id' => $a_period)));
@@ -289,7 +390,7 @@ check('delete period keeps B requests', scalar("SELECT COUNT(*) FROM wp_shift_re
 // 閲覧のみ（無料期間終了）では、書き込み権限がない
 $wpdb->update('wp_shift_tenants', array('status' => 'readonly'), array('id' => $A));
 as_user(1);
-check('readonly tenant: can read but not write plan', SS_Rest_Plan::can_read_plan() && !SS_Rest_Plan::can_write_plan() && !SS_Rest::can_write_staff());
+check('readonly tenant: can read but not write plan', SS_Rest_Plan::can_read_plan() && !SS_Rest_Plan::can_write_plan() && !SS_Rest::can_write_staff() && SS_Rest_Schedule::can_read_settings() && !SS_Rest_Schedule::can_write_settings());
 as_user(2);
 check('readonly tenant: staff cannot submit', SS_Rest_Plan::can_read_mine() && !SS_Rest_Plan::can_write_mine());
 as_user(3);

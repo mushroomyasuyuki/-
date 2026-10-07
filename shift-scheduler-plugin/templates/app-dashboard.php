@@ -18,10 +18,11 @@
       <li><a href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'patterns')); ?>">勤務区分を確認する</a></li>
       <li><a href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'rules')); ?>">ルール（必要人数など）を設定する</a></li>
       <li><a href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'requests')); ?>">スタッフから希望休を集める</a></li>
+      <li><a href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'schedules')); ?>">シフト表を作る（自動作成）</a></li>
     </ol>
   <?php endif; ?>
   <?php if (!empty($me['staff_id']) && current_user_can('shift_submit_requests')) : ?>
     <p><a class="ss-btn" href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'me/requests')); ?>">希望休を提出する</a></p>
   <?php endif; ?>
-  <p class="ss-sub">シフト表の作成機能は順次追加されます。</p>
+  <p><a class="ss-btn ss-btn-sub" href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'me/schedule')); ?>">公開されたシフトを見る</a></p>
 </section>

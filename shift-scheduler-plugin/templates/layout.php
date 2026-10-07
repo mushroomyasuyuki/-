@@ -21,8 +21,8 @@
   <?php endif; ?>
 </header>
 <main class="ss-main"><?php echo $content; // テンプレート内で個別にエスケープ済み ?></main>
-<?php if ($scripts) : ?>
-<script src="<?php echo esc_url($scripts); ?>" defer></script>
-<?php endif; ?>
+<?php foreach ($scripts as $script_url) : ?>
+<script src="<?php echo esc_url($script_url); ?>" defer></script>
+<?php endforeach; ?>
 </body>
 </html>

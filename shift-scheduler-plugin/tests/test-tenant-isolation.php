@@ -93,6 +93,17 @@ foreach (array('patterns', 'rules', 'request_periods', 'requests', 'request_subm
     check("phase2 table {$tbl} filtered by tenant", strpos($wpdb->log[0][1], 'tenant_id = 7') !== false);
 }
 
+// まとめて追加：全行に自分のお客様IDが付き、渡された tenant_id は使われない
+$wpdb->log = array();
+$repo->insert_many('entries', array(
+    array('schedule_id' => 1, 'staff_id' => 2, 'date' => '2026-11-02', 'tenant_id' => 99, 'pattern_id' => null),
+    array('schedule_id' => 1, 'staff_id' => 3, 'date' => '2026-11-02', 'tenant_id' => 77, 'pattern_id' => 5),
+));
+$ins = $wpdb->log[0][1];
+check('insert_many forces own tenant_id on every row', strpos($ins, 'INSERT INTO wp_shift_entries') === 0 && substr_count($ins, ',7)') === 2 && strpos($ins, '99') === false && strpos($ins, '77') === false && strpos($ins, 'NULL') !== false);
+expect_exception('insert_many with different columns rejected', function () use ($repo) { $repo->insert_many('entries', array(array('schedule_id' => 1), array('staff_id' => 1))); });
+expect_exception('insert_many on unscoped table rejected', function () use ($repo) { $repo->insert_many('tenants', array(array('name' => 'x'))); });
+
 // 取り扱えないテーブル・不正な列名・お客様未確定
 expect_exception('unscoped table rejected', function () use ($repo) { $repo->find('tenants', 1); });
 expect_exception('tokens table rejected', function () use ($repo) { $repo->all('tokens'); });

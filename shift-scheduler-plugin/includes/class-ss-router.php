@@ -154,11 +154,24 @@ final class SS_Router {
         }
         $pages = array(
             'staff'       => array('cap' => 'shift_manage_staff', 'template' => 'app-staff', 'title' => 'スタッフ管理', 'script' => 'staff.js', 'page' => 'staff'),
-            'patterns'    => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => '勤務区分', 'script' => 'pages.js', 'page' => 'patterns'),
-            'rules'       => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'ルール設定', 'script' => 'pages.js', 'page' => 'rules'),
-            'requests'    => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => '希望の収集', 'script' => 'pages.js', 'page' => 'requests'),
-            'me/requests' => array('cap' => 'shift_submit_requests', 'needs_staff' => true, 'template' => 'app-page', 'title' => '希望休の提出', 'script' => 'pages.js', 'page' => 'me-requests'),
+            'patterns'    => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => '勤務区分', 'script' => array('ui.js', 'pages.js'), 'page' => 'patterns'),
+            'rules'       => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'ルール設定', 'script' => array('ui.js', 'pages.js'), 'page' => 'rules'),
+            'requests'    => array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => '希望の収集', 'script' => array('ui.js', 'pages.js'), 'page' => 'requests'),
+            'me/requests' => array('cap' => 'shift_submit_requests', 'needs_staff' => true, 'template' => 'app-page', 'title' => '希望休の提出', 'script' => array('ui.js', 'pages.js'), 'page' => 'me-requests'),
         );
+        $pages['schedules'] = array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'シフト表', 'script' => array('ui.js', 'pages.js'), 'page' => 'schedules');
+        $pages['me/schedule'] = array('cap' => 'shift_view', 'template' => 'app-page', 'title' => 'シフトを見る', 'script' => array('ui.js', 'pages.js'), 'page' => 'me-schedule');
+        $pages['settings'] = array('cap' => 'shift_manage_settings', 'template' => 'app-page', 'title' => '設定', 'script' => array('ui.js', 'pages.js'), 'page' => 'settings');
+        $extra = array();
+        if (preg_match('#^schedules/(\d+)$#', $path, $m)) {
+            // シフト表の編集画面（計算用のスクリプトを先に読み込む）
+            $pages[$path] = array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'シフト表の編集', 'script' => array('ui.js', 'solver.js', 'schedule.js'), 'page' => 'schedule-edit');
+            $extra = array(
+                'schedule_id' => (int) $m[1],
+                'worker_url'  => SS_URL . 'assets/solver-worker.js?ver=' . SS_VERSION,
+                'back_url'    => SS_View::app_url($tenant['public_id'], 'schedules'),
+            );
+        }
         if (isset($pages[$path])) {
             $def = $pages[$path];
             if (!current_user_can($def['cap']) || (!empty($def['needs_staff']) && empty($user['staff_id']))) {
@@ -172,11 +185,17 @@ final class SS_Router {
                 'limit'    => SS_Tenants::staff_limit($tenant),
                 'industry' => $tenant['industry'],
                 'today'    => wp_date('Y-m-d'),
+                'schedule_url' => SS_View::app_url($tenant['public_id'], 'schedules/__ID__'),
             );
+            $config = array_merge($config, $extra);
+            $scripts = array();
+            foreach ((array) $def['script'] as $file) {
+                $scripts[] = SS_URL . 'assets/' . $file . '?ver=' . SS_VERSION;
+            }
             SS_View::render($def['template'], array_merge($common, array(
                 'title'   => $def['title'],
                 'config'  => $config,
-                'scripts' => SS_URL . 'assets/' . $def['script'] . '?ver=' . SS_VERSION,
+                'scripts' => $scripts,
             )));
         }
         SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、準備中です。', 404, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
@@ -191,14 +210,19 @@ final class SS_Router {
             $items[] = array('patterns', '勤務区分');
             $items[] = array('rules', 'ルール');
             $items[] = array('requests', '希望の収集');
+            $items[] = array('schedules', 'シフト表');
         }
         $me = SS_Context::user();
         if ($me && !empty($me['staff_id']) && current_user_can('shift_submit_requests')) {
             $items[] = array('me/requests', '希望休の提出');
         }
+        $items[] = array('me/schedule', 'シフトを見る');
+        if (current_user_can('shift_manage_settings')) {
+            $items[] = array('settings', '設定');
+        }
         $nav = array();
         foreach ($items as $item) {
-            $nav[] = array('url' => SS_View::app_url($tenant['public_id'], $item[0]), 'label' => $item[1], 'current' => $item[0] === $current);
+            $nav[] = array('url' => SS_View::app_url($tenant['public_id'], $item[0]), 'label' => $item[1], 'current' => $item[0] === $current || ($item[0] === 'schedules' && strpos($current, 'schedules/') === 0));
         }
         return $nav;
     }

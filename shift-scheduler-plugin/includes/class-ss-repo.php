@@ -18,7 +18,7 @@ class SS_Repo_Exception extends Exception {
 
 final class SS_Repo {
     /** お客様ごとに分離するテーブル（`shift_` 接頭辞を除いた名前） */
-    const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions');
+    const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries');
 
     private $tenant_id;
 
@@ -89,6 +89,51 @@ final class SS_Repo {
             return 0;
         }
         return (int) $wpdb->insert_id;
+    }
+
+    /** 複数行をまとめて追加（全行に自分のお客様IDを付ける）。追加した行数を返す。 */
+    public function insert_many($table, array $rows) {
+        global $wpdb;
+        $t = $this->table($table);
+        $added = 0;
+        foreach (array_chunk(array_values($rows), 200) as $chunk) {
+            $cols = null;
+            $sql_rows = array();
+            $args = array();
+            foreach ($chunk as $row) {
+                unset($row['id']);
+                $row['tenant_id'] = $this->tenant_id; // 渡された値は無視して上書き
+                ksort($row);
+                if ($cols === null) {
+                    $cols = array_keys($row);
+                    foreach ($cols as $col) {
+                        $this->column($col);
+                    }
+                } elseif (array_keys($row) !== $cols) {
+                    throw new SS_Repo_Exception('rows must have the same columns');
+                }
+                $ph = array();
+                foreach ($row as $v) {
+                    if ($v === null) {
+                        $ph[] = 'NULL';
+                    } elseif (is_int($v) || is_bool($v)) {
+                        $ph[] = '%d';
+                        $args[] = (int) $v;
+                    } else {
+                        $ph[] = '%s';
+                        $args[] = (string) $v;
+                    }
+                }
+                $sql_rows[] = '(' . implode(',', $ph) . ')';
+            }
+            if ($cols === null) {
+                continue;
+            }
+            $sql = "INSERT INTO {$t} (" . implode(',', $cols) . ') VALUES ' . implode(',', $sql_rows);
+            $n = $wpdb->query($args ? $wpdb->prepare($sql, $args) : $sql);
+            $added += $n === false ? 0 : (int) $n;
+        }
+        return $added;
     }
 
     public function update($table, $id, array $data) {

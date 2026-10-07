@@ -1,98 +1,11 @@
 (function () {
   'use strict';
+  var U = window.SSUI;
   var cfg = window.SS_CONFIG || {};
   var root = document.getElementById('ss-root');
-  var notice = document.getElementById('ss-notice');
-  var WEEK = ['日', '月', '火', '水', '木', '金', '土'];
-
-  /* ---------- 共通 ---------- */
-
-  function api(method, path, body) {
-    return fetch(cfg.rest + path, {
-      method: method,
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce },
-      body: body ? JSON.stringify(body) : undefined
-    }).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
-        if (!res.ok) {
-          if (data && data.code === 'rest_cookie_invalid_nonce') {
-            throw new Error('ログイン状態が変わりました。ページを再読み込みするか、ログインし直してください。');
-          }
-          throw new Error(data && data.message ? data.message : '処理に失敗しました。');
-        }
-        return data;
-      });
-    });
-  }
-
-  function say(text, ok) {
-    notice.hidden = !text;
-    notice.textContent = text || '';
-    notice.className = 'ss-alert ' + (ok ? 'ss-alert-ok' : 'ss-alert-error');
-    if (text) { window.scrollTo({ top: 0, behavior: 'smooth' }); }
-  }
-
-  function fail(e) { say(e.message); }
-
-  function el(tag, attrs, children) {
-    var n = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) {
-      var v = attrs[k];
-      if (k === 'text') { n.textContent = v; }
-      else if (k.indexOf('on') === 0) { n.addEventListener(k.slice(2), v); }
-      else if (v === true) { n.setAttribute(k, ''); }
-      else if (v !== false && v !== null && v !== undefined) { n.setAttribute(k, v); }
-    });
-    (children || []).forEach(function (c) {
-      if (c === null || c === undefined) { return; }
-      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
-    });
-    return n;
-  }
-
-  function clear(n) { while (n.firstChild) { n.removeChild(n.firstChild); } }
-
-  function btn(label, fn, sub) {
-    return el('button', { type: 'button', class: 'ss-btn' + (sub ? ' ss-btn-sub' : ''), text: label, onclick: fn });
-  }
-
-  function field(label, input) { return el('label', {}, [label, input]); }
-
-  function pad(n) { return (n < 10 ? '0' : '') + n; }
-
-  /** 30分刻みの時刻の選択肢。withEnd=true のとき 24:00 を加える。 */
-  function timeSelect(name, value, withEnd) {
-    var s = el('select', { name: name });
-    var list = [];
-    for (var h = 0; h < 24; h++) { list.push(pad(h) + ':00'); list.push(pad(h) + ':30'); }
-    if (withEnd) { list.push('24:00'); }
-    list.forEach(function (t) {
-      var o = el('option', { value: t, text: t });
-      if (t === value) { o.selected = true; }
-      s.appendChild(o);
-    });
-    return s;
-  }
-
-  function parseDate(s) { var p = s.split('-'); return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); }
-  function fmtDate(d) { return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
-  function addDays(s, n) { var d = parseDate(s); d.setUTCDate(d.getUTCDate() + n); return fmtDate(d); }
-  function jpDate(s) { var d = parseDate(s); return (d.getUTCMonth() + 1) + '月' + d.getUTCDate() + '日（' + WEEK[d.getUTCDay()] + '）'; }
-
-  function table(headers, rows, emptyText) {
-    var thead = el('thead', {}, [el('tr', {}, headers.map(function (h) { return el('th', { text: h }); }))]);
-    var tbody = el('tbody');
-    if (!rows.length) {
-      tbody.appendChild(el('tr', {}, [el('td', { colspan: headers.length, text: emptyText || 'まだありません。', class: 'ss-muted' })]));
-    }
-    rows.forEach(function (r) { tbody.appendChild(r); });
-    return el('div', { class: 'ss-table-wrap' }, [el('table', { class: 'ss-table' }, [thead, tbody])]);
-  }
-
-  function td(content) {
-    return el('td', {}, Array.isArray(content) ? content : [content]);
-  }
+  var WEEK = U.WEEK, api = U.api, say = U.say, fail = U.fail, el = U.el, clear = U.clear, btn = U.btn, field = U.field,
+      pad = U.pad, timeSelect = U.timeSelect, parseDate = U.parseDate, fmtDate = U.fmtDate, addDays = U.addDays,
+      jpDate = U.jpDate, table = U.table, td = U.td;
 
   /* ---------- 勤務区分 ---------- */
 
@@ -508,6 +421,137 @@
     load();
   }
 
-  var pages = { patterns: patternsPage, rules: rulesPage, requests: requestsPage, 'me-requests': meRequestsPage };
+  /* ---------- シフト表の一覧（管理者） ---------- */
+
+  function schedulesPage() {
+    function load() { return api('GET', 'schedules').then(render).catch(fail); }
+
+    function openUrl(id) { return cfg.schedule_url.replace('__ID__', id); }
+
+    function render(d) {
+      clear(root);
+      var rows = d.schedules.map(function (sc) {
+        var ops = [el('a', { class: 'ss-btn', href: openUrl(sc.id), text: '開く' })];
+        if (cfg.writable) {
+          ops.push(btn('削除', function () {
+            if (!window.confirm('このシフト表と、入力した勤務をすべて削除しますか？（元に戻せません）')) { return; }
+            api('DELETE', 'schedules/' + sc.id).then(function () { say('削除しました。', true); return load(); }).catch(fail);
+          }, true));
+        }
+        return el('tr', {}, [
+          td(jpDate(sc.start_date) + ' 〜 ' + jpDate(sc.end_date)),
+          td(el('span', { class: 'ss-badge' + (sc.status === 'published' ? ' ss-badge-ok' : ''), text: sc.status === 'published' ? '公開中' : '下書き' })),
+          td(sc.entries + '件'),
+          td(el('div', { class: 'ss-actions' }, ops))
+        ]);
+      });
+      root.appendChild(table(['期間', '状態', '入力済みの勤務', ''], rows, 'まだシフト表がありません。'));
+      if (cfg.writable) { root.appendChild(form()); }
+    }
+
+    function form() {
+      var first = cfg.today.slice(0, 8) + '01';
+      var d = parseDate(first); d.setUTCMonth(d.getUTCMonth() + 1);
+      var start = fmtDate(d);
+      var e = parseDate(start); e.setUTCMonth(e.getUTCMonth() + 1); e.setUTCDate(0);
+      var f = el('form', { class: 'ss-form ss-form-row ss-section' }, [
+        el('h2', { class: 'ss-h2', text: '新しいシフト表を作る', style: 'grid-column:1/-1' }),
+        field('開始日', el('input', { type: 'date', name: 'start_date', value: start, required: true })),
+        field('終了日（62日以内）', el('input', { type: 'date', name: 'end_date', value: fmtDate(e), required: true })),
+        el('div', { class: 'ss-actions' }, [el('button', { type: 'submit', class: 'ss-btn', text: '作成して開く' })])
+      ]);
+      f.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        api('POST', 'schedules', { start_date: f.elements.start_date.value, end_date: f.elements.end_date.value })
+          .then(function (r) { window.location.href = openUrl(r.schedule.id); }).catch(fail);
+      });
+      return f;
+    }
+
+    load();
+  }
+
+  /* ---------- 公開されたシフトを見る ---------- */
+
+  function meSchedulePage() {
+    function load() { return api('GET', 'me/schedules').then(render).catch(fail); }
+
+    function render(d) {
+      clear(root);
+      if (!d.schedules.length) {
+        root.appendChild(el('p', { class: 'ss-muted', text: '公開されているシフトはまだありません。' }));
+        return;
+      }
+      var list = el('div', { class: 'ss-actions' });
+      d.schedules.forEach(function (sc) {
+        list.appendChild(btn(jpDate(sc.start_date) + '〜' + jpDate(sc.end_date), function () { open(sc); }, true));
+      });
+      root.appendChild(list);
+      root.appendChild(el('div', { id: 'ss-detail' }));
+      if (d.schedules.length) { open(d.schedules[0]); }
+    }
+
+    function open(sc) {
+      api('GET', 'me/schedules/' + sc.id).then(show).catch(fail);
+    }
+
+    function label(e, pats) {
+      if (!e.start_time) { return '休'; }
+      var p = null;
+      pats.forEach(function (x) { if (x.id === e.pattern_id) { p = x; } });
+      return p ? p.short_name || p.name : e.start_time.replace(/^0/, '') + '-' + e.end_time.replace(/^0/, '');
+    }
+
+    function show(r) {
+      var box = document.getElementById('ss-detail');
+      clear(box);
+      var dates = [];
+      for (var d = r.schedule.start_date; d <= r.schedule.end_date; d = addDays(d, 1)) { dates.push(d); }
+      var byKey = {};
+      r.entries.forEach(function (e) { byKey[e.staff_id + '|' + e.date] = e; });
+      var colorOf = {};
+      r.patterns.forEach(function (p) { colorOf[p.id] = p.color; });
+
+      box.appendChild(el('h2', { class: 'ss-h2 ss-section', text: jpDate(r.schedule.start_date) + '〜' + jpDate(r.schedule.end_date) }));
+      if (r.scope === 'self') { box.appendChild(el('p', { class: 'ss-sub', text: '自分のシフトのみ表示されます。' })); }
+
+      var head = el('tr', {}, [el('th', { text: '名前' })].concat(dates.map(function (dt) {
+        var dow = parseDate(dt).getUTCDay();
+        return el('th', { class: 'ss-gh' + (dow === 0 ? ' is-sun' : dow === 6 ? ' is-sat' : ''), text: (parseDate(dt).getUTCMonth() + 1) + '/' + parseDate(dt).getUTCDate() + WEEK[dow] });
+      })));
+      var rows = r.staff.map(function (s) {
+        return el('tr', { class: s.id === r.my_staff_id ? 'is-me' : '' }, [el('th', { class: 'ss-gname', text: s.name })].concat(dates.map(function (dt) {
+          var e = byKey[s.id + '|' + dt];
+          var c = el('td', { class: 'ss-gc', text: e ? label(e, r.patterns) : '' });
+          if (e && e.start_time) { c.style.background = colorOf[e.pattern_id] || '#dde1e8'; c.style.color = '#111'; c.title = e.start_time + '〜' + e.end_time; }
+          return c;
+        })));
+      });
+      box.appendChild(el('div', { class: 'ss-table-wrap' }, [el('table', { class: 'ss-grid' }, [el('thead', {}, [head]), el('tbody', {}, rows)])]));
+    }
+
+    load();
+  }
+
+  /* ---------- 設定 ---------- */
+
+  function settingsPage() {
+    api('GET', 'settings').then(function (d) {
+      clear(root);
+      var f = el('form', { class: 'ss-form' }, [
+        el('h2', { class: 'ss-h2', text: 'スタッフが見られるシフトの範囲' }),
+        el('label', { class: 'ss-inline' }, [el('input', { type: 'radio', name: 'staff_view', value: 'all', checked: d.staff_view === 'all' }), '全員のシフトを見られる（交代の相談がしやすい）']),
+        el('label', { class: 'ss-inline' }, [el('input', { type: 'radio', name: 'staff_view', value: 'self', checked: d.staff_view === 'self' }), '自分のシフトだけ見られる（他のスタッフのシフトは表示されません）']),
+        cfg.writable ? el('div', { class: 'ss-actions' }, [el('button', { type: 'submit', class: 'ss-btn', text: '保存' })]) : null
+      ]);
+      f.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        api('PUT', 'settings', { staff_view: f.elements.staff_view.value }).then(function () { say('保存しました。', true); }).catch(fail);
+      });
+      root.appendChild(f);
+    }).catch(fail);
+  }
+
+  var pages = { patterns: patternsPage, rules: rulesPage, requests: requestsPage, 'me-requests': meRequestsPage, schedules: schedulesPage, 'me-schedule': meSchedulePage, settings: settingsPage };
   if (pages[cfg.page] && root) { pages[cfg.page](); }
 })();

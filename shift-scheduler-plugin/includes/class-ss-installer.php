@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '3';
+    const DB_VERSION = '4';
 
     public static function activate() {
         self::create_tables();
@@ -201,6 +201,37 @@ final class SS_Installer {
   submitted_at datetime NOT NULL,
   PRIMARY KEY  (id),
   UNIQUE KEY uniq_submission (tenant_id, period_id, staff_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}schedules (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  status varchar(10) NOT NULL DEFAULT 'draft',
+  published_at datetime NULL,
+  created_by bigint(20) unsigned NULL,
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_status (tenant_id, status, start_date)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}entries (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  schedule_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  date date NOT NULL,
+  pattern_id bigint(20) unsigned NULL,
+  start_time varchar(5) NOT NULL DEFAULT '',
+  end_time varchar(5) NOT NULL DEFAULT '',
+  break_minutes smallint(5) unsigned NOT NULL DEFAULT 0,
+  locked tinyint(1) NOT NULL DEFAULT 0,
+  note varchar(200) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_entry (tenant_id, schedule_id, staff_id, date),
+  KEY by_schedule (tenant_id, schedule_id, date)
 ) $c;";
 
         foreach ($sql as $statement) {
