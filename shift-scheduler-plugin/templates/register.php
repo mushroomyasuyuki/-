@@ -23,5 +23,5 @@ $terms_url = get_option('ss_terms_url', ''); ?>
       <?php if ($terms_url) : ?><a href="<?php echo esc_url($terms_url); ?>" target="_blank" rel="noopener">利用規約</a><?php else : ?>利用規約<?php endif; ?>に同意します</label>
     <button type="submit" class="ss-btn">無料で登録する</button>
   </form>
-  <p class="ss-sub">すでに登録済みの方は <a href="<?php echo esc_url(home_url('/login/')); ?>">ログイン</a></p>
+  <p class="ss-sub">すでに登録済みの方は <a href="<?php echo esc_url(SS_Router::url('login')); ?>">ログイン</a></p>
 </section>

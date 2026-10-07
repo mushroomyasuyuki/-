@@ -10,6 +10,50 @@ final class SS_Router {
         add_action('init', array(__CLASS__, 'add_rules'));
         add_filter('query_vars', array(__CLASS__, 'query_vars'));
         add_action('template_redirect', array(__CLASS__, 'dispatch'), 1);
+        add_action('init', array(__CLASS__, 'maybe_flush'), 99);
+    }
+
+    /** 有効化の時点で反映されなかった場合に備え、バージョンが変わったら一度だけURLの割り当てを作り直す。 */
+    public static function maybe_flush() {
+        if (get_option('ss_rewrite_version') !== SS_VERSION) {
+            flush_rewrite_rules(false);
+            update_option('ss_rewrite_version', SS_VERSION);
+        }
+    }
+
+    /** 「きれいなURL」（/register/ など）が使える設定か。 */
+    public static function pretty_enabled() {
+        $structure = (string) get_option('permalink_structure');
+        return $structure !== '' && strpos($structure, '/index.php') !== 0;
+    }
+
+    /**
+     * 各ページのURL。パーマリンクが「基本」などの場合は、
+     * /?ss_page=register のような形式にして、設定に関係なく表示できるようにする。
+     */
+    public static function url($page, $arg = '', $path = '') {
+        $pretty = self::pretty_enabled();
+        switch ($page) {
+            case 'register':
+            case 'login':
+                return $pretty ? home_url('/' . $page . '/') : add_query_arg('ss_page', $page, home_url('/'));
+            case 'verify':
+            case 'invite':
+                return $pretty
+                    ? home_url('/' . $page . '/' . $arg . '/')
+                    : add_query_arg(array('ss_page' => $page, 'ss_token' => $arg), home_url('/'));
+            case 'app':
+                $path = trim((string) $path, '/');
+                if ($pretty) {
+                    return home_url('/s/' . $arg . '/' . ($path === '' ? '' : $path . '/'));
+                }
+                $args = array('ss_page' => 'app', 'ss_tenant' => $arg);
+                if ($path !== '') {
+                    $args['ss_path'] = $path;
+                }
+                return add_query_arg($args, home_url('/'));
+        }
+        return home_url('/');
     }
 
     public static function add_rules() {
@@ -26,7 +70,7 @@ final class SS_Router {
 
     public static function dispatch() {
         $page = get_query_var('ss_page');
-        if (!$page) {
+        if (!$page || !in_array($page, array('register', 'login', 'verify', 'invite', 'app'), true)) {
             return;
         }
         $err = isset($_GET['ss_err']) ? SS_View::error_text(sanitize_key(wp_unslash($_GET['ss_err']))) : '';
@@ -45,7 +89,7 @@ final class SS_Router {
             case 'verify':
                 $token = (string) get_query_var('ss_token');
                 if (!SS_System::peek_token($token, 'verify')) {
-                    SS_View::message('リンクが無効です', 'リンクの有効期限が切れているか、すでに使用されています。', 400, home_url('/register/'), '登録ページへ');
+                    SS_View::message('リンクが無効です', 'リンクの有効期限が切れているか、すでに使用されています。', 400, SS_Router::url('register'), '登録ページへ');
                 }
                 SS_View::render('verify', array('title' => '登録の確認', 'token' => $token));
                 break;
@@ -54,7 +98,7 @@ final class SS_Router {
                 $token = (string) get_query_var('ss_token');
                 $row = SS_System::peek_token($token, 'invite');
                 if (!$row) {
-                    SS_View::message('招待リンクが無効です', '有効期限が切れているか、すでに使用されています。管理者に再招待を依頼してください。', 400, home_url('/login/'), 'ログインページへ');
+                    SS_View::message('招待リンクが無効です', '有効期限が切れているか、すでに使用されています。管理者に再招待を依頼してください。', 400, SS_Router::url('login'), 'ログインページへ');
                 }
                 $user = SS_System::user_by_id($row['user_id']);
                 $tenant = $user ? SS_System::tenant_by_id($user['tenant_id']) : null;
@@ -75,7 +119,7 @@ final class SS_Router {
 
     private static function render_app() {
         if (!is_user_logged_in()) {
-            wp_safe_redirect(home_url('/login/'));
+            wp_safe_redirect(SS_Router::url('login'));
             exit;
         }
         $user = SS_Context::user();
@@ -83,16 +127,19 @@ final class SS_Router {
         $requested = (string) get_query_var('ss_tenant');
         // 自分のお客様以外のIDは、存在の有無も分からないよう同じ「見つかりません」を返す
         if (!$user || !$tenant || !hash_equals((string) $tenant['public_id'], $requested)) {
-            SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、表示する権限がありません。', 404, home_url('/login/'), 'ログインページへ');
+            SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、表示する権限がありません。', 404, SS_Router::url('login'), 'ログインページへ');
         }
 
         $path = trim((string) get_query_var('ss_path'), '/');
+        if (!preg_match('/^[A-Za-z0-9\/_-]*$/', $path)) {
+            $path = '-';
+        }
         $common = array(
             'tenant'  => $tenant,
             'me'      => $user,
             'status'  => SS_Tenants::effective_status($tenant),
             'nav'     => self::nav($tenant, $path),
-            'logout'  => wp_logout_url(home_url('/login/')),
+            'logout'  => wp_logout_url(SS_Router::url('login')),
         );
 
         if ($path === '') {

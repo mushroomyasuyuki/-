@@ -9,5 +9,5 @@
     <label>パスワード<input type="password" name="password" autocomplete="current-password" required></label>
     <button type="submit" class="ss-btn">ログイン</button>
   </form>
-  <p class="ss-sub"><a href="<?php echo esc_url(wp_lostpassword_url(home_url('/login/'))); ?>">パスワードを忘れた方</a> ／ <a href="<?php echo esc_url(home_url('/register/')); ?>">無料登録</a></p>
+  <p class="ss-sub"><a href="<?php echo esc_url(wp_lostpassword_url(SS_Router::url('login'))); ?>">パスワードを忘れた方</a> ／ <a href="<?php echo esc_url(SS_Router::url('register')); ?>">無料登録</a></p>
 </section>

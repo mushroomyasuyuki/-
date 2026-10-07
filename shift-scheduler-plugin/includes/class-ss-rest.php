@@ -179,7 +179,7 @@ final class SS_Rest {
         }
 
         $token = SS_System::create_token($user_id, (int) $tenant['id'], 'invite', SS_Auth::INVITE_TTL);
-        $link = home_url('/invite/' . $token . '/');
+        $link = SS_Router::url('invite', $token);
         SS_System::mail($email, '「' . $tenant['name'] . '」のシフトへの招待', $staff['name'] . " 様\n\n「" . $tenant['name'] . "」からシフトシステムに招待されました。\n下記のリンクからパスワードを設定して、登録を完了してください（7日間有効）。\n\n" . $link . "\n\n心当たりがない場合は、このメールを破棄してください。");
 
         return rest_ensure_response(array('ok' => true));

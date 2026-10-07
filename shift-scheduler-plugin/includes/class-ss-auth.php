@@ -23,7 +23,7 @@ final class SS_Auth {
     /* ---------- 登録 ---------- */
 
     public static function handle_register() {
-        $back = home_url('/register/');
+        $back = SS_Router::url('register');
         self::verify_nonce('ss_register', $back);
         if (!empty($_POST['website'])) { // ボット対策（人には見えない欄）
             wp_safe_redirect($back);
@@ -92,7 +92,7 @@ final class SS_Auth {
         $user_id = (int) $wpdb->insert_id;
 
         $token = SS_System::create_token($user_id, $tenant_id, 'verify', self::VERIFY_TTL);
-        $link = home_url('/verify/' . $token . '/');
+        $link = SS_Router::url('verify', $token);
         SS_System::mail($email, 'メールアドレスの確認', $person . " 様\n\nご登録ありがとうございます。\n下記のリンクを開いて、登録を完了してください（48時間有効）。\n\n" . $link . "\n\n心当たりがない場合は、このメールを破棄してください。");
 
         wp_safe_redirect(add_query_arg('ss_msg', 'verify_sent', $back));
@@ -116,17 +116,17 @@ final class SS_Auth {
     /* ---------- メール認証（確認ボタンを押したときに確定する） ---------- */
 
     public static function handle_verify() {
-        self::verify_nonce('ss_verify', home_url('/login/'));
+        self::verify_nonce('ss_verify', SS_Router::url('login'));
         $raw = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
         $row = SS_System::consume_token($raw, 'verify');
         if (!$row) {
-            SS_View::message('リンクが無効です', 'リンクの有効期限が切れているか、すでに使用されています。お手数ですが、もう一度登録してください。', 400, home_url('/register/'), '登録ページへ');
+            SS_View::message('リンクが無効です', 'リンクの有効期限が切れているか、すでに使用されています。お手数ですが、もう一度登録してください。', 400, SS_Router::url('register'), '登録ページへ');
         }
         global $wpdb;
         $user = SS_System::user_by_id($row['user_id']);
         $tenant = $user ? SS_System::tenant_by_id($user['tenant_id']) : null;
         if (!$user || !$tenant) {
-            SS_View::message('リンクが無効です', '登録情報が見つかりません。', 400, home_url('/register/'), '登録ページへ');
+            SS_View::message('リンクが無効です', '登録情報が見つかりません。', 400, SS_Router::url('register'), '登録ページへ');
         }
 
         if ($tenant['status'] === 'unverified') {
@@ -146,7 +146,7 @@ final class SS_Auth {
     /* ---------- ログイン ---------- */
 
     public static function handle_login() {
-        $back = home_url('/login/');
+        $back = SS_Router::url('login');
         self::verify_nonce('ss_login', $back);
         $email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
         $password = isset($_POST['password']) ? (string) wp_unslash($_POST['password']) : '';
@@ -182,21 +182,21 @@ final class SS_Auth {
     /* ---------- スタッフ招待の受諾 ---------- */
 
     public static function handle_accept_invite() {
-        self::verify_nonce('ss_accept_invite', home_url('/login/'));
+        self::verify_nonce('ss_accept_invite', SS_Router::url('login'));
         $raw = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : '';
         $password = isset($_POST['password']) ? (string) wp_unslash($_POST['password']) : '';
-        $back = home_url('/invite/' . $raw . '/');
+        $back = SS_Router::url('invite', $raw);
         if (strlen($password) < 8) {
             self::back($back, 'password');
         }
         $row = SS_System::consume_token($raw, 'invite');
         if (!$row) {
-            SS_View::message('招待リンクが無効です', '有効期限が切れているか、すでに使用されています。管理者に再招待を依頼してください。', 400, home_url('/login/'), 'ログインページへ');
+            SS_View::message('招待リンクが無効です', '有効期限が切れているか、すでに使用されています。管理者に再招待を依頼してください。', 400, SS_Router::url('login'), 'ログインページへ');
         }
         $user = SS_System::user_by_id($row['user_id']);
         $tenant = $user ? SS_System::tenant_by_id($user['tenant_id']) : null;
         if (!$user || !$tenant || $user['status'] !== 'invited') {
-            SS_View::message('招待リンクが無効です', '招待が取り消されたか、すでに登録済みです。', 400, home_url('/login/'), 'ログインページへ');
+            SS_View::message('招待リンクが無効です', '招待が取り消されたか、すでに登録済みです。', 400, SS_Router::url('login'), 'ログインページへ');
         }
         global $wpdb;
         wp_set_password($password, (int) $user['wp_user_id']);

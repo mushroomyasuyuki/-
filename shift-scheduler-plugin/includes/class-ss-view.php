@@ -45,6 +45,6 @@ final class SS_View {
     }
 
     public static function app_url($public_id, $path = '') {
-        return home_url('/s/' . $public_id . '/' . ltrim($path, '/'));
+        return SS_Router::url('app', $public_id, $path);
     }
 }
