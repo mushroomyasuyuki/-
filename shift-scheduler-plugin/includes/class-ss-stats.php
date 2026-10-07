@@ -24,9 +24,11 @@ final class SS_Stats {
                 $by[$r['status']] = (int) $r['n'];
             }
         }
-        $expired = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t} WHERE deleted_at IS NULL AND status = 'trial' AND trial_end < %s", $now));
-        $by['trial'] -= $expired;
+        $expired = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t} WHERE deleted_at IS NULL AND status = 'trial' AND trial_end < %s AND payjp_subscription_id = ''", $now));
+        $expired_paid = (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t} WHERE deleted_at IS NULL AND status = 'trial' AND trial_end < %s AND payjp_subscription_id <> ''", $now));
+        $by['trial'] -= $expired + $expired_paid;
         $by['readonly'] += $expired;
+        $by['active'] += $expired_paid;
         $verified = $by['trial'] + $by['active'] + $by['grace'] + $by['readonly'] + $by['suspended'];
 
         $since = function ($days) use ($ts) { return gmdate('Y-m-d H:i:s', $ts - $days * 86400); };
@@ -68,6 +70,9 @@ final class SS_Stats {
             'trial_ending'   => (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t} WHERE deleted_at IS NULL AND status = 'trial' AND trial_end >= %s AND trial_end <= %s", $now, gmdate('Y-m-d H:i:s', $ts + 14 * 86400))),
             'months'         => $months,
             'industry'       => $industry,
+            'mrr'            => (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COALESCE(SUM(p.price), 0) FROM {$t} t JOIN " . SS_System::table('plans') . " p ON p.id = t.plan_id
+                 WHERE t.deleted_at IS NULL AND t.payjp_subscription_id <> '' AND (t.status IN ('active','grace') OR (t.status = 'trial' AND t.trial_end < %s))", $now)),
             'staff_total'    => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$st} s JOIN {$t} t ON t.id = s.tenant_id WHERE s.active = 1 AND t.deleted_at IS NULL AND t.status <> 'unverified'"),
             'schedules'      => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$sc} c JOIN {$t} t ON t.id = c.tenant_id WHERE t.deleted_at IS NULL AND t.status <> 'unverified'"),
             'schedules_pub'  => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$sc} c JOIN {$t} t ON t.id = c.tenant_id WHERE c.status = 'published' AND t.deleted_at IS NULL AND t.status <> 'unverified'"),
@@ -97,9 +102,12 @@ final class SS_Stats {
             $where .= " AND t.status = 'trial' AND t.trial_end >= %s";
             $params[] = $now;
         } elseif ($status === 'readonly') {
-            $where .= " AND (t.status = 'readonly' OR (t.status = 'trial' AND t.trial_end < %s))";
+            $where .= " AND (t.status = 'readonly' OR (t.status = 'trial' AND t.trial_end < %s AND t.payjp_subscription_id = ''))";
             $params[] = $now;
-        } elseif (in_array($status, array('unverified', 'active', 'grace', 'suspended'), true)) {
+        } elseif ($status === 'active') {
+            $where .= " AND (t.status = 'active' OR (t.status = 'trial' AND t.trial_end < %s AND t.payjp_subscription_id <> ''))";
+            $params[] = $now;
+        } elseif (in_array($status, array('unverified', 'grace', 'suspended'), true)) {
             $where .= ' AND t.status = %s';
             $params[] = $status;
         }
@@ -109,7 +117,7 @@ final class SS_Stats {
 
         $per = isset($args['per_page']) ? max(1, min(500, (int) $args['per_page'])) : 50;
         $page = isset($args['page']) ? max(1, (int) $args['page']) : 1;
-        $sql = "SELECT t.id, t.name, t.industry, t.status, t.created_at, t.trial_end,
+        $sql = "SELECT t.id, t.name, t.industry, t.status, t.created_at, t.trial_end, t.payjp_subscription_id,
             (SELECT COUNT(*) FROM {$st} s WHERE s.tenant_id = t.id AND s.active = 1) AS staff_count,
             (SELECT COUNT(*) FROM {$sc} c WHERE c.tenant_id = t.id) AS schedule_count,
             (SELECT MAX(x.last_login_at) FROM {$u} x WHERE x.tenant_id = t.id) AS last_login,

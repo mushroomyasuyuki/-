@@ -13,7 +13,8 @@ final class SS_Tenants {
     public static function effective_status(array $tenant) {
         $status = $tenant['status'];
         if ($status === 'trial' && !empty($tenant['trial_end']) && strtotime($tenant['trial_end'] . ' UTC') < time()) {
-            return 'readonly';
+            // 無料期間が終わっても、お支払い方法の登録済み（定期課金あり）なら、ご契約中として扱う（毎日の同期・通知で最新に更新される）
+            return !empty($tenant['payjp_subscription_id']) ? 'active' : 'readonly';
         }
         return $status;
     }

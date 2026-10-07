@@ -14,6 +14,7 @@ class FakeWpdb {
         $this->pdo = new PDO('sqlite::memory:'); $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $t = array(
             'tenants' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, public_id, name, industry, status, trial_start, trial_end, plan_id, payjp_subscription_id DEFAULT "", settings, created_at, deleted_at',
+            'plans' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, name, price',
             'users' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, wp_user_id, email, role, staff_id, status, last_login_at, created_at',
             'staff' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, active DEFAULT 1',
             'schedules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, start_date, end_date, status, created_at',
@@ -151,6 +152,26 @@ $csv = SS_Stats::csv($l['rows']);
 check('csv has BOM and header', strpos($csv, "\xEF\xBB\xBF") === 0 && strpos($csv, '事業者名') !== false);
 check('csv row count (header + 8)', substr_count($csv, "\r\n") === 9);
 check('csv neutralizes formulas', SS_Stats::csv_cell('=HYPERLINK("x")') === '"\'=HYPERLINK(""x"")"' && SS_Stats::csv_cell('+1') === '"\'+1"' && SS_Stats::csv_cell('@a') === '"\'@a"' && SS_Stats::csv_cell('普通') === '"普通"');
+
+// 月額の見込み：契約中（active／お支払い確認中）のプランの月額の合計。無料期間中の契約・契約なしは含めない
+$wpdb->insert('wp_shift_plans', array('name' => 'ライト', 'price' => 500));
+$wpdb->insert('wp_shift_plans', array('name' => 'スタンダード', 'price' => 1000));
+$wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 1, payjp_subscription_id = 'sub_d' WHERE id = {$d}");   // 契約中・ライト
+$wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 2, payjp_subscription_id = 'sub_e' WHERE id = {$e}");   // お支払い確認中・スタンダード
+$wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 1, payjp_subscription_id = 'sub_a' WHERE id = {$a}");   // 無料期間中に契約済み（まだ請求なし）
+check('monthly revenue estimate: active + grace only (500 + 1000), trial-period subscriptions excluded', SS_Stats::summary($NOW)['mrr'] === 1500, 'mrr=' . SS_Stats::summary($NOW)['mrr']);
+
+// 無料期間が終わっても、定期課金がある（まだ状態が更新されていない）お客様は「閲覧のみ」ではなく「契約中」として数える
+$before = SS_Stats::summary($NOW);
+$k = tenant('契約済みK', 'restaurant', 'trial', '2026-07-01 00:00:00', '2026-09-01 00:00:00');
+$wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 1, payjp_subscription_id = 'sub_k' WHERE id = {$k}");
+$after = SS_Stats::summary($NOW);
+check('expired trial with a subscription counts as paying, not readonly', $after['by_status']['active'] === $before['by_status']['active'] + 1 && $after['by_status']['readonly'] === $before['by_status']['readonly'] && $after['by_status']['trial'] === $before['by_status']['trial'] && $after['total'] === $before['total'] + 1);
+check('...and adds to monthly revenue', $after['mrr'] === 2000, 'mrr=' . $after['mrr']);
+$byK = array(); foreach (SS_Stats::tenants(array(), $NOW)['rows'] as $r) { $byK[$r['name']] = $r; }
+check('list shows it as active', $byK['契約済みK']['effective_status'] === 'active');
+check('status filter: active includes it, readonly does not', SS_Stats::tenants(array('status' => 'active'), $NOW)['total'] === 2 && SS_Stats::tenants(array('status' => 'readonly'), $NOW)['total'] === 2);
+check('status filter: trial excludes it', SS_Stats::tenants(array('status' => 'trial'), $NOW)['total'] === 2);
 
 // 空の状態でも落ちない
 $wpdb->pdo->exec('DELETE FROM wp_shift_tenants');

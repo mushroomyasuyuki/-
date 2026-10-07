@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '4';
+    const DB_VERSION = '5';
 
     public static function activate() {
         self::create_tables();
@@ -119,6 +119,7 @@ final class SS_Installer {
   max_staff int(11) NOT NULL,
   price int(11) NOT NULL,
   payjp_plan_id varchar(64) NOT NULL DEFAULT '',
+  payjp_amount int(11) NOT NULL DEFAULT 0,
   active tinyint(1) NOT NULL DEFAULT 1,
   sort_order int(11) NOT NULL DEFAULT 0,
   PRIMARY KEY  (id)

@@ -162,6 +162,7 @@ final class SS_Router {
         );
         $pages['schedules'] = array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'シフト表', 'script' => array('ui.js', 'pages.js'), 'page' => 'schedules');
         $pages['me/schedule'] = array('cap' => 'shift_view', 'template' => 'app-page', 'title' => 'シフトを見る', 'script' => array('ui.js', 'pages.js'), 'page' => 'me-schedule');
+        $pages['billing'] = array('cap' => 'shift_manage_billing', 'template' => 'app-page', 'title' => 'ご契約・お支払い', 'script' => array('ui.js', 'pages.js'), 'page' => 'billing');
         $pages['settings'] = array('cap' => 'shift_manage_settings', 'template' => 'app-page', 'title' => '設定', 'script' => array('ui.js', 'pages.js'), 'page' => 'settings');
         $extra = array();
         if (preg_match('#^schedules/(\d+)$#', $path, $m)) {
@@ -218,6 +219,9 @@ final class SS_Router {
             $items[] = array('me/requests', '希望休の提出');
         }
         $items[] = array('me/schedule', 'シフトを見る');
+        if (current_user_can('shift_manage_billing')) {
+            $items[] = array('billing', 'ご契約・お支払い');
+        }
         if (current_user_can('shift_manage_settings')) {
             $items[] = array('settings', '設定');
         }

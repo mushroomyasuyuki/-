@@ -12,6 +12,7 @@ final class SS_Cron {
 
     public static function daily() {
         global $wpdb;
+        SS_Billing::daily(); // 支払いの同期・解約予約・猶予・無料期間の案内
         $tenants = SS_System::table('tenants');
         $users = SS_System::table('users');
         $tokens = SS_System::table('tokens');

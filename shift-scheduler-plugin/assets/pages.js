@@ -552,6 +552,149 @@
     }).catch(fail);
   }
 
-  var pages = { patterns: patternsPage, rules: rulesPage, requests: requestsPage, 'me-requests': meRequestsPage, schedules: schedulesPage, 'me-schedule': meSchedulePage, settings: settingsPage };
+  /* ---------- ご契約・お支払い ---------- */
+
+  function billingPage() {
+    var STATUS = { trial: '無料期間中', active: 'ご契約中', grace: 'お支払い確認中', readonly: '閲覧のみ', suspended: '停止中' };
+    var payjp = null, cardEl = null;
+
+    function load() { return api('GET', 'billing').then(render).catch(fail); }
+    function yen(n) { return Number(n).toLocaleString('ja-JP') + '円'; }
+    function day(s) { return s ? jpDate(s.slice(0, 10)) : '-'; }
+
+    /** カード入力欄（PAY.JPの入力部品）を用意する。カード番号は、このサイトのサーバーには送られない。 */
+    function mountCard(container, publicKey) {
+      return new Promise(function (resolve, reject) {
+        function ready() {
+          try {
+            payjp = payjp || window.Payjp(publicKey);
+            var els = payjp.elements();
+            cardEl = els.create('card');
+            cardEl.mount(container);
+            resolve();
+          } catch (e) { reject(e); }
+        }
+        if (window.Payjp) { ready(); return; }
+        var sc = document.createElement('script');
+        sc.src = 'https://js.pay.jp/v2/pay.js';
+        sc.onload = ready;
+        sc.onerror = function () { reject(new Error('カード入力部品を読み込めませんでした。通信状況をご確認のうえ、ページを再読み込みしてください。')); };
+        document.head.appendChild(sc);
+      });
+    }
+
+    function getToken() {
+      return payjp.createToken(cardEl).then(function (r) {
+        if (!r || r.error) { throw new Error(r && r.error && r.error.message ? r.error.message : 'カード情報を確認してください。'); }
+        return r.id;
+      });
+    }
+
+    function done(msg) { say(msg, true); return load(); }
+
+    function render(d) {
+      clear(root);
+      cardEl = null;
+      var facts = [
+        el('dt', { text: 'ご契約の状態' }), el('dd', { text: (STATUS[d.status] || d.status) + (d.status === 'trial' && d.trial_days_left !== null ? '（無料期間はあと' + d.trial_days_left + '日）' : '') })
+      ];
+      if (d.trial_end && d.trial_running) { facts.push(el('dt', { text: '無料期間の終了日' }), el('dd', { text: day(d.trial_end) })); }
+      var cur = null;
+      d.plans.forEach(function (p) { if (p.id === d.plan_id) { cur = p; } });
+      if (d.has_subscription && cur) { facts.push(el('dt', { text: 'プラン' }), el('dd', { text: cur.name + '（' + yen(cur.price) + '／月、スタッフ' + cur.max_staff + '名まで）' })); }
+      if (d.has_subscription && d.next_billing_at && !d.cancel_at) { facts.push(el('dt', { text: '次回の請求日' }), el('dd', { text: day(d.next_billing_at) })); }
+      facts.push(el('dt', { text: 'いまのスタッフ数' }), el('dd', { text: d.staff_count + '名' }));
+      root.appendChild(el('dl', { class: 'ss-facts' }, facts));
+
+      if (!d.configured) {
+        root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: 'お支払いの準備中です。しばらくしてから、もう一度お試しください。' }));
+        return;
+      }
+      if (d.status === 'readonly') {
+        root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: '無料期間が終了したため、閲覧のみの状態です。プランとお支払い方法を登録すると、すぐに編集できるようになります。' }));
+      }
+      if (d.status === 'grace') {
+        root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: '直近のお支払いを確認できませんでした。' + (d.grace_since ? day(addDays(d.grace_since.slice(0, 10), 7)) + 'までに、' : '') + '下の「カードを変更する」から、有効なカードを登録してください。期限を過ぎると、閲覧のみになります。' }));
+      }
+      if (!d.has_subscription) { subscribeForm(d); } else { manageForm(d); }
+    }
+
+    function planChoices(d, name, selected) {
+      var box = el('div');
+      d.plans.forEach(function (p) {
+        var ok = p.ready && p.fits;
+        var note = !p.ready ? '（現在お選びいただけません）' : (!p.fits ? '（スタッフ数が上限を超えています）' : '');
+        var input = el('input', { type: 'radio', name: name, value: String(p.id), disabled: !ok, checked: p.id === selected });
+        box.appendChild(el('div', {}, [el('label', { class: 'ss-inline', style: 'margin:6px 0' }, [input, p.name + '　' + yen(p.price) + '／月（スタッフ' + p.max_staff + '名まで）' + note])]));
+      });
+      return box;
+    }
+
+    function chosen(box) {
+      var r = box.querySelector('input[type=radio]:checked');
+      return r ? parseInt(r.value, 10) : 0;
+    }
+
+    function cardBox(d, label, onSubmit, buttonText) {
+      var mount = el('div', { id: 'ss-card', class: 'ss-card-input' });
+      var b = btn(buttonText, function () {
+        if (!cardEl) { say('カード入力欄の準備ができていません。'); return; }
+        b.disabled = true;
+        getToken().then(onSubmit).catch(function (e) { fail(e); }).then(function () { b.disabled = false; });
+      });
+      var wrap = el('div', {}, [el('p', { class: 'ss-sub', text: label }), mount, el('div', { class: 'ss-actions', style: 'margin-top:10px' }, [b])]);
+      mountCard(mount, d.public_key).catch(function (e) { fail(e); });
+      return wrap;
+    }
+
+    function subscribeForm(d) {
+      var rec = d.plans.filter(function (p) { return p.ready && p.fits; })[0];
+      var choices = planChoices(d, 'plan', rec ? rec.id : 0);
+      var first = d.trial_running ? 'お申し込みいただいても、請求は無料期間の終了日（' + day(d.trial_end) + '）から始まります。それまでは、お支払いは発生しません。' : 'お申し込みの時点で、最初のご請求が行われます。';
+      root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'プランを選んで契約する' }));
+      root.appendChild(choices);
+      root.appendChild(el('p', { class: 'ss-sub', text: first }));
+      root.appendChild(cardBox(d, 'クレジットカード（カード番号は、このサイトには保存されません）', function (token) {
+        var plan = chosen(choices);
+        if (!plan) { throw new Error('プランを選んでください。'); }
+        return api('POST', 'billing/subscribe', { plan_id: plan, card_token: token }).then(function () { return done('ご契約を受け付けました。ありがとうございます。'); });
+      }, 'カードを登録して契約する'));
+      root.appendChild(el('p', { class: 'ss-sub', text: '解約は、いつでもこの画面からできます。解約後も、お支払い済みの期間の終わりまでご利用いただけます。' }));
+    }
+
+    function manageForm(d) {
+      if (d.cancel_at) {
+        root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: '解約を受け付けています。' + day(d.cancel_at) + 'まで、ご利用いただけます（以後の請求は発生しません）。' }));
+        root.appendChild(btn('解約を取り消す', function () {
+          api('POST', 'billing/cancel/undo').then(function () { return done('解約を取り消しました。請求は、' + day(d.cancel_at) + 'から再開されます。'); }).catch(fail);
+        }));
+        return;
+      }
+      root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'プランの変更' }));
+      var choices = planChoices(d, 'plan', d.plan_id);
+      root.appendChild(choices);
+      root.appendChild(el('div', { class: 'ss-actions' }, [btn('このプランに変更する', function () {
+        var plan = chosen(choices);
+        if (!plan || plan === d.plan_id) { say('現在と違うプランを選んでください。'); return; }
+        api('POST', 'billing/plan', { plan_id: plan }).then(function () { return done('プランを変更しました。'); }).catch(fail);
+      })]));
+
+      root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'カードの変更' }));
+      root.appendChild(cardBox(d, '新しいクレジットカードを入力してください。', function (token) {
+        return api('POST', 'billing/card', { card_token: token }).then(function () { return done('カードを変更しました。'); });
+      }, 'カードを変更する'));
+
+      root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: '解約' }));
+      root.appendChild(el('p', { class: 'ss-sub', text: '解約すると、以後の請求が止まります。お支払い済みの期間の終わりまでは、これまでどおりご利用いただけます。その後は閲覧のみとなり、データは削除されません（再契約すると、すぐに編集できます）。' }));
+      root.appendChild(btn('解約する', function () {
+        if (!window.confirm('解約します。よろしいですか？（お支払い済みの期間の終わりまでは、ご利用いただけます）')) { return; }
+        api('POST', 'billing/cancel').then(function () { return done('解約を受け付けました。'); }).catch(fail);
+      }, true));
+    }
+
+    load();
+  }
+
+  var pages = { patterns: patternsPage, rules: rulesPage, requests: requestsPage, 'me-requests': meRequestsPage, schedules: schedulesPage, 'me-schedule': meSchedulePage, settings: settingsPage, billing: billingPage };
   if (pages[cfg.page] && root) { pages[cfg.page](); }
 })();

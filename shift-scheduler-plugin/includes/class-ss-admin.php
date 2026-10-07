@@ -13,16 +13,22 @@ if (!defined('ABSPATH')) {
 final class SS_Admin {
     const PAGE = 'shift-scheduler';
     const PAGE_URLS = 'shift-scheduler-urls';
+    const PAGE_BILLING = 'shift-scheduler-billing';
 
     public static function init() {
         add_action('admin_menu', array(__CLASS__, 'menu'));
         add_action('admin_notices', array(__CLASS__, 'notice'));
         add_action('admin_post_ss_export_tenants', array(__CLASS__, 'export_csv'));
+        add_action('admin_post_ss_save_payjp', array(__CLASS__, 'save_payjp'));
+        add_action('admin_post_ss_check_payjp', array(__CLASS__, 'check_payjp'));
+        add_action('admin_post_ss_save_plans', array(__CLASS__, 'save_plans'));
+        add_action('admin_post_ss_migrate_plan', array(__CLASS__, 'migrate_plan'));
     }
 
     public static function menu() {
         add_menu_page('シフト作成：利用状況', 'シフト作成', 'manage_options', self::PAGE, array(__CLASS__, 'stats_page'), 'dashicons-calendar-alt', 58);
         add_submenu_page(self::PAGE, '利用状況・お客様一覧', '利用状況・お客様一覧', 'manage_options', self::PAGE, array(__CLASS__, 'stats_page'));
+        add_submenu_page(self::PAGE, 'プラン・決済設定', 'プラン・決済設定', 'manage_options', self::PAGE_BILLING, array(__CLASS__, 'billing_page'));
         add_submenu_page(self::PAGE, 'ページのURL', 'ページのURL', 'manage_options', self::PAGE_URLS, array(__CLASS__, 'urls_page'));
     }
 
@@ -73,6 +79,7 @@ final class SS_Admin {
         echo self::card('無料期間中（社）', number_format($by['trial']), '14日以内に終了 ' . $s['trial_ending'] . '社');
         echo self::card('閲覧のみ（社）', number_format($by['readonly']), '無料期間が終わって未契約');
         echo self::card('停止中（社）', number_format($by['suspended']));
+        echo self::card('月額の見込み（円）', number_format($s['mrr']), '契約中のプランの月額の合計');
         echo '</div>';
 
         echo '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0">';
@@ -173,5 +180,172 @@ final class SS_Admin {
             echo '<div class="notice notice-warning inline"><p>現在のパーマリンク設定では、URLが <code>?ss_page=register</code> のような形式になります。URLをすっきりさせたい場合は、「設定 → パーマリンク」で「投稿名」などを選んで保存してください。</p></div>';
         }
         echo '</div>';
+    }
+
+    /* ---------- プラン・決済設定 ---------- */
+
+    private static function flash($type, $message) {
+        set_transient('ss_admin_flash_' . get_current_user_id(), array($type, $message), 120);
+    }
+
+    private static function back_billing() {
+        wp_safe_redirect(admin_url('admin.php?page=' . self::PAGE_BILLING));
+        exit;
+    }
+
+    private static function guard($action) {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。', '', array('response' => 403));
+        }
+        check_admin_referer($action);
+    }
+
+    private static function mode_label($key) {
+        if (strpos($key, '_live_') !== false) { return '本番'; }
+        if (strpos($key, '_test_') !== false) { return 'テスト'; }
+        return '不明';
+    }
+
+    public static function billing_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        $flash = get_transient('ss_admin_flash_' . get_current_user_id());
+        if ($flash) {
+            delete_transient('ss_admin_flash_' . get_current_user_id());
+            printf('<div class="notice notice-%s"><p>%s</p></div>', $flash[0] === 'ok' ? 'success' : 'error', esc_html($flash[1]));
+        }
+        $secret = SS_Payjp::secret_key();
+        $locked = array(
+            'public' => defined('SS_PAYJP_PUBLIC_KEY'), 'secret' => defined('SS_PAYJP_SECRET_KEY'), 'token' => defined('SS_PAYJP_WEBHOOK_TOKEN'),
+        );
+        echo '<div class="wrap"><h1>プラン・決済設定</h1>';
+
+        // 1) PAY.JP の接続
+        echo '<h2>1. PAY.JP との接続</h2>';
+        if (SS_Payjp::configured()) {
+            echo '<p>状態：<strong>設定済み</strong>（キーの種類：' . esc_html(self::mode_label($secret)) . 'モード）';
+            if (self::mode_label($secret) !== self::mode_label(SS_Payjp::public_key())) {
+                echo ' <span style="color:#b32d2e">※公開キーとシークレットキーのモードが違います</span>';
+            }
+            echo '</p>';
+        } else {
+            echo '<p>状態：<strong style="color:#b32d2e">未設定</strong>（キーを入力するまで、お客様は契約できません）</p>';
+        }
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field('ss_save_payjp');
+        echo '<input type="hidden" name="action" value="ss_save_payjp"><table class="form-table"><tbody>';
+        printf('<tr><th>公開キー（pk_…）</th><td><input type="text" class="regular-text" name="public" value="%s" autocomplete="off"%s></td></tr>', esc_attr(SS_Payjp::public_key()), $locked['public'] ? ' disabled' : '');
+        printf('<tr><th>シークレットキー（sk_…）</th><td><input type="password" class="regular-text" name="secret" value="" autocomplete="new-password" placeholder="%s"%s><p class="description">空欄のままなら、今の設定を変えません。サーバーには保存されますが、画面には表示しません。<br>より安全にするには、wp-config.php に <code>define(\'SS_PAYJP_SECRET_KEY\', \'sk_…\');</code> と書く方法もあります。</p></td></tr>', $secret !== '' ? esc_attr('設定済み（末尾 ' . substr($secret, -4) . '）') : '', $locked['secret'] ? ' disabled' : '');
+        printf('<tr><th>Webhookのトークン</th><td><input type="text" class="regular-text" name="token" value="%s" autocomplete="off"%s><p class="description">PAY.JPの管理画面でWebhookを登録すると表示される、確認用のトークンを貼り付けます。</p></td></tr>', esc_attr(SS_Payjp::webhook_token()), $locked['token'] ? ' disabled' : '');
+        echo '<tr><th>WebhookのURL</th><td><code>' . esc_html(rest_url('shift/v1/payjp/webhook')) . '</code><p class="description">PAY.JPの管理画面（Webhookの設定）に、このURLを登録します。通知の種類は、定期課金（subscription）と支払い（charge）に関するものを選びます。</p></td></tr>';
+        echo '</tbody></table><p><button class="button button-primary">キーを保存</button> ';
+        echo '<a class="button" href="' . esc_url(wp_nonce_url(admin_url('admin-post.php?action=ss_check_payjp'), 'ss_check_payjp')) . '">接続を確認</a></p></form>';
+
+        // 2) プラン
+        echo '<h2>2. プラン</h2>';
+        echo '<p>お客様が選べるプランです。<strong>金額を変えると、PAY.JPに新しいプランを作ります。</strong>すでに契約中のお客様は、下の「切り替える」を押すまで、これまでの金額のままです。値上げ・値下げは、事前にお客様へお知らせしてください（利用規約にも記載が必要です）。</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field('ss_save_plans');
+        echo '<input type="hidden" name="action" value="ss_save_plans">';
+        echo '<table class="widefat striped" style="max-width:1000px"><thead><tr><th>名前</th><th>スタッフ数の上限</th><th>月額（円・税込）</th><th>表示順</th><th>有効</th><th>PAY.JPへの反映</th><th>契約中のお客様</th></tr></thead><tbody>';
+        global $wpdb;
+        $plans = $wpdb->get_results('SELECT * FROM ' . SS_System::table('plans') . ' ORDER BY sort_order ASC, id ASC', ARRAY_A);
+        $plans[] = array('id' => 0, 'name' => '', 'max_staff' => '', 'price' => '', 'sort_order' => count($plans) + 1, 'active' => 1, 'payjp_plan_id' => '', 'payjp_amount' => 0);
+        foreach ($plans as $i => $p) {
+            $id = (int) $p['id'];
+            $synced = $id > 0 && SS_Billing::plan_ready($p) || ($id > 0 && (int) $p['active'] === 0 && $p['payjp_plan_id'] !== '' && (int) $p['payjp_amount'] === (int) $p['price']);
+            $subs = $id > 0 ? (int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM ' . SS_System::table('tenants') . " WHERE plan_id = %d AND payjp_subscription_id <> '' AND deleted_at IS NULL", $id)) : 0;
+            $stale = $id > 0 ? count(SS_Billing::stale_subscribers($id)) : 0;
+            printf('<tr><td><input type="hidden" name="plans[%1$d][id]" value="%2$d"><input type="text" name="plans[%1$d][name]" value="%3$s" maxlength="60" placeholder="%4$s"></td>', $i, $id, esc_attr($p['name']), $id ? '' : '新しいプランの名前');
+            printf('<td><input type="number" name="plans[%d][max_staff]" value="%s" min="1" max="1000" style="width:90px"></td>', $i, esc_attr($p['max_staff']));
+            printf('<td><input type="number" name="plans[%d][price]" value="%s" min="50" max="1000000" style="width:100px"></td>', $i, esc_attr($p['price']));
+            printf('<td><input type="number" name="plans[%d][sort_order]" value="%s" style="width:60px"></td>', $i, esc_attr($p['sort_order']));
+            printf('<td><input type="checkbox" name="plans[%d][active]" value="1"%s></td>', $i, (int) $p['active'] === 1 ? ' checked' : '');
+            echo '<td>' . ($id === 0 ? '-' : ($synced ? '反映済み' : '<span style="color:#b32d2e">未反映（お客様は選べません）</span>')) . '</td>';
+            echo '<td>' . ($id === 0 ? '-' : esc_html($subs . '社')) . ($stale > 0 ? ' <span style="color:#b32d2e">（うち旧金額のまま ' . (int) $stale . '社）</span> <a class="button button-small" href="' . esc_url(wp_nonce_url(admin_url('admin-post.php?action=ss_migrate_plan&plan_id=' . $id), 'ss_migrate_plan')) . '">切り替える（20社ずつ）</a>' : '') . '</td></tr>';
+        }
+        echo '</tbody></table><p><button class="button button-primary">プランを保存</button></p></form>';
+        if (!SS_Payjp::configured()) {
+            echo '<p class="description">※ PAY.JPのキーが未設定の間は、保存だけ行います。キーを設定してからもう一度「プランを保存」を押すと、PAY.JPに反映されます。</p>';
+        }
+        echo '</div>';
+    }
+
+    public static function save_payjp() {
+        self::guard('ss_save_payjp');
+        $errors = array();
+        $pub = isset($_POST['public']) ? sanitize_text_field(wp_unslash($_POST['public'])) : null;
+        $sec = isset($_POST['secret']) ? trim(sanitize_text_field(wp_unslash($_POST['secret']))) : '';
+        $tok = isset($_POST['token']) ? sanitize_text_field(wp_unslash($_POST['token'])) : null;
+        if ($pub !== null && !defined('SS_PAYJP_PUBLIC_KEY')) {
+            if ($pub !== '' && strpos($pub, 'pk_') !== 0) { $errors[] = '公開キーは「pk_」で始まる文字列です。'; } else { update_option('ss_payjp_public', $pub, false); }
+        }
+        $mode_changed = false;
+        if ($sec !== '' && !defined('SS_PAYJP_SECRET_KEY')) {
+            if (strpos($sec, 'sk_') !== 0) {
+                $errors[] = 'シークレットキーは「sk_」で始まる文字列です。';
+            } else {
+                $mode_changed = SS_Payjp::secret_key() !== '' && self::mode_label(SS_Payjp::secret_key()) !== self::mode_label($sec);
+                update_option('ss_payjp_secret', $sec, false);
+            }
+        }
+        if ($mode_changed) {
+            SS_Billing::reset_plan_sync(); // テスト⇔本番でプランIDは別物
+        }
+        if ($tok !== null && !defined('SS_PAYJP_WEBHOOK_TOKEN')) {
+            update_option('ss_payjp_webhook_token', $tok, false);
+        }
+        $ok_msg = '保存しました。「接続を確認」で、PAY.JPと通信できるか確かめてください。';
+        if ($mode_changed) {
+            $ok_msg .= ' ※テストと本番を切り替えたため、プランのPAY.JPへの反映を取り消しました。下の「プランを保存」を押して、新しいモードに作り直してください。テスト中に作ったお客様の契約情報は、本番では使えません（公開前に、テスト用のお客様を削除してください）。';
+        }
+        self::flash($errors ? 'error' : 'ok', $errors ? implode(' ', $errors) : $ok_msg);
+        self::back_billing();
+    }
+
+    public static function check_payjp() {
+        self::guard('ss_check_payjp');
+        if (!SS_Payjp::configured()) {
+            self::flash('error', 'キーが未設定です。');
+            self::back_billing();
+        }
+        $r = SS_Payjp::request('GET', 'plans', array('limit' => 1));
+        if (is_wp_error($r)) {
+            self::flash('error', 'PAY.JPに接続できませんでした：' . $r->get_error_message() . '（キーが正しいか、確認してください）');
+        } else {
+            $msg = 'PAY.JPに接続できました（' . self::mode_label(SS_Payjp::secret_key()) . 'モード）。';
+            if (SS_Payjp::webhook_token() === '') {
+                $msg .= ' ※Webhookのトークンが未設定です。設定しないと、PAY.JPからの通知を受け取れません（毎日の自動確認では、状態は更新されます）。';
+            }
+            self::flash('ok', $msg);
+        }
+        self::back_billing();
+    }
+
+    public static function save_plans() {
+        self::guard('ss_save_plans');
+        $rows = isset($_POST['plans']) && is_array($_POST['plans']) ? wp_unslash($_POST['plans']) : array();
+        $res = SS_Billing::save_plans(array_values($rows));
+        $msg = $res['saved'] . '件のプランを保存しました。';
+        if ($res['synced']) {
+            $msg .= 'PAY.JPに' . $res['synced'] . '件のプランを作成しました。';
+        }
+        if ($res['errors']) {
+            $msg .= ' ' . implode(' ', $res['errors']);
+        }
+        self::flash($res['errors'] ? 'error' : 'ok', $msg);
+        self::back_billing();
+    }
+
+    public static function migrate_plan() {
+        self::guard('ss_migrate_plan');
+        $id = isset($_GET['plan_id']) ? (int) $_GET['plan_id'] : 0;
+        $r = SS_Billing::migrate_plan_subscribers($id, 20);
+        $msg = $r['migrated'] . '社を新しい金額に切り替えました。';
+        if ($r['failed']) { $msg .= '（' . $r['failed'] . '社は切り替えられませんでした。カードの状態などをご確認ください）'; }
+        if ($r['remaining']) { $msg .= '残り ' . $r['remaining'] . '社。もう一度押してください。'; }
+        self::flash($r['failed'] ? 'error' : 'ok', $msg);
+        self::back_billing();
     }
 }

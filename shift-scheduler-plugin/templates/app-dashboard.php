@@ -8,6 +8,12 @@
     <dt>スタッフ数</dt>
     <dd><?php echo (int) $staff_count; ?> / <?php echo (int) $staff_limit; ?> 名</dd>
   </dl>
+  <?php if (current_user_can('shift_manage_billing') && in_array($tenant_status, array('trial', 'readonly', 'grace'), true)) : ?>
+    <p class="ss-alert<?php echo $tenant_status === 'trial' ? '' : ' ss-alert-error'; ?>" style="<?php echo $tenant_status === 'trial' ? 'background:var(--ss-bg)' : ''; ?>">
+      <?php if ($tenant_status === 'grace') : ?>お支払いを確認できませんでした。<?php elseif ($tenant_status === 'readonly') : ?>無料期間が終了しました。<?php else : ?>無料期間中は、すべての機能をお使いいただけます。<?php endif; ?>
+      <a href="<?php echo esc_url(SS_View::app_url($tenant['public_id'], 'billing')); ?>">ご契約・お支払いへ</a>
+    </p>
+  <?php endif; ?>
   <?php if ($tenant_status === 'readonly') : ?>
     <p class="ss-alert ss-alert-error">無料期間が終了したため、閲覧のみの状態です。ご契約いただくと、編集を再開できます。</p>
   <?php endif; ?>
