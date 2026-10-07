@@ -18,11 +18,11 @@
 - 全テーブルに `tenant_id`。データ操作は `SS_Repo`（常にお客様IDで絞り込み）だけを通す。
 - お客様IDはログイン中ユーザーの所属から決める。URL・フォーム・JSONの値は使わない。
 - 他のお客様の `/s/<ID>/` を開くと、存在の有無が分からない「見つかりません」を返す。
-- テスト：`php tests/test-tenant-isolation.php`、`sh tests/check-no-direct-db.sh`
+- テスト：`php tests/test-tenant-isolation.php`、`php tests/test-login-block.php`、`sh tests/check-no-direct-db.sh`
 
 ## 設置
 
-1. ZIP（リポジトリ直下の `shift-scheduler-0.1.7.zip`）を、WordPress管理画面の「プラグイン → 新規追加 → プラグインのアップロード」から入れて有効化（テーブル・ロール・初期プランが作られる）。
+1. ZIP（リポジトリ直下の `shift-scheduler-0.1.8.zip`）を、WordPress管理画面の「プラグイン → 新規追加 → プラグインのアップロード」から入れて有効化（テーブル・ロール・初期プランが作られる）。
 2. 設定 → シフト作成 に、登録ページ・ログインページのURLが表示される。メニューやボタンにそのURLを設定する（WordPressの固定ページとしては作られない）。パーマリンクが「基本」でも `/?ss_page=register` の形式で表示できる。
 3. （任意）利用規約のURL：オプション `ss_terms_url` に設定。
 4. メール送信が不安定な場合は、SMTPプラグインを併用する。

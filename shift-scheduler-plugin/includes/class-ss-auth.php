@@ -9,6 +9,9 @@ final class SS_Auth {
     const VERIFY_TTL = 172800;  // 48時間
     const INVITE_TTL = 604800;  // 7日
 
+    /** 専用ログインページ経由のログイン処理中だけ true */
+    private static $portal_login = false;
+
     public static function init() {
         foreach (array('register', 'verify', 'login', 'accept_invite') as $action) {
             add_action('admin_post_nopriv_ss_' . $action, array(__CLASS__, 'handle_' . $action));
@@ -164,7 +167,9 @@ final class SS_Auth {
         if (!self::rate_ok('login_ip', 30, 15 * MINUTE_IN_SECONDS) || !self::rate_ok('login_' . strtolower($email), 10, 15 * MINUTE_IN_SECONDS)) {
             self::back($back, 'rate');
         }
+        self::$portal_login = true;
         $user = wp_signon(array('user_login' => $email, 'user_password' => $password, 'remember' => true), is_ssl());
+        self::$portal_login = false;
         if (is_wp_error($user)) {
             $code = $user->get_error_code();
             $map = array('ss_pending' => 'pending', 'ss_invited' => 'pending', 'ss_disabled' => 'disabled');
@@ -222,6 +227,11 @@ final class SS_Auth {
     public static function block_inactive($user, $password) {
         if (!($user instanceof WP_User)) {
             return $user;
+        }
+        // お客様側のユーザーは、WordPress標準のログイン画面（wp-login.php・XML-RPCなど）からは入れない
+        if (!self::$portal_login && !user_can($user, 'manage_options')
+            && array_intersect(array('shift_owner', 'shift_manager', 'shift_staff'), (array) $user->roles)) {
+            return new WP_Error('ss_use_portal', 'お客様のログインは、専用のログインページからお願いします：' . SS_Router::url('login'));
         }
         $row = SS_System::user_by_wp_id($user->ID);
         if ($row && in_array($row['status'], array('pending', 'invited', 'disabled'), true)) {
