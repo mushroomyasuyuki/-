@@ -16,7 +16,12 @@
       body: body ? JSON.stringify(body) : undefined
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
-        if (!res.ok) { throw new Error(data && data.message ? data.message : '処理に失敗しました。'); }
+        if (!res.ok) {
+          if (data && data.code === 'rest_cookie_invalid_nonce') {
+            throw new Error('ログイン状態が変わりました。ページを再読み込みするか、ログインし直してください。');
+          }
+          throw new Error(data && data.message ? data.message : '処理に失敗しました。');
+        }
         return data;
       });
     });
