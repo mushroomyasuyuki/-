@@ -51,6 +51,16 @@ final class SS_Auth {
         if (empty($_POST['agree'])) {
             self::back($back, 'terms');
         }
+        // メール認証が終わっていない登録が残っている場合は、やり直せるように古い登録を取り消す
+        // （確認メールが届かなかった場合など。認証済みのアカウントには何もしない）
+        $existing = get_user_by('email', $email);
+        if ($existing) {
+            $existing_row = SS_System::user_by_wp_id($existing->ID);
+            $existing_tenant = $existing_row ? SS_System::tenant_by_id($existing_row['tenant_id']) : null;
+            if ($existing_row && $existing_row['status'] === 'pending' && $existing_tenant && $existing_tenant['status'] === 'unverified') {
+                self::discard_registration((int) $existing->ID, (int) $existing_tenant['id']);
+            }
+        }
         if (email_exists($email) || username_exists($email)) {
             self::back($back, 'email_used');
         }
