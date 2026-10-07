@@ -5,7 +5,7 @@
   <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="ss-form">
     <input type="hidden" name="action" value="ss_login">
     <input type="hidden" name="_ss_nonce" value="<?php echo esc_attr(wp_create_nonce('ss_login')); ?>">
-    <label>メールアドレス<input type="email" name="email" autocomplete="username" required></label>
+    <label>メールアドレス<input type="email" name="email" autocomplete="email" placeholder="登録したメールアドレス" required></label>
     <label>パスワード<input type="password" name="password" autocomplete="current-password" required></label>
     <button type="submit" class="ss-btn">ログイン</button>
   </form>
