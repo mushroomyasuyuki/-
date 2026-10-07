@@ -6,16 +6,16 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_View {
-    public static function render($template, array $vars = array(), $status = 200) {
-        status_header($status);
+    public static function render($ss_template, array $vars = array(), $ss_http_status = 200) {
+        status_header($ss_http_status);
         nocache_headers();
         header('X-Robots-Tag: noindex, nofollow');
         header('Content-Type: text/html; charset=utf-8');
         $vars['site_name'] = get_bloginfo('name');
-        $file = SS_DIR . 'templates/' . $template . '.php';
+        $ss_file = SS_DIR . 'templates/' . $ss_template . '.php';
         extract($vars, EXTR_SKIP);
         ob_start();
-        include $file;
+        include $ss_file;
         $content = ob_get_clean();
         $title = isset($vars['title']) ? $vars['title'] : 'シフト作成';
         $scripts = isset($vars['scripts']) ? $vars['scripts'] : '';
@@ -23,8 +23,8 @@ final class SS_View {
         exit;
     }
 
-    public static function message($title, $text, $status = 200, $link_url = '', $link_label = '') {
-        self::render('message', compact('title', 'text', 'link_url', 'link_label'), $status);
+    public static function message($title, $text, $http_status = 200, $link_url = '', $link_label = '') {
+        self::render('message', compact('title', 'text', 'link_url', 'link_label'), $http_status);
     }
 
     public static function error_text($code) {

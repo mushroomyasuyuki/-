@@ -137,7 +137,7 @@ final class SS_Router {
         $common = array(
             'tenant'  => $tenant,
             'me'      => $user,
-            'status'  => SS_Tenants::effective_status($tenant),
+            'tenant_status' => SS_Tenants::effective_status($tenant),
             'nav'     => self::nav($tenant, $path),
             'logout'  => wp_logout_url(SS_Router::url('login')),
         );
