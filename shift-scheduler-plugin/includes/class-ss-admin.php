@@ -323,6 +323,21 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
 
         // 直近のエラー
         // 5) テスト専用：無料期間を今すぐ終わらせる（テスト用のキーのときだけ表示）
+        echo '<h2>Webhookの受信状況（運営者向け）</h2>';
+        $ev = SS_Billing::recent_events(10);
+        if ($ev) {
+            echo '<p>PAY.JPからの通知を、受け取って処理した直近の記録です。</p><table class="widefat striped" style="max-width:760px"><thead><tr><th>受信日時（UTC）</th><th>種類</th><th>イベントID</th></tr></thead><tbody>';
+            foreach ($ev as $e) {
+                printf('<tr><td>%s</td><td>%s</td><td><code>%s</code></td></tr>', esc_html($e['processed_at']), esc_html($e['type']), esc_html($e['event_id']));
+            }
+            echo '</tbody></table>';
+        } else {
+            echo '<p>まだ、通知を受け取った記録がありません。PAY.JPのWebhook設定（URLとトークン）を確認し、PAY.JPのイベント画面から「イベントを再送信」を試してください。</p>';
+        }
+        $wr = get_option('ss_last_webhook_reject');
+        if (is_array($wr) && !empty($wr['at'])) {
+            echo '<p style="color:#b32d2e">直近で断った通知：' . esc_html($wr['at']) . '（UTC）／' . esc_html($wr['reason']) . '</p>';
+        }
         $le = get_option('ss_last_payjp_error');
         if (is_array($le) && !empty($le['at'])) {
             echo '<h2>直近のPAY.JPのエラー（運営者向け）</h2><table class="widefat striped" style="max-width:760px"><tbody>';

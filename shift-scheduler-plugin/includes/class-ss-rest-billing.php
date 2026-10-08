@@ -123,6 +123,7 @@ final class SS_Rest_Billing {
         $expected = SS_Payjp::webhook_token();
         $given = (string) $req->get_header('x-payjp-webhook-token');
         if ($expected === '' || !hash_equals($expected, $given)) {
+            function_exists('update_option') && update_option('ss_last_webhook_reject', array('at' => gmdate('Y-m-d H:i:s'), 'reason' => $expected === '' ? 'トークンが未設定です' : ($given === '' ? '通知にトークンが付いていません' : 'トークンが一致しません')), false);
             return new WP_Error('forbidden', '認証に失敗しました。', array('status' => 403));
         }
         $event = $req->get_json_params();

@@ -148,6 +148,13 @@ final class SS_Billing {
         return self::apply_subscription_state(self::tenant($tenant['id']), $sub);
     }
 
+    /** 受信して処理したPAY.JPの通知（新しい順）。管理画面の確認用 */
+    public static function recent_events($limit = 10) {
+        global $wpdb;
+        $t = SS_System::table('billing_events');
+        return $wpdb->get_results($wpdb->prepare("SELECT event_id, type, processed_at FROM {$t} ORDER BY id DESC LIMIT %d", (int) $limit), ARRAY_A);
+    }
+
     /** お客様の、そのプランの定期課金を探す。有効（無料期間中・利用中・停止中）を優先し、なければ新しいキャンセル済み。なければ null */
     private static function find_subscription_for_plan($customer_id, $payjp_plan_id) {
         $list = SS_Payjp::list_subscriptions($customer_id, $payjp_plan_id);
