@@ -156,6 +156,18 @@ $before = count(calls('POST', '#^customers$#'));
 $r = SS_Billing::subscribe(T($C), SS_Billing::plan($STD), 'tok_c2');
 check('retry succeeds and reuses the customer (card updated, no new customer)', !is_wp_error($r) && count(calls('POST', '#^customers$#')) === $before && count(calls('POST', '#^customers/cus_#')) === 1);
 
+/* 再契約：既存の顧客に同じカードがすでにあっても、契約できる */
+{
+    $D = mk_tenant('D店', 'trial', 10, 2);
+    $r0 = SS_Billing::subscribe(T($D), SS_Billing::plan($LIGHT), 'tok_d1');
+    check('resubscribe setup: first subscribe ok', !is_wp_error($r0));
+    $wpdb->update('wp_shift_tenants', array('payjp_subscription_id' => ''), array('id' => $D)); // 解約が実行された後の状態
+    $pj['fail']['POST customers/ID'] = array(400, array('type' => 'client_error', 'code' => 'already_have_card', 'message' => 'same'));
+    $r1 = SS_Billing::subscribe(T($D), SS_Billing::plan($LIGHT), 'tok_d2');
+    unset($pj['fail']['POST customers/ID']);
+    check('resubscribe with the same card (already_have_card) succeeds', !is_wp_error($r1) && T($D)['payjp_subscription_id'] !== '');
+}
+
 /* カード変更：同じカードがすでにある場合も成功し、そのカードを「使うカード」にする */
 {
     $pj['fail']['POST customers/ID'] = array(400, array('type' => 'client_error', 'code' => 'already_have_card', 'message' => 'same'));

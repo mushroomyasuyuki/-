@@ -119,9 +119,11 @@ final class SS_Billing {
             self::db_update($tenant['id'], array('payjp_customer_id' => $customer_id)); // 失敗してやり直しても、顧客が重複しないよう先に保存
         } else {
             $c = SS_Payjp::update_customer_card($customer_id, $card_token);
-            if (is_wp_error($c)) {
+            // 解約後の再契約などで、同じカードがすでにある場合はエラーにせず、そのカードを使う
+            if (is_wp_error($c) && $c->get_error_code() !== 'payjp_already_have_card') {
                 return $c;
             }
+            self::use_card_as_default($customer_id, $card_token);
         }
 
         // 無料期間が残っているときは、その終了まで課金しない
