@@ -76,6 +76,7 @@ function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }
 function admin_url($p = '') { return 'https://example.test/wp-admin/' . $p; }
 function wp_create_nonce($a) { return 'nonce'; }
 class SS_Router { static function url($p) { return 'https://example.test/' . $p . '/'; } }
+class SS_Terms { static function plan_lines() { return array(); } static function sections() { return array(); } } // 料金の説明文は test-terms.php で確認する
 function render_register() { ob_start(); $err = ''; $msg = ''; include __DIR__ . '/../templates/register.php'; return ob_get_clean(); }
 $GLOBALS['pages'] = array(); $GLOBALS['tr'] = array(); $GLOBALS['opts'] = array();
 pg(60, '特定商取引法に基づく表記', 'tokushoho'); pg(61, '利用規約', 'terms'); pg(62, 'プライバシーポリシー', 'privacy');
