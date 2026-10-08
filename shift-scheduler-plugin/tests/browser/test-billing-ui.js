@@ -84,6 +84,9 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   check('shows status and trial days', t.includes('無料期間中') && t.includes('あと40日'));
   check('explains: no charge until trial end', t.includes('請求は無料期間の終了日') && t.includes('12月31日'));
   check('no error notice right after the page opens (card input mounted without error)', await page.locator('#ss-notice').isHidden());
+  const box = await page.locator('#ss-card').evaluate(e => { const c = getComputedStyle(e); return { border: c.borderTopWidth, bg: c.backgroundColor, h: e.getBoundingClientRect().height }; });
+  check('card input area has a visible border, white background and enough height', box.border === '1px' && box.bg === 'rgb(255, 255, 255)' && box.h >= 50, JSON.stringify(box));
+  check('card input explains the order of fields', (await text()).includes('セキュリティコード（CVC）'));
   check('card input mounted with the public key', (await page.evaluate(() => window.__payjpKeys)).join() === 'pk_test_abc');
   const radios = page.locator('input[name=plan]');
   check('4 plans listed; not-ready and too-small plans are disabled', (await radios.count()) === 4 && await radios.nth(2).isDisabled() && await radios.nth(3).isDisabled() && !(await radios.nth(0).isDisabled()));

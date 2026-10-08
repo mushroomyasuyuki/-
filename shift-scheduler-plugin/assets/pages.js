@@ -646,7 +646,7 @@
         b.disabled = true;
         getToken().then(onSubmit).catch(function (e) { fail(e); }).then(function () { b.disabled = false; });
       });
-      var wrap = el('div', {}, [el('p', { class: 'ss-sub', text: label }), mount, el('div', { class: 'ss-actions', style: 'margin-top:10px' }, [b])]);
+      var wrap = el('div', {}, [el('p', { class: 'ss-sub', text: label }), mount, el('p', { class: 'ss-card-hint', text: 'カード番号、有効期限（月 / 年）、セキュリティコード（CVC）の順に入力してください。' }), el('div', { class: 'ss-actions', style: 'margin-top:10px' }, [b])]);
       wantCard = d.public_key; // render() が、画面に置いたあとで入力欄を用意する
       return wrap;
     }
