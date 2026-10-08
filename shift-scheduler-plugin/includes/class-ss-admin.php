@@ -26,6 +26,7 @@ final class SS_Admin {
         add_action('admin_post_ss_save_legal', array(__CLASS__, 'save_legal'));
         add_action('admin_post_ss_save_terms', array(__CLASS__, 'save_terms'));
         add_action('admin_post_ss_test_end_trial', array(__CLASS__, 'test_end_trial'));
+        add_action('admin_post_ss_test_time', array(__CLASS__, 'test_time'));
     }
 
     public static function menu() {
@@ -337,8 +338,50 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
             wp_nonce_field('ss_test_end_trial');
             echo '<input type="hidden" name="action" value="ss_test_end_trial">';
             echo '<p><label>お客様のページID（URLの /s/ のあとの12文字） <input type="text" name="public_id" maxlength="12" pattern="[a-z0-9]{12}" required></label> <button class="button">無料期間を約2分後に終わらせる</button></p></form>';
+            echo '<p style="margin-top:20px">毎日の自動処理（猶予切れ・解約の実行）を、待たずに確認します。</p>';
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+            wp_nonce_field('ss_test_time');
+            echo '<input type="hidden" name="action" value="ss_test_time">';
+            echo '<p><label>お客様のページID <input type="text" name="public_id" maxlength="12" pattern="[a-z0-9]{12}" required></label> ';
+            echo '<select name="what"><option value="grace">支払い猶予（7日）が過ぎたことにして、毎日の処理を実行</option><option value="cancel">解約予約の期間末が来たことにして、毎日の処理を実行</option></select> ';
+            echo '<button class="button">実行</button></p></form>';
         }
         echo '</div>';
+    }
+
+    public static function test_time() {
+        self::guard('ss_test_time');
+        if (strpos((string) SS_Payjp::secret_key(), 'sk_test_') !== 0) {
+            self::flash('error', 'テスト用のキーのときだけ使えます。');
+            self::back_billing();
+        }
+        $pid = isset($_POST['public_id']) ? sanitize_key(wp_unslash($_POST['public_id'])) : '';
+        $what = isset($_POST['what']) ? sanitize_key(wp_unslash($_POST['what'])) : '';
+        $tenant = $pid !== '' ? SS_System::tenant_by_public_id($pid) : null;
+        if (!$tenant) {
+            self::flash('error', 'お客様が見つかりません。');
+            self::back_billing();
+        }
+        $b = SS_Billing::billing_settings($tenant);
+        if ($what === 'grace') {
+            if ($tenant['status'] !== 'grace') {
+                self::flash('error', 'このお客様は「お支払い確認中」ではありません。');
+                self::back_billing();
+            }
+            SS_Billing::set_billing($tenant['id'], array('grace_since' => gmdate('Y-m-d H:i:s', time() - (SS_Billing::GRACE_DAYS + 1) * 86400)));
+        } elseif ($what === 'cancel') {
+            if (empty($b['cancel_at'])) {
+                self::flash('error', 'このお客様に、解約の予約はありません。先に契約ページから解約を受け付けてください。');
+                self::back_billing();
+            }
+            SS_Billing::set_billing($tenant['id'], array('cancel_at' => gmdate('Y-m-d H:i:s', time() - 3600)));
+        } else {
+            self::back_billing();
+        }
+        SS_Billing::daily();
+        $after = SS_Billing::tenant($tenant['id']);
+        self::flash('ok', '毎日の処理を実行しました。このお客様の状態：' . SS_Tenants::status_label(SS_Tenants::effective_status($after)) . '。お客様の契約ページとPAY.JPの定期課金も確認してください。');
+        self::back_billing();
     }
 
     public static function test_end_trial() {
