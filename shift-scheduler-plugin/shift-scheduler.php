@@ -2,7 +2,7 @@
 /**
  * Plugin Name: シフト作成（マルチテナント）
  * Description: 飲食・介護向けのシフト作成サービス。お客様ごとにデータを分離し、無料登録→専用ページでシフト作成を行います。
- * Version: 0.5.4
+ * Version: 0.5.5
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: shift-scheduler
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('SS_VERSION', '0.5.4');
+define('SS_VERSION', '0.5.5');
 define('SS_DIR', plugin_dir_path(__FILE__));
 define('SS_URL', plugin_dir_url(__FILE__));
 if (!defined('SS_TRIAL_MONTHS')) {

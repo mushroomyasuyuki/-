@@ -485,11 +485,19 @@ final class SS_Billing {
     }
 
     private static function mail_payment_failed(array $tenant) {
+        // 運営者にも知らせる（どのお客様のお支払いが確認できなかったか）
+        $admin = get_option('admin_email');
+        if ($admin) {
+            SS_System::mail($admin, '【運営向け】お支払いを確認できなかったお客様がいます', "お客様：" . $tenant['name'] . "（ID: " . $tenant['public_id'] . "）\n状態：お支払い確認中（" . self::GRACE_DAYS . "日以内にカード更新がない場合、閲覧のみになります）\n");
+        }
         $to = self::owner_email($tenant['id']);
         if ($to === '') {
             return;
         }
-        SS_System::mail($to, 'お支払いを確認できませんでした', $tenant['name'] . " 様\n\n今回のご請求のお支払いを確認できませんでした。\n" . self::GRACE_DAYS . "日以内に、下記からカード情報を更新してください。\n期限を過ぎると、閲覧のみとなります。\n\n" . SS_View::app_url($tenant['public_id'], 'billing') . "\n");
+        $sent = SS_System::mail($to, 'お支払いを確認できませんでした', $tenant['name'] . " 様\n\n今回のご請求のお支払いを確認できませんでした。\n" . self::GRACE_DAYS . "日以内に、下記からカード情報を更新してください。\n期限を過ぎると、閲覧のみとなります。\n\n" . SS_View::app_url($tenant['public_id'], 'billing') . "\n");
+        if (!$sent) {
+            error_log('[shift-scheduler] payment-failed mail could not be sent: tenant ' . $tenant['public_id']);
+        }
     }
 
     /* ---------- 運営用：プランの金額変更後に、既存の契約者を新しい金額へ切り替える ---------- */
