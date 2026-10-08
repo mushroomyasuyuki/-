@@ -130,9 +130,13 @@ final class SS_Billing {
         $trial_end = self::trial_running($tenant) && strtotime($tenant['trial_end'] . ' UTC') > time() + 3600 ? strtotime($tenant['trial_end'] . ' UTC') : null;
         $sub = SS_Payjp::create_subscription($customer_id, $plan['payjp_plan_id'], $trial_end, $meta);
         if (is_wp_error($sub) && $sub->get_error_code() === 'payjp_already_subscribed') {
-            // PAY.JPには契約があるのに、こちらに記録されていない場合（通信の途切れなど）：既存の契約を取り込む
-            $found = self::find_live_subscription($customer_id, $plan['payjp_plan_id']);
+            // PAY.JPに同じプランの契約が残っている場合：有効なものはそのまま取り込み、
+            // キャンセル済みのもの（PAY.JPでは新規作成が拒否される）は、再開して使う
+            $found = self::find_subscription_for_plan($customer_id, $plan['payjp_plan_id']);
             if ($found) {
+                if ($found['status'] === 'canceled') {
+                    $found = SS_Payjp::resume_subscription($found['id'], $trial_end);
+                }
                 $sub = $found;
             }
         }
@@ -144,18 +148,25 @@ final class SS_Billing {
         return self::apply_subscription_state(self::tenant($tenant['id']), $sub);
     }
 
-    /** お客様の、有効な（無料期間中・利用中・停止中の）定期課金を探す。見つからなければ null */
-    private static function find_live_subscription($customer_id, $payjp_plan_id) {
+    /** お客様の、そのプランの定期課金を探す。有効（無料期間中・利用中・停止中）を優先し、なければ新しいキャンセル済み。なければ null */
+    private static function find_subscription_for_plan($customer_id, $payjp_plan_id) {
         $list = SS_Payjp::list_subscriptions($customer_id, $payjp_plan_id);
         if (is_wp_error($list) || empty($list['data']) || !is_array($list['data'])) {
             return null;
         }
+        $canceled = null;
         foreach ($list['data'] as $sub) {
-            if (isset($sub['id'], $sub['status']) && in_array($sub['status'], array('trial', 'active', 'paused'), true)) {
+            if (!isset($sub['id'], $sub['status'])) {
+                continue;
+            }
+            if (in_array($sub['status'], array('trial', 'active', 'paused'), true)) {
                 return $sub;
             }
+            if ($sub['status'] === 'canceled' && $canceled === null) {
+                $canceled = $sub; // 一覧は新しい順
+            }
         }
-        return null;
+        return $canceled;
     }
 
     /** カードの変更。お支払いに失敗して止まっている契約は、新しいカードで再開する。 */
