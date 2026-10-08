@@ -1768,7 +1768,7 @@
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         if (out.sheet) {
-          this.status('壁紙の確認用シート（Illustrator用 .ai・PDF互換・縮尺 1/10）を保存しました：全体図・分割図（' + out.strips + ' 巾）・仕様・寸法。レイヤー：グラフィック／分割／仕様／寸法。全体 ' + out.width + ' × ' + out.height + ' mm。', 'success');
+          this.status('壁紙の確認用シート（Illustrator用 .ai・PDF互換・縮尺 1/10）を保存しました：全体図・分割図（' + out.strips + ' 巾）・仕様・寸法。レイヤー：グラフィック（画像）／分割（巾の枠・トンボ・名前）／壁面ライン／寸法／仕様。全体 ' + out.width + ' × ' + out.height + ' mm。', 'success');
           return;
         }
         this.status('壁紙データを保存しました（' + (ai ? 'Illustrator用 .ai（PDF互換）・実寸・' : '') + out.width + ' × ' + out.height + ' mm・' + (ai ? '' : '1px = 1mm・') + out.strips + ' 巾分。レイヤー：CAD図面／壁紙の画像／巾の枠' + (ai ? '（線）' : '') + '）。'

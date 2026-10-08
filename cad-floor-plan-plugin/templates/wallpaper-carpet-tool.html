@@ -2767,8 +2767,9 @@
   }
 
   // ---- Illustrator 用（.ai）の確認用シート（参考データと同じ形式）----
-  // 縮尺 1/10 の1枚のシートに、上：全体図（画像・壁の範囲・巾の区切り・寸法）、下：分割図（巾ごとに離して並べた画像・
-  // 「N_【案件名】」「天↑地」・寸法）、いちばん下：仕様。レイヤーは「グラフィック」「分割」「仕様」「寸法」（下から）。
+  // 縮尺 1/10 の1枚のシートに、上：全体図（画像・巾の枠・壁の範囲・寸法）、下：分割図（巾ごとに離して並べた画像・寸法）、
+  // どちらも巾ごとにトンボと「N_【案件名】」「天↑地」。いちばん下：ピッチの見本と仕様。
+  // レイヤーは「グラフィック」（画像）「分割」（巾の枠・トンボ・名前）「壁面ライン」「寸法」「仕様」（下から）。
   // 中身は PDF 互換の .ai。画像は CMYK（実寸 1px=1mm の画像をシートに 1/10 で配置。分割図は同じ画像を巾ごとに切り抜いて再利用）。
   // o: { W, WH, right, shapes, walls: [{ W, WH, no }], off, name, onProgress }
   WALL_PRINT.buildAiSheet = async function (o) {
@@ -2783,18 +2784,24 @@
     const SC = 0.1;                 // 縮尺 1/10（シートの mm ＝ 実寸 mm × 0.1）
     const GAP = 80;                 // 分割図の巾と巾のすき間（実寸 mm）
     const MM = 72 / 25.4;
+    const PTM = 25.4 / 72;          // 1pt（シートの mm）
+    const f0 = (v) => String(Math.round(v));
     const f1 = (v) => String(Math.round(v * 10) / 10);
-    // ---- シートの配置（シートの mm、左上が原点・下向き）----
-    const LM = 45, TOPM = 45;
-    const s1x = LM, s1y = TOPM;                                  // 全体図の左上
+    const multi = (o.walls || []).length > 1;
+    // ---- シートの配置（シートの mm、左上が原点・下向き）。見本と同じ間隔 ----
+    // 分割図：貼り始めの巾は全体図と同じ位置、そこから巾ごとに（すき間＋合わせ代の分）ずらして離す
+    const D = P.ROLL + GAP - P.STEP;
+    const anchor = right ? N - 1 : 0;
+    const splitR = (i) => i * P.STEP + (i - anchor) * D;             // 分割図の i 番目（左から）の巾の左端（実寸、全体図の絵の座標）
+    const minR = Math.min(0, splitR(0)), maxR = Math.max(FW, splitR(N - 1) + P.ROLL);
+    const LM = 40, TOPM = (multi ? 58 : 43) + 8;
+    const s1x = LM - minR * SC, s1y = TOPM;                        // 全体図の左上
     const s1w = FW * SC, s1h = H * SC;
-    const s2y = s1y + s1h + 22 + 38;                             // 分割図の左上
-    const s2x = LM;
-    const pitch2 = (P.ROLL + GAP) * SC;
-    const s2w = N * pitch2 - GAP * SC, s2h = H * SC;
-    const specY = s2y + s2h + 25;
-    const pageW = Math.max(s1x + s1w, s2x + s2w, 240) + 25;
-    const pageH = specY + 62;
+    const s2y = s1y + s1h + 78;                                      // 分割図の上端（見本：全体図の下から 78mm）
+    const s2h = H * SC;
+    const specY = s2y + s2h + 76;                                    // 見本（ピッチ）の枠の上端
+    const pageW = Math.max(s1x + maxR * SC, s1x + 260) + 25;
+    const pageH = specY + 30 + 45;
     const u = Math.max(1, Math.ceil(Math.max(pageW, pageH) * MM / 14000));
     const kk = MM / u;               // PDF の単位 / シートの mm
     const Hp = pageH * kk;
@@ -2877,86 +2884,119 @@
       const xx = a === 'c' ? x - w / 2 : (a === 'r' ? x - w : x);
       return 'BT /F1 ' + fs + ' Tf ' + X(xx) + ' ' + Y(y) + ' Td <' + utf16(str) + '> Tj ET\n';
     };
-    const TS = 3;   // 寸法の文字の大きさ（シートの mm）
-    // 横の寸法線：x1〜x2（シートの mm）、高さ y、数字 v
-    const hdim = (x1, x2, y, v) => line(x1, y, x2, y) + line(x1, y - 1.5, x1, y + 1.5) + line(x2, y - 1.5, x2, y + 1.5) + text(f1(v), (x1 + x2) / 2, y - 1, TS, 'c');
-    const vdim = (x, y1, y2, v) => line(x, y1, x, y2) + line(x - 1.5, y1, x + 1.5, y1) + line(x - 1.5, y2, x + 1.5, y2) + text(f1(v), x - 1, (y1 + y2) / 2, TS, 'c', 90);
+    // 寸法：見本と同じ（文字 20pt・線 0.455pt・端の線 4mm）。上の寸法は線の 12.6pt 上、下の寸法は線の 27.8pt 下に数字
+    const TS = 20 * PTM;
+    const DT = 2;                    // 端の線の半分（シートの mm）
+    const hdim = (x1, x2, y, v, below) => line(x1, y, x2, y) + line(x1, y - DT, x1, y + DT) + line(x2, y - DT, x2, y + DT) + text(f0(v), (x1 + x2) / 2, below ? y + 27.8 * PTM : y - 12.6 * PTM, TS, 'c');
+    const vdim = (x, y1, y2, v) => line(x, y1, x, y2) + line(x - DT, y1, x + DT, y1) + line(x - DT, y2, x + DT, y2) + text(f0(v), x - 12.6 * PTM, (y1 + y2) / 2, TS, 'c', 90);
     const px1 = (xr) => s1x + xr * SC, py1 = (yr) => s1y + yr * SC;     // 全体図：絵の実寸 → シート
-    const stripX = (i) => s2x + i * pitch2;                               // 分割図：i 番目の巾の左端
+    const stripX = (i) => s1x + splitR(i) * SC;                           // 分割図：i 番目の巾の左端（シート）
     const stripNo = (i) => (right ? N - i : i + 1);                       // 貼り始めが 1
+    const label = (i) => stripNo(i) + '_【' + name + '】';
+    // 巾 i が受け持つ壁の範囲（実寸、巾の左端から）：カット線（巾の端から合わせ代の半分）の間で、壁の中だけ
+    const part = (i) => {
+      const x0 = i * P.STEP;
+      const a0 = Math.max(x0 + P.EDGE, ox), a1 = Math.min(x0 + P.ROLL - P.EDGE, ox + W);
+      return a1 > a0 ? { l: a0 - x0, r: a1 - x0 } : null;
+    };
+    // ---- 分割の枠（トンボと名前）：見本と同じ ----
+    // 巾の枠（rx, ry, rw, rh）の中の、仕上がりの四角（qx0..qx1, qy0..qy1）に、
+    //   横のトンボ：仕上がりの上下の高さで、巾の枠の左右の外側に 5mm（実寸）、
+    //   縦のトンボ：仕上がりの左右の位置で、巾の枠の上下の外側に 5mm（実寸）、
+    //   名前「N_【案件名】」（1.2pt）：仕上がりの左端の少し右、巾の枠の上の外側・下の外側、
+    //   「天↑地」（1.2pt・縦書き）：巾の枠の左の外側、上の角・下の角
+    const TL = 5 * SC, NS = 1.2 * PTM, TD = 1.2 * PTM;
+    const tategaki = (str, cx, top, size, fromBottom) => {
+      const n = str.length, y0 = fromBottom ? top - n * size : top;
+      let t = '';
+      for (let k = 0; k !== n; k++) t += text(str[k], cx, y0 + (k + 0.88) * size, size, 'c');
+      return t;
+    };
+    const trim = (rx, ry, rw, rh, qx0, qx1, qy0, qy1, lab, tdSize) => {
+      let t = K(0, 0, 0, 1) + lw(0.03);
+      t += line(rx - TL, qy0, rx, qy0) + line(rx - TL, qy1, rx, qy1) + line(rx + rw, qy0, rx + rw + TL, qy0) + line(rx + rw, qy1, rx + rw + TL, qy1);
+      t += line(qx0, ry - TL, qx0, ry) + line(qx1, ry - TL, qx1, ry) + line(qx0, ry + rh, qx0, ry + rh + TL) + line(qx1, ry + rh, qx1, ry + rh + TL);
+      t += Kf(0, 0, 0, 0.99);
+      t += text(lab, qx0 + 2.6 * PTM, ry - 0.29 * PTM, NS, 'l') + text(lab, qx0 + 2.6 * PTM, ry + rh + 1.21 * PTM, NS, 'l');
+      const ts = tdSize || TD;
+      t += Kf(0, 0, 0, 1) + tategaki('天↑地', rx - 0.66 * PTM, ry + 0.56 * PTM, ts) + tategaki('天↑地', rx - 0.66 * PTM, ry + rh - 0.56 * PTM, ts, true);
+      return t;
+    };
     // ---- レイヤーの中身 ----
-    let gfx = '', div = '', spec = '', dim = '';
-    // グラフィック：全体図と、巾ごとの画像
+    let gfx = '', div = '', wall = '', spec = '', dim = '';
+    // グラフィック：全体図と、巾ごとの画像（巾の枠で切り抜く）
     gfx += drawPic(s1x, s1y, [s1x, s1y, s1w, s1h], 0, FW);
     for (let i = 0; i !== N; i++) {
       const xs = i * P.STEP, sx = stripX(i);
       gfx += drawPic(sx - xs * SC, s2y, [sx, s2y, P.ROLL * SC, s2h], xs, xs + P.ROLL);
     }
-    // 分割：全体図の巾の区切り（カット線）と、分割図の合わせ代の印
-    div += 'q 0 J 0 j ' + K(0, 0, 0, 0.6) + lw(0.5);
-    for (let i = 1; i !== N; i++) { const cx = px1(i * P.STEP + P.EDGE); div += line(cx, s1y, cx, s1y + s1h); }
-    div += K(0, 0, 0, 0.6) + lw(0.35);
+    // 分割：全体図の巾の枠（分割外枠・0.1mm）と、全体図・分割図の巾ごとのトンボと名前
+    div += 'q 0 J 0 j ' + K(0, 0, 0, 1) + lw(0.2835);
+    for (let i = 0; i !== N; i++) div += rect(px1(i * P.STEP), s1y, P.ROLL * SC, s1h);
+    const qy0 = P.TRIM_TOP * SC, qy1 = (P.TRIM_TOP + WH) * SC;
     for (let i = 0; i !== N; i++) {
-      const sx = stripX(i);
-      [P.EDGE, P.ROLL - P.EDGE].forEach((e) => {
-        const cx = sx + e * SC;
-        div += line(cx, s2y - 3, cx, s2y - 0.6) + line(cx, s2y + s2h + 0.6, cx, s2y + s2h + 3);
-      });
-      div += rect(sx, s2y, P.ROLL * SC, s2h);
+      const q = part(i);
+      if (!q) continue;
+      const fx = px1(i * P.STEP), sx = stripX(i);
+      div += trim(fx, s1y, P.ROLL * SC, s1h, fx + q.l * SC, fx + q.r * SC, s1y + qy0, s1y + qy1, label(i));
+      div += trim(sx, s2y, P.ROLL * SC, s2h, sx + q.l * SC, sx + q.r * SC, s2y + qy0, s2y + qy1, label(i));
     }
+    // 見本の枠（ピッチ）：巾 × 300mm（実寸）の枠に、ピッチ × 200mm の仕上がり
+    const lgx = s1x + (minR + 800) * SC, lgw = P.ROLL * SC, lgh = 30;
+    div += K(0, 0, 0, 1) + lw(0.0312) + rect(lgx, specY, lgw, lgh);
+    div += trim(lgx, specY, lgw, lgh, lgx + P.EDGE * SC, lgx + lgw - P.EDGE * SC, specY + 5, specY + lgh - 5, '1_【' + name + '】', 1.0 * PTM);
     div += 'Q\n';
-    // 仕様：全体の範囲（マゼンタ）、壁の範囲（シアン）、仕様の欄
-    spec += 'q 0 J 0 j ' + K(0, 1, 0, 0) + lw(0.75) + rect(s1x, s1y, s1w, s1h);
-    spec += K(1, 0, 0, 0) + lw(0.75);
+    // 壁面全体のライン：全体の範囲（マゼンタ）、壁の範囲（シアン）
+    wall += 'q 0 J 0 j ' + K(0, 1, 0, 0) + lw(0.99) + rect(s1x, s1y, s1w, s1h);
+    wall += K(1, 0, 0, 0) + lw(0.99);
     (o.shapes || []).forEach((pts) => {
-      spec += pts.map((q, i) => X(px1(q[0])) + ' ' + Y(py1(q[1])) + (i ? ' l' : ' m')).join(' ') + ' h S\n';
+      wall += pts.map((q, i) => X(px1(q[0])) + ' ' + Y(py1(q[1])) + (i ? ' l' : ' m')).join(' ') + ' h S\n';
     });
+    wall += 'Q\n';
+    // 仕様：ピッチ（見本の枠の上）と、案件名などの欄
     const today = new Date();
     const date = today.getFullYear() + '/' + (today.getMonth() + 1) + '/' + today.getDate();
     const lines = [
       '案件名：' + name,
-      '壁：幅 ' + f1(W) + ' × 高さ ' + f1(WH) + ' mm' + ((o.walls || []).length > 1 ? '（壁 ' + o.walls.map((w) => w.no).join('→') + ' をつなげる）' : ''),
-      '巾 ' + f1(P.ROLL) + ' mm ／ 合わせ代 ' + f1(P.OVERLAP) + ' mm ／ ' + f1(P.STEP) + 'ピッチ ／ ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート）',
+      '壁：幅 ' + f1(W) + ' × 高さ ' + f1(WH) + ' mm' + (multi ? '（壁 ' + o.walls.map((w) => w.no).join('→') + ' をつなげる）' : ''),
+      '巾 ' + f1(P.ROLL) + ' mm ／ 合わせ代 ' + f1(P.OVERLAP) + ' mm ／ ' + f1(P.STEP) + 'ピッチ ／ ' + N + ' 巾（' + (right ? '右' : '左') + 'から貼る）',
       '上下の余白 ' + f1(P.TRIM_TOP) + ' mm ／ スタート側の端の余白 ' + f1(P.SIDE) + ' mm ／ 全体 ' + f1(FW) + ' × ' + f1(H) + ' mm',
       '縮尺 1/10 ／ 作成日 ' + date + ' ／ 確認用'
     ];
-    spec += K(0, 0, 0, 1) + lw(0.5) + rect(s2x, specY, 200, 50) + Kf(0, 0, 0, 1);
-    spec += text(f1(P.STEP) + 'ピッチ', s2x + 4, specY + 9, 6, 'l');
-    lines.forEach((t, i) => { spec += text(t, s2x + 4, specY + 18 + i * 6.5, 3.6, 'l'); });
+    spec += 'q ' + Kf(0, 0, 0, 1);
+    spec += text(f1(P.STEP) + 'ピッチ', lgx + lgw / 2, specY - 6, 53 * PTM, 'c');
+    lines.forEach((t, i) => { spec += text(t, lgx + lgw + 25, specY + 4 + i * 6, 4, 'l'); });
     spec += 'Q\n';
-    // 寸法：全体図の上・左・下、分割図の上（巾ごと）・左、巾の名前
-    dim += 'q 0 J 0 j ' + K(0, 0, 0, 1) + Kf(0, 0, 0, 1) + lw(0.3);
+    // 寸法：全体図の上（壁ごと → 余白｜壁｜余白 → 全体）・左（余白｜壁の高さ｜余白 → 全体）・下（巾ごとの仕上がり）、
+    // 分割図の上（巾ごとに 左｜仕上がり｜右 → 巾）・左
+    dim += 'q 0 J 0 j ' + K(0, 0, 0, 1) + Kf(0, 0, 0, 1) + lw(0.455);
     const wl = px1(ox), wr = px1(ox + W);
-    dim += hdim(s1x, s1x + s1w, s1y - 30, FW);
-    if (ox > 0.5) dim += hdim(s1x, wl, s1y - 20, ox);
-    dim += hdim(wl, wr, s1y - 20, W);
-    if (FW - ox - W > 0.5) dim += hdim(wr, s1x + s1w, s1y - 20, FW - ox - W);
-    if ((o.walls || []).length > 1) {
+    const r1 = s1y - 13.05, r2 = r1 - 15.2, r3 = r2 - 15.2;
+    if (multi) {
       let acc = ox;
-      o.walls.forEach((w) => { dim += hdim(px1(acc), px1(acc + w.W), s1y - 10, w.W); acc += w.W; });
+      o.walls.forEach((w) => { dim += hdim(px1(acc), px1(acc + w.W), r1, w.W); acc += w.W; });
     }
-    dim += vdim(s1x - 30, s1y, s1y + s1h, H);
-    dim += vdim(s1x - 18, s1y, py1(P.TRIM_TOP), P.TRIM_TOP) + vdim(s1x - 18, py1(P.TRIM_TOP), py1(P.TRIM_TOP + WH), WH) + vdim(s1x - 18, py1(P.TRIM_TOP + WH), s1y + s1h, P.TRIM_BOTTOM);
-    // 全体図の下：巾ごとに受け持つ壁の幅（壁の端・カット線で区切る）
-    const cuts = [ox];
-    for (let i = 1; i !== N; i++) { const c = i * P.STEP + P.EDGE; if (c > ox + 0.5 ? c < ox + W - 0.5 : false) cuts.push(c); }
-    cuts.push(ox + W);
-    for (let i = 0; i + 1 < cuts.length; i++) dim += hdim(px1(cuts[i]), px1(cuts[i + 1]), s1y + s1h + 10, cuts[i + 1] - cuts[i]);
-    // 分割図：巾ごとに 全幅、合わせ代の半分｜ピッチ｜合わせ代の半分、名前と天地
+    const rm = multi ? r2 : r1, rt = multi ? r3 : r2;
+    if (ox > 0.5) dim += hdim(s1x, wl, rm, ox);
+    dim += hdim(wl, wr, rm, W);
+    if (FW - ox - W > 0.5) dim += hdim(wr, s1x + s1w, rm, FW - ox - W);
+    dim += hdim(s1x, s1x + s1w, rt, FW);
+    const vd = (x, y) => vdim(x - 9.5, y, y + qy0, P.TRIM_TOP) + vdim(x - 9.5, y + qy0, y + qy1, WH) + vdim(x - 9.5, y + qy1, y + s1h, P.TRIM_BOTTOM) + vdim(x - 23.5, y, y + s1h, H);
+    dim += vd(s1x, s1y);
     for (let i = 0; i !== N; i++) {
-      const sx = stripX(i), sw = P.ROLL * SC;
-      dim += hdim(sx, sx + sw, s2y - 22, P.ROLL);
-      dim += hdim(sx, sx + P.EDGE * SC, s2y - 12, P.EDGE) + hdim(sx + P.EDGE * SC, sx + sw - P.EDGE * SC, s2y - 12, P.STEP) + hdim(sx + sw - P.EDGE * SC, sx + sw, s2y - 12, P.EDGE);
-      dim += text(stripNo(i) + '_【' + name + '】', sx + 1, s2y - 31, 3, 'l');
-      dim += text('天↑地', sx + sw - 1, s2y - 31, 3, 'r');
+      const q = part(i);
+      if (q) dim += hdim(px1(i * P.STEP + q.l), px1(i * P.STEP + q.r), s1y + s1h + 9.5, q.r - q.l, true);
     }
-    dim += vdim(s2x - 18, s2y, s2y + s2h, H);
-    dim += text('全体図（縮尺 1/10）', s1x, s1y - 37, 4.5, 'l');
-    dim += text('分割図（巾ごと・貼る順に ' + (right ? '右' : '左') + 'から 1, 2, 3 …）', s2x, s2y - 38, 4.5, 'l');
+    for (let i = 0; i !== N; i++) {
+      const sx = stripX(i), sw = P.ROLL * SC, q = part(i) || { l: P.EDGE, r: P.ROLL - P.EDGE };
+      dim += hdim(sx, sx + sw, s2y - 28.75, P.ROLL);
+      dim += hdim(sx, sx + q.l * SC, s2y - 13.6, q.l) + hdim(sx + q.l * SC, sx + q.r * SC, s2y - 13.6, q.r - q.l) + hdim(sx + q.r * SC, sx + sw, s2y - 13.6, P.ROLL - q.r);
+    }
+    dim += vd(stripX(0), s2y);
     dim += 'Q\n';
     // ---- PDF にまとめる ----
-    const names = ['グラフィック', '分割', '仕様', '寸法'];
-    const bodies = [gfx, div, spec, dim];
+    const names = ['グラフィック', '分割', '壁面ライン', '寸法', '仕様'];
+    const bodies = [gfx, div, wall, dim, spec];
     const ocgs = names.map((nm) => { const id = alloc(); put(id, ['<< /Type /OCG /Name <FEFF' + utf16(nm) + '> >>']); return id; });
     let content = '';
     bodies.forEach((b, i) => { content += '/OC /L' + i + ' BDC\n' + b + 'EMC\n'; });
