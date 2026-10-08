@@ -342,8 +342,9 @@ final class SS_Admin {
         self::guard('ss_migrate_plan');
         $id = isset($_GET['plan_id']) ? (int) $_GET['plan_id'] : 0;
         $r = SS_Billing::migrate_plan_subscribers($id, 20);
-        $msg = $r['migrated'] . '社を新しい金額に切り替えました。';
+        $msg = $r['migrated'] . '社を新しい金額に切り替えました（新しい料金は、各お客様の次回の請求日から）。';
         if ($r['failed']) { $msg .= '（' . $r['failed'] . '社は切り替えられませんでした。カードの状態などをご確認ください）'; }
+        if (!empty($r['skipped'])) { $msg .= $r['skipped'] . '社は、お支払い確認中・解約予約中のため、スキップしました（状態が戻ってから、もう一度押してください）。'; }
         if ($r['remaining']) { $msg .= '残り ' . $r['remaining'] . '社。もう一度押してください。'; }
         self::flash($r['failed'] ? 'error' : 'ok', $msg);
         self::back_billing();

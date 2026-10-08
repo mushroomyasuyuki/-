@@ -7,7 +7,8 @@
  * - 送り先・金額・プランIDなどは、すべてこのクラスを通す（テストでは $transport を差し替える）
  *
  * 【要確認】PAY.JPの正式な仕様のうち、次の点は、テストモードで動作を確かめること：
- *  解約・一時停止の効力が出る時期／プラン変更時の日割りと反映の時期／再開（resume）の課金のタイミング
+ *  解約・一時停止の効力が出る時期／再開（resume）の課金のタイミング
+ * 【確認済み（テストモード）】プラン更新APIは、無料期間中でも即時課金される → 使わない。一時停止・再開・カード変更では課金されない。
  */
 
 if (!defined('ABSPATH')) {
@@ -115,9 +116,9 @@ final class SS_Payjp {
         return self::request('GET', 'subscriptions/' . rawurlencode($id));
     }
 
-    public static function change_plan($subscription_id, $plan_id) {
-        return self::request('POST', 'subscriptions/' . rawurlencode($subscription_id), array('plan' => $plan_id, 'prorate' => 'false'));
-    }
+    // 注意：PAY.JPの「定期課金のプラン変更（subscriptions/:id の plan 更新）」は使わない。
+    // テストモードで、無料期間中でも新しいプランの料金が、すぐに課金されることを確認したため。
+    // プラン変更は、SS_Billing::change_plan() が「一時停止→新しい定期課金を作る→古い定期課金を解約」で行う。
 
     public static function pause_subscription($id) {
         return self::request('POST', 'subscriptions/' . rawurlencode($id) . '/pause');

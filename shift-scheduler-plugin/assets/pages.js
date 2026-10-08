@@ -703,12 +703,13 @@
         return;
       }
       root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'プランの変更' }));
+      root.appendChild(el('p', { class: 'ss-sub', text: '新しい料金は、次回の請求日（' + day(d.next_billing_at) + '）から適用されます。変更の時点で、請求が発生することはありません。' }));
       var choices = planChoices(d, 'plan', d.plan_id);
       root.appendChild(choices);
       root.appendChild(el('div', { class: 'ss-actions' }, [btn('このプランに変更する', function () {
         var plan = chosen(choices);
         if (!plan || plan === d.plan_id) { say('現在と違うプランを選んでください。'); return; }
-        api('POST', 'billing/plan', { plan_id: plan }).then(function () { return done('プランを変更しました。'); }).catch(fail);
+        api('POST', 'billing/plan', { plan_id: plan }).then(function () { return done('プランを変更しました。新しい料金は、次回の請求日から適用されます。'); }).catch(fail);
       })]));
 
       root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'カードの変更' }));

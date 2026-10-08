@@ -164,6 +164,16 @@ final class SS_Billing {
         return $tenant;
     }
 
+    /**
+     * プラン変更：新しい料金は、「次回の請求日」から。今すぐ課金されることはない。
+     *
+     * PAY.JPのプラン更新APIは、無料期間中でも新プランの料金を即時課金する（テストモードで確認）ため使わず、
+     *   1) 今の定期課金を一時停止（請求を止める）
+     *   2) 新しいプランで、新しい定期課金を作る（最初の請求日 = 無料期間の終了日、または現在の期間の終了日）
+     *   3) 古い定期課金を解約
+     * の順に行う。どこで失敗しても二重請求にならない：
+     *   2で失敗 → 古い定期課金を、元の請求日で再開して終了／3で失敗 → 古いほうは停止のまま（請求なし）で、毎日の処理が解約をやり直す。
+     */
     public static function change_plan(array $tenant, array $plan) {
         if ($tenant['payjp_subscription_id'] === '') {
             return new WP_Error('no_subscription', 'ご契約がありません。', array('status' => 400));
@@ -175,13 +185,45 @@ final class SS_Billing {
         if (!self::fits($plan, $count)) {
             return new WP_Error('plan_too_small', 'スタッフが' . $count . '名いるため、「' . $plan['name'] . '」（' . $plan['max_staff'] . '名まで）には変更できません。', array('status' => 400));
         }
-        $sub = SS_Payjp::change_plan($tenant['payjp_subscription_id'], $plan['payjp_plan_id']);
-        if (is_wp_error($sub)) {
-            return $sub;
+        $b = self::billing_settings($tenant);
+        if ((int) $tenant['plan_id'] === (int) $plan['id'] && isset($b['payjp_plan_id']) && $b['payjp_plan_id'] === $plan['payjp_plan_id']) {
+            return $tenant; // すでにこのプラン（この金額）なので、何もしない
         }
-        self::db_update($tenant['id'], array('plan_id' => (int) $plan['id']));
-        self::set_billing($tenant['id'], array('payjp_plan_id' => $plan['payjp_plan_id']));
-        return self::apply_subscription_state(self::tenant($tenant['id']), $sub);
+        if (!empty($b['cancel_at'])) {
+            return new WP_Error('cancel_reserved', '解約を受け付けているため、プランは変更できません。先に解約の取り消しをしてください。', array('status' => 409));
+        }
+        $old_id = $tenant['payjp_subscription_id'];
+        $cur = SS_Payjp::get_subscription($old_id);
+        if (is_wp_error($cur)) {
+            return $cur;
+        }
+        $st = isset($cur['status']) ? (string) $cur['status'] : '';
+        if ($st === 'paused') {
+            return new WP_Error('paused', 'お支払いを確認できていないため、先にカードを変更してください。', array('status' => 409));
+        }
+        if ($st !== 'trial' && $st !== 'active') {
+            return new WP_Error('not_active', 'ご契約の状態を確認できませんでした。時間をおいて、もう一度お試しください。', array('status' => 409));
+        }
+        $until = $st === 'trial' ? (int) (isset($cur['trial_end']) ? $cur['trial_end'] : 0) : (int) (isset($cur['current_period_end']) ? $cur['current_period_end'] : 0);
+        $trial_end = $until > time() + 3600 ? $until : null; // これまでの期間の終わりまでは請求しない
+
+        $paused = SS_Payjp::pause_subscription($old_id);
+        if (is_wp_error($paused)) {
+            return $paused;
+        }
+        $meta = array('tenant_id' => (int) $tenant['id'], 'tenant_public_id' => $tenant['public_id']);
+        $new = SS_Payjp::create_subscription($tenant['payjp_customer_id'], $plan['payjp_plan_id'], $trial_end, $meta);
+        if (is_wp_error($new)) {
+            SS_Payjp::resume_subscription($old_id, $trial_end); // 元に戻す（請求日は変えない）
+            return $new;
+        }
+        self::db_update($tenant['id'], array('payjp_subscription_id' => (string) $new['id'], 'plan_id' => (int) $plan['id']));
+        self::set_billing($tenant['id'], array('payjp_plan_id' => $plan['payjp_plan_id'], 'cancel_old_sub' => $old_id));
+        $c = SS_Payjp::cancel_subscription($old_id);
+        if (!is_wp_error($c)) {
+            self::set_billing($tenant['id'], array('cancel_old_sub' => null));
+        }
+        return self::apply_subscription_state(self::tenant($tenant['id']), $new);
     }
 
     /**
@@ -374,6 +416,19 @@ final class SS_Billing {
             }
         }
 
+        // 2b) プラン変更のとき、古い定期課金の解約に失敗していたら、やり直す（古いほうは停止中なので、請求はされない）
+        if (SS_Payjp::configured()) {
+            foreach ($wpdb->get_results("SELECT * FROM {$t} WHERE settings LIKE '%cancel_old_sub%' AND deleted_at IS NULL LIMIT 100", ARRAY_A) as $row) {
+                $b = self::billing_settings($row);
+                if (!empty($b['cancel_old_sub'])) {
+                    $r = SS_Payjp::cancel_subscription($b['cancel_old_sub']);
+                    if (!is_wp_error($r)) {
+                        self::set_billing($row['id'], array('cancel_old_sub' => null));
+                    }
+                }
+            }
+        }
+
         // 3) 通知の取りこぼしに備えて、更新日が近い・過ぎた契約を問い合わせて同期（1日に最大50件）
         if (SS_Payjp::configured()) {
             $rows = $wpdb->get_results($wpdb->prepare(
@@ -454,24 +509,37 @@ final class SS_Billing {
         }));
     }
 
-    /** @return array ['migrated' => 件数, 'failed' => 件数, 'remaining' => 残り件数] */
+    /**
+     * 金額変更後、既存の契約者を新しい金額のプランへ切り替える（新しい料金は、各お客様の次回の請求日から）。
+     * お支払い確認中・解約予約中のお客様は、いまは切り替えられないのでスキップする（状態が戻ってから、もう一度）。
+     * @return array ['migrated' => 件数, 'failed' => 件数, 'skipped' => 件数, 'remaining' => 切り替えできる残り件数]
+     */
     public static function migrate_plan_subscribers($plan_id, $limit = 20) {
         $plan = self::plan($plan_id);
         if (!$plan || !self::plan_ready($plan)) {
-            return array('migrated' => 0, 'failed' => 0, 'remaining' => 0);
+            return array('migrated' => 0, 'failed' => 0, 'skipped' => 0, 'remaining' => 0);
         }
         $todo = self::stale_subscribers($plan_id);
         $migrated = 0;
         $failed = 0;
-        foreach (array_slice($todo, 0, (int) $limit) as $row) {
+        $skipped = 0;
+        $processed = 0;
+        foreach ($todo as $row) {
+            if ($processed >= (int) $limit) {
+                break;
+            }
             $r = self::change_plan($row, $plan);
-            if (is_wp_error($r)) {
-                $failed++;
-            } else {
+            if (!is_wp_error($r)) {
                 $migrated++;
+                $processed++;
+            } elseif (in_array($r->get_error_code(), array('paused', 'cancel_reserved', 'not_active', 'plan_too_small'), true)) {
+                $skipped++; // いまは切り替えられない状態
+            } else {
+                $failed++;
+                $processed++;
             }
         }
-        return array('migrated' => $migrated, 'failed' => $failed, 'remaining' => max(0, count($todo) - $migrated));
+        return array('migrated' => $migrated, 'failed' => $failed, 'skipped' => $skipped, 'remaining' => max(0, count($todo) - $migrated - $failed - $skipped));
     }
 
     /**

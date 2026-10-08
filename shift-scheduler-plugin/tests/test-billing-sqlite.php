@@ -208,14 +208,69 @@ $r = SS_Billing::update_card(T($A), 'tok_new');
 check('card update during grace: customer card updated and subscription resumed', !is_wp_error($r) && count(calls('POST', '#^subscriptions/sub_[A-Za-z0-9]+/resume$#')) >= 1 && $r['status'] === 'active' && empty(SS_Billing::billing_settings($r)['grace_since']));
 check('card update with bad token rejected', code(SS_Billing::update_card(T($A), 'x')) === 'invalid_card');
 
-/* ---- プラン変更 ---- */
+/* ---- プラン変更：PAY.JPのプラン更新APIは使わない（無料期間中でも即時課金されるため） ----
+ * 「一時停止 → 新しい定期課金を作る（最初の請求日 = 無料期間／現在の期間の終了日）→ 古い定期課金を解約」 */
+$seq_keys = function ($calls) { return array_map(function ($c) { return $c[0] . ' ' . preg_replace('#sub_[A-Za-z0-9]+#', 'SUB', $c[1]); }, $calls); };
+$wpdb->pdo->exec("UPDATE wp_shift_tenants SET trial_end = '" . dt(-30) . "' WHERE id = {$A}");   // Aは、無料期間が終わって有料の契約中
+$oldA = T($A)['payjp_subscription_id'];
+$period_end = $pj['subs'][$oldA]['current_period_end'];
+$n0 = count($pj['calls']);
 $r = SS_Billing::change_plan(T($A), SS_Billing::plan($STD));
-$cp = calls('POST', '#^subscriptions/sub_[A-Za-z0-9]+$#'); $lastcp = end($cp);
-check('change plan: API called with new plan and prorate=false; tenant plan updated', !is_wp_error($r) && $lastcp[2]['plan'] === 'plan_std' && $lastcp[2]['prorate'] === 'false' && (int) T($A)['plan_id'] === $STD && SS_Billing::billing_settings(T($A))['payjp_plan_id'] === 'plan_std');
-check('change plan without a subscription refused', code(SS_Billing::change_plan(T($B), SS_Billing::plan($LIGHT))) === 'no_subscription');
+$seq = array_slice($pj['calls'], $n0);
+check('plan change (paid period): get → pause old → create new → cancel old (no plan-update call)', !is_wp_error($r) && $seq_keys($seq) === array('GET subscriptions/SUB', 'POST subscriptions/SUB/pause', 'POST subscriptions', 'POST subscriptions/SUB/cancel'), json_encode($seq_keys($seq)));
+$newA = T($A)['payjp_subscription_id'];
+check('plan change (paid period): new subscription is created with the new plan and its first charge at the END of the current period', $newA !== $oldA && $seq[2][2]['plan'] === 'plan_std' && (int) $seq[2][2]['trial_end'] === $period_end && $pj['subs'][$newA]['status'] === 'trial');
+check('plan change: old subscription canceled, tenant points to the new one, plan updated, still active', $pj['subs'][$oldA]['status'] === 'canceled' && (int) T($A)['plan_id'] === $STD && SS_Billing::billing_settings(T($A))['payjp_plan_id'] === 'plan_std' && empty(SS_Billing::billing_settings(T($A))['cancel_old_sub']) && T($A)['status'] === 'active' && SS_Tenants::is_writable(T($A)));
+check('plan change: next billing date shown = end of current period', abs(strtotime(T($A)['next_billing_at'] . ' UTC') - $period_end) <= 2);
+check('plan change to the same plan is a no-op (no API calls)', (function () use (&$pj, $A, $STD) { $n = count($pj['calls']); $r = SS_Billing::change_plan(T($A), SS_Billing::plan($STD)); return !is_wp_error($r) && count($pj['calls']) === $n; })());
+
+// 無料期間中の変更：最初の請求日は、無料期間の終了日のまま（今は課金されない）
+$T1 = mk_tenant('無料中の変更', 'trial', 20, 3);
+SS_Billing::subscribe(T($T1), SS_Billing::plan($LIGHT), 'tok_t1');
+$oldT = T($T1)['payjp_subscription_id'];
+$trial_ts1 = strtotime(T($T1)['trial_end'] . ' UTC');
+$n0 = count($pj['calls']);
+$r = SS_Billing::change_plan(T($T1), SS_Billing::plan($STD));
+$seq = array_slice($pj['calls'], $n0);
+$newT = T($T1)['payjp_subscription_id'];
+check('plan change during the free trial: new subscription keeps the SAME trial end (no charge now)', !is_wp_error($r) && (int) $seq[2][2]['trial_end'] === $trial_ts1 && $pj['subs'][$newT]['status'] === 'trial' && (int) $pj['subs'][$newT]['trial_end'] === $trial_ts1 && T($T1)['status'] === 'trial');
+check('plan change during the free trial: no charge of any kind was requested', count(array_filter(calls('POST', '#^charges#'), function ($c) { return true; })) === 0);
+
+// 失敗しても二重請求・請求日の変更にならない
+$T2 = mk_tenant('作成失敗', 'trial', 20, 3);
+SS_Billing::subscribe(T($T2), SS_Billing::plan($LIGHT), 'tok_t2');
+$oldT2 = T($T2)['payjp_subscription_id']; $trial_ts2 = strtotime(T($T2)['trial_end'] . ' UTC');
+$pj['fail']['POST subscriptions'] = array(500, array('type' => 'server_error', 'code' => '', 'message' => 'x'));
+$n0 = count($pj['calls']);
+$r = SS_Billing::change_plan(T($T2), SS_Billing::plan($STD));
+$seq = array_slice($pj['calls'], $n0);
+unset($pj['fail']['POST subscriptions']);
+$resume = array_values(array_filter($seq, function ($c) { return preg_match('#/resume$#', $c[1]); }));
+check('plan change: if creating the new subscription fails, the old one is resumed with the SAME billing date; nothing changes', is_wp_error($r) && count($resume) === 1 && (int) $resume[0][2]['trial_end'] === $trial_ts2 && $pj['subs'][$oldT2]['status'] === 'trial' && (int) $pj['subs'][$oldT2]['trial_end'] === $trial_ts2 && T($T2)['payjp_subscription_id'] === $oldT2 && (int) T($T2)['plan_id'] === $LIGHT);
+check('...and no cancel was sent', count(array_filter($seq, function ($c) { return preg_match('#/cancel$#', $c[1]); })) === 0);
+
+$T3 = mk_tenant('解約失敗', 'trial', 20, 3);
+SS_Billing::subscribe(T($T3), SS_Billing::plan($LIGHT), 'tok_t3');
+$oldT3 = T($T3)['payjp_subscription_id'];
+$pj['fail']['POST subscriptions/ID/cancel'] = array(500, array('type' => 'server_error', 'code' => '', 'message' => 'x'));
+$r = SS_Billing::change_plan(T($T3), SS_Billing::plan($STD));
+unset($pj['fail']['POST subscriptions/ID/cancel']);
+check('plan change: if canceling the old one fails, the change still succeeds; old stays paused (no billing); cleanup is remembered', !is_wp_error($r) && T($T3)['payjp_subscription_id'] !== $oldT3 && $pj['subs'][$oldT3]['status'] === 'paused' && SS_Billing::billing_settings(T($T3))['cancel_old_sub'] === $oldT3);
+SS_Billing::daily();
+check('daily retries the cancel of the old subscription and clears the note', $pj['subs'][$oldT3]['status'] === 'canceled' && empty(SS_Billing::billing_settings(T($T3))['cancel_old_sub']));
+
+// 変更できない状態
+$T4 = mk_tenant('停止中の変更', 'grace', -30, 3, array('payjp_subscription_id' => 'sub_t4', 'payjp_customer_id' => 'cus_t4', 'plan_id' => $LIGHT));
+$pj['subs']['sub_t4'] = array('id' => 'sub_t4', 'status' => 'paused', 'current_period_end' => time() + 86400, 'plan' => array('id' => 'plan_light'));
+check('plan change refused while payment is failing (paused): update the card first', code(SS_Billing::change_plan(T($T4), SS_Billing::plan($STD))) === 'paused');
+SS_Billing::set_billing($T1, array('cancel_at' => dt(10)));
+check('plan change refused while a cancellation is reserved', code(SS_Billing::change_plan(T($T1), SS_Billing::plan($LIGHT))) === 'cancel_reserved');
+SS_Billing::set_billing($T1, array('cancel_at' => null));
+check('plan change without a subscription refused', code(SS_Billing::change_plan(T($B), SS_Billing::plan($LIGHT))) === 'no_subscription');
 $E = mk_tenant('E施設', 'active', -10, 70, array('payjp_subscription_id' => 'sub_e', 'payjp_customer_id' => 'cus_e', 'plan_id' => $STD));
 $pj['subs']['sub_e'] = array('id' => 'sub_e', 'status' => 'active', 'current_period_end' => time() + 86400 * 20, 'plan' => array('id' => 'plan_std'));
-check('change plan too small for staff rejected', code(SS_Billing::change_plan(T($E), SS_Billing::plan($LIGHT))) === 'plan_too_small');
+check('plan change too small for staff rejected', code(SS_Billing::change_plan(T($E), SS_Billing::plan($LIGHT))) === 'plan_too_small');
+check('the PAY.JP plan-update API is never used (it charges immediately, even during a free trial)', count(array_filter($pj['calls'], function ($c) { return $c[0] === 'POST' && preg_match('#^subscriptions/sub_[A-Za-z0-9]+$#', $c[1]) && isset($c[2]['plan']); })) === 0);
 
 /* ---- 解約の予約と取り消し ---- */
 $subD = T($D)['payjp_subscription_id'];
