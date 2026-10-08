@@ -2379,6 +2379,15 @@
           x.textBaseline = 'middle';
           x.fillText(room.name || '部屋', lx, ly);
         };
+        // the converted image at the real size (1 px = 1 mm, the picture stretched first and then converted),
+        // not the preview (at most 1000 px), so a big carpet keeps 1 px details
+        let dimg = dsrc;
+        if (dr && window.cfpCarpetReducedFull) {
+          try {
+            const full = await window.cfpCarpetReducedFull((v) => this.status('割付のPSDを作成しています…（変換画像を実寸で作成中 ' + Math.round(v * 100) + '%）', 'loading'));
+            if (full) dimg = full.canvas;
+          } catch (e) { dimg = dsrc; }
+        }
         // ③ 画像: the converted carpet image where it was placed, only inside the tile layout (the carpet that is ordered)
         const draw3 = (x) => {
           if (!dr) return;
@@ -2389,7 +2398,7 @@
           x.rect(bx, by, lay.box.x1 - lay.box.x0, lay.box.y1 - lay.box.y0);
           x.clip();
           x.imageSmoothingEnabled = false; // keep the reduced colours crisp
-          x.drawImage(dsrc, vx, vy, dr.w, dr.h);
+          x.drawImage(dimg, vx, vy, dr.w, dr.h);
         };
         // ④ 割付: the 500 mm tiles in red (cut tiles light red), the outline
         const draw4 = (x) => {

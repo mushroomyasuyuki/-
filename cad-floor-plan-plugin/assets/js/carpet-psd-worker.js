@@ -269,6 +269,12 @@
     let r = it.next();
     while (!r.done) { yield r.value; r = it.next(); }
     const q = r.value;
+    // mode 'reduce': only the reduced picture (RGBA, the same size), written over the input (it is not needed any more)
+    if (m.mode === 'reduce') {
+      const out = new Uint8ClampedArray(m.rgba);
+      for (let i = 0, j = 0; i < q.R.length; i++, j += 4) { out[j] = q.R[i]; out[j + 1] = q.G[i]; out[j + 2] = q.B[i]; out[j + 3] = q.A ? q.A[i] : 255; }
+      return { parts: [m.rgba], used: q.used };
+    }
     const names = Object.assign({ cad: '①CAD画像', room: '②部屋', img: '③変換画像（減色・実寸）', grid: '④割付（50cm角）' }, m.names || {});
     const wt = writePsd(m.width, m.height, q, m.info || null, names, m.bleed || 0);
     let p = wt.next();
@@ -294,7 +300,7 @@
   // On the page (when a worker cannot be started): the same work, a little at a time
   if (typeof window !== 'undefined') {
     window.CFPCarpetPsd = {
-      ver: 8,
+      ver: 9,
       run: async (m, progress) => {
         const it = job(m);
         let r = it.next();
@@ -305,8 +311,8 @@
     return;
   }
 
-  // ver: 8 = 色の対応表（印象）・余白（透明）に色を付けない・4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
-  self.postMessage({ type: 'ready', ver: 8, offscreen: typeof OffscreenCanvas !== 'undefined' });
+  // ver: 9 = 変換画像だけを実寸で返す（mode: 'reduce'）。ver: 8 = 色の対応表（印象）・余白（透明）に色を付けない・4レイヤー（CAD画像・部屋・変換画像・割付＋センター）・上下左右の余白（bleed）。古い部品がキャッシュから読まれていないかを、画面側で確かめる
+  self.postMessage({ type: 'ready', ver: 9, offscreen: typeof OffscreenCanvas !== 'undefined' });
   self.onmessage = (ev) => {
     try {
       const it = job(ev.data);
