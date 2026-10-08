@@ -650,7 +650,9 @@
         return;
       }
       if (d.status === 'readonly') {
-        root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: '無料期間が終了したため、閲覧のみの状態です。プランとお支払い方法を登録すると、すぐに編集できるようになります。' }));
+        root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: d.has_subscription
+          ? 'お支払いを確認できないまま期限を過ぎたため、閲覧のみの状態です。下の「カードを変更する」から、有効なカードを登録すると、すぐに編集できるようになります。'
+          : '無料期間が終了したため、閲覧のみの状態です。プランとお支払い方法を登録すると、すぐに編集できるようになります。' }));
       }
       if (d.status === 'grace') {
         root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: '直近のお支払いを確認できませんでした。' + (d.grace_since ? day(addDays(d.grace_since.slice(0, 10), 7)) + 'までに、' : '') + '下の「カードを変更する」から、有効なカードを登録してください。期限を過ぎると、閲覧のみになります。' }));
