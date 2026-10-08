@@ -168,6 +168,25 @@ check('retry succeeds and reuses the customer (card updated, no new customer)', 
     check('resubscribe with the same card (already_have_card) succeeds', !is_wp_error($r1) && T($D)['payjp_subscription_id'] !== '');
 }
 
+/* 再契約：PAY.JPに契約が残っている（already_subscribed）場合は、その契約を取り込む */
+{
+    $E = mk_tenant('E店', 'trial', 10, 2);
+    $r0 = SS_Billing::subscribe(T($E), SS_Billing::plan($LIGHT), 'tok_e1');
+    $orphan = T($E)['payjp_subscription_id'];
+    $wpdb->update('wp_shift_tenants', array('payjp_subscription_id' => ''), array('id' => $E)); // こちらの記録だけ消えた状態
+    $pj['fail']['POST subscriptions'] = array(400, array('type' => 'client_error', 'code' => 'already_subscribed', 'message' => 'x'));
+    $keep2 = SS_Payjp::$transport;
+    SS_Payjp::$transport = function ($m, $u, $a) use ($keep2, &$pj, $orphan) {
+        $path = substr($u, strlen(SS_Payjp::BASE));
+        if ($m === 'GET' && strpos($path, 'subscriptions?') === 0) { return pj_resp(200, array('data' => array($pj['subs'][$orphan]))); }
+        return call_user_func($keep2, $m, $u, $a);
+    };
+    $r2 = SS_Billing::subscribe(T($E), SS_Billing::plan($LIGHT), 'tok_e2');
+    SS_Payjp::$transport = $keep2;
+    unset($pj['fail']['POST subscriptions']);
+    check('already_subscribed: existing PAY.JP subscription is adopted, no error', !is_wp_error($r2) && T($E)['payjp_subscription_id'] === $orphan);
+}
+
 /* カード変更：同じカードがすでにある場合も成功し、そのカードを「使うカード」にする */
 {
     $pj['fail']['POST customers/ID'] = array(400, array('type' => 'client_error', 'code' => 'already_have_card', 'message' => 'same'));

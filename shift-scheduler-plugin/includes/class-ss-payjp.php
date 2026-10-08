@@ -133,6 +133,15 @@ final class SS_Payjp {
         return self::request('POST', 'subscriptions', $p);
     }
 
+    /** お客様の定期課金の一覧（プランで絞り込み） */
+    public static function list_subscriptions($customer_id, $plan_id = '') {
+        $p = array('customer' => $customer_id, 'limit' => 20);
+        if ($plan_id !== '') {
+            $p['plan'] = $plan_id;
+        }
+        return self::request('GET', 'subscriptions', $p);
+    }
+
     public static function get_subscription($id) {
         return self::request('GET', 'subscriptions/' . rawurlencode($id));
     }

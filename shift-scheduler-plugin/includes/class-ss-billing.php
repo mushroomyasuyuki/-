@@ -129,12 +129,33 @@ final class SS_Billing {
         // 無料期間が残っているときは、その終了まで課金しない
         $trial_end = self::trial_running($tenant) && strtotime($tenant['trial_end'] . ' UTC') > time() + 3600 ? strtotime($tenant['trial_end'] . ' UTC') : null;
         $sub = SS_Payjp::create_subscription($customer_id, $plan['payjp_plan_id'], $trial_end, $meta);
+        if (is_wp_error($sub) && $sub->get_error_code() === 'payjp_already_subscribed') {
+            // PAY.JPには契約があるのに、こちらに記録されていない場合（通信の途切れなど）：既存の契約を取り込む
+            $found = self::find_live_subscription($customer_id, $plan['payjp_plan_id']);
+            if ($found) {
+                $sub = $found;
+            }
+        }
         if (is_wp_error($sub)) {
             return $sub;
         }
         self::db_update($tenant['id'], array('payjp_subscription_id' => (string) $sub['id'], 'plan_id' => (int) $plan['id']));
         self::set_billing($tenant['id'], array('payjp_plan_id' => $plan['payjp_plan_id'], 'cancel_at' => null, 'grace_since' => null));
         return self::apply_subscription_state(self::tenant($tenant['id']), $sub);
+    }
+
+    /** お客様の、有効な（無料期間中・利用中・停止中の）定期課金を探す。見つからなければ null */
+    private static function find_live_subscription($customer_id, $payjp_plan_id) {
+        $list = SS_Payjp::list_subscriptions($customer_id, $payjp_plan_id);
+        if (is_wp_error($list) || empty($list['data']) || !is_array($list['data'])) {
+            return null;
+        }
+        foreach ($list['data'] as $sub) {
+            if (isset($sub['id'], $sub['status']) && in_array($sub['status'], array('trial', 'active', 'paused'), true)) {
+                return $sub;
+            }
+        }
+        return null;
     }
 
     /** カードの変更。お支払いに失敗して止まっている契約は、新しいカードで再開する。 */
