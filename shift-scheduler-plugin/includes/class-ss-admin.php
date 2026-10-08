@@ -345,11 +345,12 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
             self::back_billing();
         }
         $r = SS_Payjp::request('POST', 'subscriptions/' . rawurlencode($tenant['payjp_subscription_id']), array('trial_end' => 'now'));
+        // 課金が拒否された場合もエラーが返る。いずれの場合もPAY.JPの最新の状態を取り込む
+        SS_Billing::sync_tenant(SS_Billing::tenant($tenant['id']));
         if (is_wp_error($r)) {
-            self::flash('error', 'PAY.JPの処理に失敗しました：' . $r->get_error_message());
+            self::flash('error', '請求は失敗しました（テストカードの想定どおりです）：' . $r->get_error_message() . ' ／ お客様の契約ページの状態と、PAY.JPの「売上（支払い失敗）」「定期課金」を確認してください。');
             self::back_billing();
         }
-        SS_Billing::sync_tenant(SS_Billing::tenant($tenant['id']));
         self::flash('ok', '無料期間を終わらせました。PAY.JPの「売上」と「定期課金」、お客様の契約ページで状態を確認してください。');
         self::back_billing();
     }
