@@ -106,6 +106,39 @@ final class SS_System {
         $wpdb->query($wpdb->prepare("UPDATE {$t} SET used_at = %s WHERE user_id = %d AND type = %s AND used_at IS NULL", self::now(), (int) $user_id, $type));
     }
 
+    /**
+     * お客様のデータを、すべて削除する（元に戻せません）。解約後の保存期間が過ぎたときに使う。
+     * スタッフ・勤務区分・ルール・希望・シフト表・ログイン用のアカウント・確認用のトークンを消す。
+     * お客様の行は、決済の履歴の照合のため残すが、事業所名や設定は消して「削除済み」にする。
+     */
+    public static function purge_tenant($tenant_id) {
+        global $wpdb;
+        $tenant_id = (int) $tenant_id;
+        if ($tenant_id <= 0) {
+            return false;
+        }
+        $users = self::table('users');
+        $wp_ids = $wpdb->get_col($wpdb->prepare("SELECT wp_user_id FROM {$users} WHERE tenant_id = %d", $tenant_id));
+        foreach (array('entries', 'schedules', 'request_submissions', 'requests', 'request_periods', 'rules', 'patterns', 'staff', 'users', 'tokens') as $name) {
+            $t = self::table($name);
+            $wpdb->query($wpdb->prepare("DELETE FROM {$t} WHERE tenant_id = %d", $tenant_id));
+        }
+        if (defined('ABSPATH') && file_exists(ABSPATH . 'wp-admin/includes/user.php')) {
+            require_once ABSPATH . 'wp-admin/includes/user.php';
+            foreach ((array) $wp_ids as $wp_id) {
+                $wp_id = (int) $wp_id;
+                $user = $wp_id ? get_userdata($wp_id) : false;
+                if ($user && !user_can($user, 'manage_options')) { // 管理権限のあるユーザーは、念のため消さない
+                    wp_delete_user($wp_id);
+                }
+            }
+        }
+        $wpdb->update(self::table('tenants'), array(
+            'name' => '（削除済み）', 'status' => 'suspended', 'settings' => '{}', 'payjp_subscription_id' => '', 'next_billing_at' => null, 'deleted_at' => self::now(),
+        ), array('id' => $tenant_id));
+        return true;
+    }
+
     public static function mail($to, $subject, $body) {
         $site = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
         return wp_mail($to, '[' . $site . '] ' . $subject, $body . "\n\n--\n" . $site . "\n" . home_url('/'));

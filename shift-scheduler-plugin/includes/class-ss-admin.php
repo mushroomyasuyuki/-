@@ -319,6 +319,8 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
         echo '<input type="hidden" name="action" value="ss_save_terms">';
         echo '<p><label><strong>解約・返金に関する記載</strong>（「解約」の最後の1文に入ります）<br><input type="text" class="large-text" name="refund_text" value="' . esc_attr(SS_Terms::refund_text()) . '" maxlength="300" style="max-width:1000px"></label></p>';
         echo '<p class="description">返金の方針は、事業者の判断で決めてください。初期値は「日割りによる返金は行いません。」です。</p>';
+        echo '<p><label><strong>解約後のデータ保存日数</strong>（この日数が過ぎると、お客様のデータを自動で削除します。<code>0</code> なら削除しません） <input type="number" name="purge_days" min="0" max="3650" value="' . esc_attr((string) SS_Billing::purge_days()) . '" class="small-text"> 日</label></p>';
+        echo '<p class="description">削除する7日前に、お客様へメールでお知らせします。削除したデータは、元に戻せません。解約が終わった日から数えます（今後の解約から対象になります）。利用規約・プライバシーポリシーの記載と、同じ日数にしてください。</p>';
         echo '<p><button class="button button-primary">記載を保存</button></p></form>';
 
         // 直近のエラー
@@ -514,6 +516,9 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
         self::guard('ss_save_terms');
         $t = isset($_POST['refund_text']) ? mb_substr(trim(sanitize_text_field(wp_unslash($_POST['refund_text']))), 0, 300) : '';
         update_option('ss_refund_text', $t, false);
+        if (isset($_POST['purge_days'])) {
+            update_option('ss_purge_days', max(0, min(3650, (int) $_POST['purge_days'])), false);
+        }
         self::flash('ok', '記載を保存しました。');
         self::back_billing();
     }

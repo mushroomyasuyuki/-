@@ -19,6 +19,7 @@ if (!defined('ABSPATH')) {
 
 final class SS_Billing {
     const GRACE_DAYS = 7;
+    const PURGE_NOTICE_DAYS = 7; // 削除の何日前に、お知らせのメールを送るか
     const TRIAL_MAIL_DAYS = array(14, 7, 1);
 
     /* ---------- 補助 ---------- */
@@ -144,7 +145,7 @@ final class SS_Billing {
             return $sub;
         }
         self::db_update($tenant['id'], array('payjp_subscription_id' => (string) $sub['id'], 'plan_id' => (int) $plan['id']));
-        self::set_billing($tenant['id'], array('payjp_plan_id' => $plan['payjp_plan_id'], 'cancel_at' => null, 'grace_since' => null));
+        self::set_billing($tenant['id'], array('payjp_plan_id' => $plan['payjp_plan_id'], 'cancel_at' => null, 'grace_since' => null, 'canceled_at' => null, 'purge_notice' => null));
         return self::apply_subscription_state(self::tenant($tenant['id']), $sub);
     }
 
@@ -369,6 +370,9 @@ final class SS_Billing {
             $data['payjp_subscription_id'] = '';
             $changes['cancel_at'] = null;
             $changes['grace_since'] = null;
+            if ($new === 'readonly' && empty($b['canceled_at'])) {
+                $changes['canceled_at'] = SS_System::now(); // 解約が終わった日（この日から、保存期間を数える）
+            }
         }
 
         $next = null;
@@ -507,6 +511,64 @@ final class SS_Billing {
 
         // 4) 無料期間の終わりの案内メール（14日前・7日前・前日）
         self::send_trial_reminders();
+
+        // 5) 解約から保存期間が過ぎたお客様のデータを削除（その前に、お知らせのメール）
+        self::purge_due();
+    }
+
+    /** 解約後のデータ保存日数。0 なら、自動では削除しない */
+    public static function purge_days() {
+        $d = (int) get_option('ss_purge_days', 30);
+        return max(0, min(3650, $d));
+    }
+
+    /** 解約が終わった日から、削除される日（UTCの日時）。対象でなければ空 */
+    public static function purge_at(array $tenant) {
+        $days = self::purge_days();
+        $b = self::billing_settings($tenant);
+        if ($days <= 0 || empty($b['canceled_at']) || $tenant['status'] !== 'readonly' || $tenant['payjp_subscription_id'] !== '') {
+            return '';
+        }
+        return gmdate('Y-m-d H:i:s', strtotime($b['canceled_at'] . ' UTC') + $days * 86400);
+    }
+
+    /** 保存期間が過ぎたお客様を削除し、近づいたお客様にはお知らせを送る。削除した件数を返す */
+    public static function purge_due() {
+        global $wpdb;
+        if (self::purge_days() <= 0) {
+            return 0;
+        }
+        $t = SS_System::table('tenants');
+        $rows = $wpdb->get_results("SELECT * FROM {$t} WHERE status = 'readonly' AND payjp_subscription_id = '' AND deleted_at IS NULL AND settings LIKE '%canceled_at%' LIMIT 200", ARRAY_A);
+        $deleted = 0;
+        foreach ((array) $rows as $row) {
+            $at = self::purge_at($row);
+            if ($at === '') {
+                continue;
+            }
+            $due = strtotime($at . ' UTC');
+            if (time() >= $due) {
+                if (SS_System::purge_tenant($row['id'])) {
+                    $deleted++;
+                }
+                continue;
+            }
+            $b = self::billing_settings($row);
+            if (time() >= $due - self::PURGE_NOTICE_DAYS * 86400 && empty($b['purge_notice'])) {
+                self::set_billing($row['id'], array('purge_notice' => 1));
+                self::mail_purge_notice($row, $at);
+            }
+        }
+        return $deleted;
+    }
+
+    private static function mail_purge_notice(array $tenant, $purge_at) {
+        $to = self::owner_email($tenant['id']);
+        if ($to === '') {
+            return;
+        }
+        $when = gmdate('Y年n月j日', strtotime($purge_at . ' UTC') + 9 * 3600);
+        SS_System::mail($to, 'データ削除のお知らせ', $tenant['name'] . " 様\n\nご解約から" . self::purge_days() . "日が過ぎるため、" . $when . "ごろに、お預かりしているデータ（スタッフ・勤務区分・ルール・希望・シフト表など）をすべて削除します。削除したデータは、元に戻せません。\n削除を希望されない場合は、それまでに、下記からプランとお支払い方法を登録して、ご契約を再開してください。\n\n" . SS_View::app_url($tenant['public_id'], 'billing') . "\n");
     }
 
     public static function send_trial_reminders() {

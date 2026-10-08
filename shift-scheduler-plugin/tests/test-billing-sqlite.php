@@ -46,6 +46,8 @@ class FakeWpdb {
             'plans' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, name, max_staff, price, payjp_plan_id DEFAULT "", payjp_amount DEFAULT 0, active DEFAULT 1, sort_order DEFAULT 0',
             'billing_events' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, event_id UNIQUE, type, payload, processed_at',
             'schedules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, status',
+            'entries' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'request_submissions' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'requests' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id',
+            'request_periods' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'rules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'patterns' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'tokens' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id',
         );
         foreach ($t as $n => $c) { $this->pdo->exec("CREATE TABLE wp_shift_{$n} ({$c})"); }
     }
@@ -206,6 +208,33 @@ check('retry succeeds and reuses the customer (card updated, no new customer)', 
     unset($pj['fail']['POST subscriptions']);
     $res = calls('POST', '#^subscriptions/' . preg_quote($old, '#') . '/resume$#');
     check('canceled subscription is resumed (with trial_end) instead of being refused', !is_wp_error($r3) && count($res) === 1 && !empty($res[0][2]['trial_end']) && T($G)['payjp_subscription_id'] === $old);
+}
+
+/* 解約後のデータ保存期間：通知 → 削除 */
+{
+    $GLOBALS['opts']['ss_purge_days'] = 30;
+    $mk = function ($name, $days_ago) use ($wpdb) {
+        $id = mk_tenant($name, 'readonly', -10, 2);
+        $wpdb->update('wp_shift_tenants', array('payjp_subscription_id' => ''), array('id' => $id));
+        SS_Billing::set_billing($id, array('canceled_at' => gmdate('Y-m-d H:i:s', time() - $days_ago * 86400)));
+        $wpdb->insert('wp_shift_schedules', array('tenant_id' => $id, 'status' => 'draft'));
+        return $id;
+    };
+    $P1 = $mk('削除対象店', 31); $P2 = $mk('通知対象店', 25); $P3 = $mk('まだ店', 5);
+    $PX = mk_tenant('解約日なし店', 'readonly', -10, 2); $wpdb->insert('wp_shift_schedules', array('tenant_id' => $PX, 'status' => 'draft'));
+    $GLOBALS['mails'] = array();
+    $n = SS_Billing::purge_due();
+    $cnt = function ($id) use ($wpdb) { return (int) $wpdb->get_var("SELECT COUNT(*) FROM wp_shift_schedules WHERE tenant_id = " . (int) $id); };
+    check('purge: tenant past retention is deleted (data gone, record anonymized)', $n === 1 && $cnt($P1) === 0 && $wpdb->get_var("SELECT name FROM wp_shift_tenants WHERE id = " . (int) $P1) === '（削除済み）' && $wpdb->get_var("SELECT deleted_at FROM wp_shift_tenants WHERE id = " . (int) $P1) !== null);
+    check('purge: others keep their data', $cnt($P2) === 1 && $cnt($P3) === 1 && $cnt($PX) === 1);
+    $m = array_values(array_filter($GLOBALS['mails'], function ($x) use ($P2) { return $x[0] === "owner{$P2}@example.test"; }));
+    check('purge: notice sent 7 days before (only to the near tenant, once)', count($m) === 1 && strpos($m[0][2], '削除') !== false);
+    $GLOBALS['mails'] = array(); SS_Billing::purge_due();
+    check('purge: notice is not repeated', count($GLOBALS['mails']) === 0);
+    $GLOBALS['opts']['ss_purge_days'] = 0;
+    $P4 = $mk('無効時の店', 400); SS_Billing::purge_due();
+    check('purge: days=0 disables automatic deletion', $cnt($P4) === 1);
+    unset($GLOBALS['opts']['ss_purge_days']);
 }
 
 /* カード変更：同じカードがすでにある場合も成功し、そのカードを「使うカード」にする */

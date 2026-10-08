@@ -55,6 +55,7 @@ final class SS_Rest_Billing {
             'trial_days_left' => SS_Tenants::trial_days_left($tenant),
             'trial_running' => SS_Billing::trial_running($tenant),
             'has_subscription' => $tenant['payjp_subscription_id'] !== '',
+            'purge_at' => SS_Billing::purge_at($tenant),
             'plan_id'      => $tenant['plan_id'] ? (int) $tenant['plan_id'] : null,
             'next_billing_at' => $tenant['next_billing_at'],
             'cancel_at'    => isset($b['cancel_at']) ? $b['cancel_at'] : null,
