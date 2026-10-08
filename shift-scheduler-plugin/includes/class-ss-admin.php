@@ -323,11 +323,11 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
         // 5) テスト専用：無料期間を今すぐ終わらせる（テスト用のキーのときだけ表示）
         if (strpos((string) SS_Payjp::secret_key(), 'sk_test_') === 0) {
             echo '<h2>5. 動作確認用（テスト用のキーのときだけ表示されます）</h2>';
-            echo '<p>無料期間を今すぐ終わらせて、初回の請求を発生させます。支払い失敗用のテストカードで、一時停止・猶予の動きを確認するために使います。<strong>本番のキーでは表示も実行もできません。</strong></p>';
+            echo '<p>無料期間の終了を約2分後に設定し、PAY.JPの自動課金で初回の請求を発生させます。支払い失敗用のテストカードで、一時停止・猶予の動きを確認するために使います。<strong>本番のキーでは表示も実行もできません。</strong></p>';
             echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
             wp_nonce_field('ss_test_end_trial');
             echo '<input type="hidden" name="action" value="ss_test_end_trial">';
-            echo '<p><label>お客様のページID（URLの /s/ のあとの12文字） <input type="text" name="public_id" maxlength="12" pattern="[a-z0-9]{12}" required></label> <button class="button">無料期間を今すぐ終わらせる</button></p></form>';
+            echo '<p><label>お客様のページID（URLの /s/ のあとの12文字） <input type="text" name="public_id" maxlength="12" pattern="[a-z0-9]{12}" required></label> <button class="button">無料期間を約2分後に終わらせる</button></p></form>';
         }
         echo '</div>';
     }
@@ -344,14 +344,13 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
             self::flash('error', '契約のあるお客様が見つかりません。');
             self::back_billing();
         }
-        $r = SS_Payjp::request('POST', 'subscriptions/' . rawurlencode($tenant['payjp_subscription_id']), array('trial_end' => 'now'));
-        // 課金が拒否された場合もエラーが返る。いずれの場合もPAY.JPの最新の状態を取り込む
+        $r = SS_Payjp::request('POST', 'subscriptions/' . rawurlencode($tenant['payjp_subscription_id']), array('trial_end' => time() + 120));
         SS_Billing::sync_tenant(SS_Billing::tenant($tenant['id']));
         if (is_wp_error($r)) {
-            self::flash('error', '請求は失敗しました（テストカードの想定どおりです）：' . $r->get_error_message() . ' ／ お客様の契約ページの状態と、PAY.JPの「売上（支払い失敗）」「定期課金」を確認してください。');
+            self::flash('error', 'PAY.JPの処理に失敗しました：' . $r->get_error_message());
             self::back_billing();
         }
-        self::flash('ok', '無料期間を終わらせました。PAY.JPの「売上」と「定期課金」、お客様の契約ページで状態を確認してください。');
+        self::flash('ok', '無料期間の終了を、約2分後に設定しました。数分待ってから、PAY.JPの「売上」「定期課金」「イベント」と、お客様の契約ページで状態を確認してください（PAY.JPの自動課金が走ります）。');
         self::back_billing();
     }
 
