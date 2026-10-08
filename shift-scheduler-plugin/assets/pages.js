@@ -562,15 +562,30 @@
     function yen(n) { return Number(n).toLocaleString('ja-JP') + '円'; }
     function day(s) { return s ? jpDate(s.slice(0, 10)) : '-'; }
 
-    /** カード入力欄（PAY.JPの入力部品）を用意する。カード番号は、このサイトのサーバーには送られない。 */
-    function mountCard(selector, publicKey) {
+    /**
+     * カード入力欄（PAY.JPの入力部品）を用意する。カード番号は、このサイトのサーバーには送られない。
+     * カード番号・有効期限・CVCを別々の枠にする。分割型が使えない場合は、1つにまとまった入力欄に切り替える。
+     * PAY.JPの部品は、置き場所を「#id」の文字列で受け取る。画面に置いたあとで呼ぶこと。
+     */
+    function mountCard(publicKey) {
       return new Promise(function (resolve, reject) {
         function ready() {
           try {
             payjp = payjp || window.Payjp(publicKey);
             var els = payjp.elements();
-            cardEl = els.create('card');
-            cardEl.mount(selector); // PAY.JPの部品は、置き場所を「#id」の文字列で受け取る。画面に置いたあとで呼ぶこと。
+            try {
+              var number = els.create('cardNumber'), expiry = els.create('cardExpiry'), cvc = els.create('cardCvc');
+              number.mount('#ss-card-number');
+              expiry.mount('#ss-card-expiry');
+              cvc.mount('#ss-card-cvc');
+              cardEl = number; // トークンは、カード番号の部品から作る（有効期限・CVCも一緒に扱われる）
+            } catch (splitError) {
+              ['ss-card-expiry-wrap', 'ss-card-cvc-wrap'].forEach(function (id) { var w = document.getElementById(id); if (w) { w.hidden = true; } });
+              var box = document.getElementById('ss-card-number');
+              if (box) { box.textContent = ''; }
+              cardEl = els.create('card');
+              cardEl.mount('#ss-card-number');
+            }
             resolve();
           } catch (e) { reject(e); }
         }
@@ -618,8 +633,8 @@
       }
       wantCard = null;
       if (!d.has_subscription) { subscribeForm(d); } else { manageForm(d); }
-      if (wantCard && document.getElementById('ss-card')) {
-        mountCard('#ss-card', wantCard).catch(function (e) { fail(e); });
+      if (wantCard && document.getElementById('ss-card-number')) {
+        mountCard(wantCard).catch(function (e) { fail(e); });
       }
     }
 
@@ -640,13 +655,26 @@
     }
 
     function cardBox(d, label, onSubmit, buttonText) {
-      var mount = el('div', { id: 'ss-card', class: 'ss-card-input' });
       var b = btn(buttonText, function () {
         if (!cardEl) { say('カード入力欄の準備ができていません。'); return; }
         b.disabled = true;
         getToken().then(onSubmit).catch(function (e) { fail(e); }).then(function () { b.disabled = false; });
       });
-      var wrap = el('div', {}, [el('p', { class: 'ss-sub', text: label }), mount, el('p', { class: 'ss-card-hint', text: 'カード番号、有効期限（月 / 年）、セキュリティコード（CVC）の順に入力してください。' }), el('div', { class: 'ss-actions', style: 'margin-top:10px' }, [b])]);
+      function field3(id, title, extra) {
+        return el('div', Object.assign({ id: id + '-wrap' }, extra || {}), [
+          el('div', { class: 'ss-card-label', text: title }),
+          el('div', { id: id, class: 'ss-card-input' })
+        ]);
+      }
+      var wrap = el('div', {}, [
+        el('p', { class: 'ss-sub', text: label }),
+        el('div', { class: 'ss-card-grid' }, [
+          field3('ss-card-number', 'カード番号', { style: 'grid-column:1/-1' }),
+          field3('ss-card-expiry', '有効期限（月 / 年）'),
+          field3('ss-card-cvc', 'セキュリティコード（CVC）')
+        ]),
+        el('div', { class: 'ss-actions', style: 'margin-top:10px' }, [b])
+      ]);
       wantCard = d.public_key; // render() が、画面に置いたあとで入力欄を用意する
       return wrap;
     }

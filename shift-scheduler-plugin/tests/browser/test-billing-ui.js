@@ -58,8 +58,13 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"></head><body class="ss"><main class="ss-main"><section class="ss-card"><h1>ご契約・お支払い</h1><div id="ss-notice" class="ss-alert" hidden></div><div id="ss-root"></div></section></main>
 <script>window.SS_CONFIG=${JSON.stringify(cfg)};
-window.__payjpKeys=[]; window.__mounted=0;
-window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function(){return{create:function(){return{mount:function(sel){if(typeof sel!=='string'){throw new Error('mountにはセレクタ文字列（#id）を指定してください');}var el=document.querySelector(sel);if(!el){throw new Error('mountに指定されたセレクタが現在ページに存在しません。');}window.__mounted++;el.setAttribute('data-mounted','1');}}}}},createToken:function(){return Promise.resolve({id:window.__tokenResult||'tok_test123'});}};};
+window.__payjpKeys=[]; window.__mounted=0; window.__created=[]; window.__tokenFrom=[];
+window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function(){return{create:function(type){
+  if(window.__noSplit&&type!=='card'){throw new Error('unsupported element type: '+type);}
+  if(['card','cardNumber','cardExpiry','cardCvc'].indexOf(type)<0){throw new Error('unknown type '+type);}
+  window.__created.push(type);
+  return{_type:type,mount:function(sel){if(typeof sel!=='string'){throw new Error('mountにはセレクタ文字列（#id）を指定してください');}var el=document.querySelector(sel);if(!el){throw new Error('mountに指定されたセレクタが現在ページに存在しません。');}window.__mounted++;el.setAttribute('data-mounted','1');}};}}},
+  createToken:function(el){window.__tokenFrom.push(el&&el._type);return Promise.resolve({id:window.__tokenResult||'tok_test123'});}};};
 </script>
 <script src="/assets/ui.js"></script><script src="/assets/pages.js"></script></body></html>`);
 });
@@ -79,14 +84,19 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   /* 1. 無料期間中・未契約 */
   reset();
   await page.goto(base);
-  await page.waitForSelector('#ss-card[data-mounted]', { state: 'attached' });
+  await page.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
   let t = await text();
   check('shows status and trial days', t.includes('無料期間中') && t.includes('あと40日'));
   check('explains: no charge until trial end', t.includes('請求は無料期間の終了日') && t.includes('12月31日'));
   check('no error notice right after the page opens (card input mounted without error)', await page.locator('#ss-notice').isHidden());
-  const box = await page.locator('#ss-card').evaluate(e => { const c = getComputedStyle(e); return { border: c.borderTopWidth, bg: c.backgroundColor, h: e.getBoundingClientRect().height }; });
-  check('card input area has a visible border, white background and enough height', box.border === '1px' && box.bg === 'rgb(255, 255, 255)' && box.h >= 50, JSON.stringify(box));
-  check('card input explains the order of fields', (await text()).includes('セキュリティコード（CVC）'));
+  const boxes = [];
+  for (const id of ['ss-card-number', 'ss-card-expiry', 'ss-card-cvc']) {
+    boxes.push(await page.locator('#' + id).evaluate(e => { const c = getComputedStyle(e); return { id: e.id, border: c.borderTopWidth, bg: c.backgroundColor, h: e.getBoundingClientRect().height, w: e.getBoundingClientRect().width }; }));
+  }
+  check('three separate card boxes, each with a visible border, white background and enough height', boxes.every(b => b.border === '1px' && b.bg === 'rgb(255, 255, 255)' && b.h >= 50), JSON.stringify(boxes));
+  check('expiry and CVC boxes are half width, side by side (card number is full width)', boxes[0].w > boxes[1].w * 1.8 && Math.abs(boxes[1].w - boxes[2].w) < 4, JSON.stringify(boxes));
+  check('each box has its own label', ['カード番号', '有効期限（月 / 年）', 'セキュリティコード（CVC）'].every(l => t.includes(l)));
+  check('split elements created: number, expiry, cvc — all three mounted', (await page.evaluate(() => window.__created)).join() === 'cardNumber,cardExpiry,cardCvc' && (await page.locator('[data-mounted]').count()) === 3);
   check('card input mounted with the public key', (await page.evaluate(() => window.__payjpKeys)).join() === 'pk_test_abc');
   const radios = page.locator('input[name=plan]');
   check('4 plans listed; not-ready and too-small plans are disabled', (await radios.count()) === 4 && await radios.nth(2).isDisabled() && await radios.nth(3).isDisabled() && !(await radios.nth(0).isDisabled()));
@@ -97,6 +107,7 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   await radios.nth(1).check();
   await page.getByRole('button', { name: 'カードを登録して契約する' }).click();
   await page.waitForSelector('text=ご契約を受け付けました');
+  check('token is created from the card number element', (await page.evaluate(() => window.__tokenFrom)).join() === 'cardNumber');
   check('subscribe sends chosen plan and token (no card number)', posts.length === 1 && posts[0].path === 'billing/subscribe' && posts[0].body.plan_id === 2 && posts[0].body.card_token === 'tok_test123' && Object.keys(posts[0].body).sort().join() === 'card_token,plan_id');
   t = await text();
   check('after subscribing: management view (plan, card, cancel)', t.includes('スタンダード') && t.includes('1,000円') && t.includes('カードの変更') && t.includes('解約') && (await page.getByRole('button', { name: 'カードを登録して契約する' }).count()) === 0);
@@ -128,7 +139,7 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   /* 6. カードが通らない */
   reset();
   await page.goto(base);
-  await page.waitForSelector('#ss-card[data-mounted]', { state: 'attached' });
+  await page.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
   nextError = 'カードが承認されませんでした。別のカードをお試しいただくか、カード会社にご確認ください。';
   await page.getByRole('button', { name: 'カードを登録して契約する' }).click();
   await page.waitForSelector('text=カードが承認されませんでした');
@@ -139,23 +150,34 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   await page.goto(base);
   await page.waitForSelector('#ss-root dl');
   t = await text();
-  check('not configured: friendly notice, no forms', t.includes('お支払いの準備中です') && (await page.locator('#ss-card').count()) === 0);
+  check('not configured: friendly notice, no forms', t.includes('お支払いの準備中です') && (await page.locator('#ss-card-number').count()) === 0);
 
   reset({ status: 'readonly', trial_running: false, trial_days_left: null });
   await page.goto(base);
-  await page.waitForSelector('#ss-card[data-mounted]', { state: 'attached' });
+  await page.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
   t = await text();
   check('readonly: explains and offers immediate subscribe; says first charge happens at signup', t.includes('閲覧のみの状態') && t.includes('最初のご請求が行われます'));
 
   reset({ status: 'grace', has_subscription: true, plan_id: 1, grace_since: '2026-10-15 00:00:00', trial_running: false, trial_days_left: null });
   await page.goto(base);
-  await page.waitForSelector('#ss-card[data-mounted]', { state: 'attached' });
+  await page.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
   t = await text();
   check('grace: asks to update the card, with a deadline 7 days after grace start', t.includes('お支払いを確認できませんでした') && t.includes('10月22日') && t.includes('お支払い確認中'));
   await page.getByRole('button', { name: 'カードを変更する' }).click();
   await page.waitForSelector('text=カードを変更しました');
   check('after card update the status returns to active', (await text()).includes('ご契約中'));
 
+  /* 分割型が使えない場合は、まとまった入力欄に切り替わる */
+  const page2 = await browser.newPage({ viewport: { width: 1000, height: 1100 } });
+  await page2.addInitScript(() => { window.__noSplit = true; });
+  page2.on('pageerror', e => errors.push(String(e)));
+  reset();
+  await page2.goto(base);
+  await page2.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
+  check('fallback: combined card element used, expiry/CVC boxes hidden, no error shown', (await page2.evaluate(() => window.__created)).join() === 'card' && await page2.locator('#ss-card-expiry-wrap').isHidden() && await page2.locator('#ss-card-cvc-wrap').isHidden() && await page2.locator('#ss-notice').isHidden());
+  await page2.getByRole('button', { name: 'カードを登録して契約する' }).click();
+  await page2.waitForSelector('text=ご契約を受け付けました');
+  check('fallback: subscribing still works', posts.length === 1 && posts[0].body.card_token === 'tok_test123' && (await page2.evaluate(() => window.__tokenFrom)).join() === 'card');
   await page.screenshot({ path: path.join(process.env.SS_SHOT_DIR || '/tmp', 'billing-page.png') });
   check('no JavaScript errors', errors.length === 0, errors.join(' | '));
   await browser.close(); server.close();

@@ -79,3 +79,8 @@ body.ss{margin:0;background:var(--ss-bg);color:var(--ss-text);font:16px/1.6 -app
 .ss-card-input{border:1px solid #8a94a6;border-radius:8px;padding:14px 12px;background:#fff;min-height:54px;margin:8px 0}
 .ss-card-input:focus-within{border-color:var(--ss-accent);box-shadow:0 0 0 3px rgba(26,127,90,.25)}
 .ss-card-hint{font-size:.85rem;color:var(--ss-sub);margin:2px 0 0}
+
+.ss-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin:8px 0}
+.ss-card-label{font-size:.9rem;font-weight:600;margin-bottom:2px}
+.ss-card-grid .ss-card-input{margin:2px 0 6px}
+@media (max-width:480px){.ss-card-grid{grid-template-columns:1fr}}
