@@ -63,6 +63,15 @@ final class SS_Payjp {
             $err = is_array($body) && isset($body['error']) && is_array($body['error']) ? $body['error'] : array();
             $type = isset($err['type']) ? (string) $err['type'] : '';
             $ecode = isset($err['code']) ? (string) $err['code'] : '';
+            // 運営者が原因を調べられるよう、直近のエラーを記録する（キーやカード情報は含まない）
+            function_exists('update_option') && update_option('ss_last_payjp_error', array(
+                'at'      => gmdate('Y-m-d H:i:s'),
+                'request' => $method . ' ' . preg_replace('/(tok|cus|sub|pln|ch)_[A-Za-z0-9]+/', '$1_…', ltrim($path, '/')),
+                'http'    => $code,
+                'type'    => $type,
+                'code'    => $ecode,
+                'message' => isset($err['message']) ? mb_substr((string) $err['message'], 0, 300) : '',
+            ), false);
             return new WP_Error('payjp_' . ($ecode !== '' ? $ecode : ($type !== '' ? $type : 'error')), self::friendly($type, $ecode), array('status' => $code ? $code : 502, 'payjp' => $err));
         }
         return $body;

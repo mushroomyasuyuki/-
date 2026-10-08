@@ -320,7 +320,16 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
         echo '<p class="description">返金の方針は、事業者の判断で決めてください。初期値は「日割りによる返金は行いません。」です。</p>';
         echo '<p><button class="button button-primary">記載を保存</button></p></form>';
 
+        // 直近のエラー
         // 5) テスト専用：無料期間を今すぐ終わらせる（テスト用のキーのときだけ表示）
+        $le = get_option('ss_last_payjp_error');
+        if (is_array($le) && !empty($le['at'])) {
+            echo '<h2>直近のPAY.JPのエラー（運営者向け）</h2><table class="widefat striped" style="max-width:760px"><tbody>';
+            foreach (array('at' => '日時（UTC）', 'request' => '処理', 'http' => 'HTTP', 'type' => '種類', 'code' => 'コード', 'message' => 'PAY.JPのメッセージ') as $k => $label) {
+                printf('<tr><th style="width:160px">%s</th><td>%s</td></tr>', esc_html($label), esc_html(isset($le[$k]) ? (string) $le[$k] : ''));
+            }
+            echo '</tbody></table>';
+        }
         if (strpos((string) SS_Payjp::secret_key(), 'sk_test_') === 0) {
             echo '<h2>5. 動作確認用（テスト用のキーのときだけ表示されます）</h2>';
             echo '<p>無料期間の終了を約2分後に設定し、PAY.JPの自動課金で初回の請求を発生させます。支払い失敗用のテストカードで、一時停止・猶予の動きを確認するために使います。<strong>本番のキーでは表示も実行もできません。</strong></p>';
