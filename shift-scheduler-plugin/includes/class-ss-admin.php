@@ -25,6 +25,7 @@ final class SS_Admin {
         add_action('admin_post_ss_migrate_plan', array(__CLASS__, 'migrate_plan'));
         add_action('admin_post_ss_save_legal', array(__CLASS__, 'save_legal'));
         add_action('admin_post_ss_save_terms', array(__CLASS__, 'save_terms'));
+        add_action('admin_post_ss_test_end_trial', array(__CLASS__, 'test_end_trial'));
     }
 
     public static function menu() {
@@ -318,7 +319,39 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
         echo '<p><label><strong>解約・返金に関する記載</strong>（「解約」の最後の1文に入ります）<br><input type="text" class="large-text" name="refund_text" value="' . esc_attr(SS_Terms::refund_text()) . '" maxlength="300" style="max-width:1000px"></label></p>';
         echo '<p class="description">返金の方針は、事業者の判断で決めてください。初期値は「日割りによる返金は行いません。」です。</p>';
         echo '<p><button class="button button-primary">記載を保存</button></p></form>';
+
+        // 5) テスト専用：無料期間を今すぐ終わらせる（テスト用のキーのときだけ表示）
+        if (strpos((string) SS_Payjp::secret_key(), 'sk_test_') === 0) {
+            echo '<h2>5. 動作確認用（テスト用のキーのときだけ表示されます）</h2>';
+            echo '<p>無料期間を今すぐ終わらせて、初回の請求を発生させます。支払い失敗用のテストカードで、一時停止・猶予の動きを確認するために使います。<strong>本番のキーでは表示も実行もできません。</strong></p>';
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+            wp_nonce_field('ss_test_end_trial');
+            echo '<input type="hidden" name="action" value="ss_test_end_trial">';
+            echo '<p><label>お客様のページID（URLの /s/ のあとの12文字） <input type="text" name="public_id" maxlength="12" pattern="[a-z0-9]{12}" required></label> <button class="button">無料期間を今すぐ終わらせる</button></p></form>';
+        }
         echo '</div>';
+    }
+
+    public static function test_end_trial() {
+        self::guard('ss_test_end_trial');
+        if (strpos((string) SS_Payjp::secret_key(), 'sk_test_') !== 0) {
+            self::flash('error', 'テスト用のキーのときだけ使えます。');
+            self::back_billing();
+        }
+        $pid = isset($_POST['public_id']) ? sanitize_key(wp_unslash($_POST['public_id'])) : '';
+        $tenant = $pid !== '' ? SS_System::tenant_by_public_id($pid) : null;
+        if (!$tenant || $tenant['payjp_subscription_id'] === '') {
+            self::flash('error', '契約のあるお客様が見つかりません。');
+            self::back_billing();
+        }
+        $r = SS_Payjp::request('POST', 'subscriptions/' . rawurlencode($tenant['payjp_subscription_id']), array('trial_end' => 'now'));
+        if (is_wp_error($r)) {
+            self::flash('error', 'PAY.JPの処理に失敗しました：' . $r->get_error_message());
+            self::back_billing();
+        }
+        SS_Billing::sync_tenant(SS_Billing::tenant($tenant['id']));
+        self::flash('ok', '無料期間を終わらせました。PAY.JPの「売上」と「定期課金」、お客様の契約ページで状態を確認してください。');
+        self::back_billing();
     }
 
     public static function save_payjp() {
