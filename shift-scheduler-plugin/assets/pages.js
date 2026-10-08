@@ -556,21 +556,21 @@
 
   function billingPage() {
     var STATUS = { trial: '無料期間中', active: 'ご契約中', grace: 'お支払い確認中', readonly: '閲覧のみ', suspended: '停止中' };
-    var payjp = null, cardEl = null;
+    var payjp = null, cardEl = null, wantCard = null;
 
     function load() { return api('GET', 'billing').then(render).catch(fail); }
     function yen(n) { return Number(n).toLocaleString('ja-JP') + '円'; }
     function day(s) { return s ? jpDate(s.slice(0, 10)) : '-'; }
 
     /** カード入力欄（PAY.JPの入力部品）を用意する。カード番号は、このサイトのサーバーには送られない。 */
-    function mountCard(container, publicKey) {
+    function mountCard(selector, publicKey) {
       return new Promise(function (resolve, reject) {
         function ready() {
           try {
             payjp = payjp || window.Payjp(publicKey);
             var els = payjp.elements();
             cardEl = els.create('card');
-            cardEl.mount(container);
+            cardEl.mount(selector); // PAY.JPの部品は、置き場所を「#id」の文字列で受け取る。画面に置いたあとで呼ぶこと。
             resolve();
           } catch (e) { reject(e); }
         }
@@ -616,7 +616,11 @@
       if (d.status === 'grace') {
         root.appendChild(el('p', { class: 'ss-alert ss-alert-error', text: '直近のお支払いを確認できませんでした。' + (d.grace_since ? day(addDays(d.grace_since.slice(0, 10), 7)) + 'までに、' : '') + '下の「カードを変更する」から、有効なカードを登録してください。期限を過ぎると、閲覧のみになります。' }));
       }
+      wantCard = null;
       if (!d.has_subscription) { subscribeForm(d); } else { manageForm(d); }
+      if (wantCard && document.getElementById('ss-card')) {
+        mountCard('#ss-card', wantCard).catch(function (e) { fail(e); });
+      }
     }
 
     function planChoices(d, name, selected) {
@@ -643,7 +647,7 @@
         getToken().then(onSubmit).catch(function (e) { fail(e); }).then(function () { b.disabled = false; });
       });
       var wrap = el('div', {}, [el('p', { class: 'ss-sub', text: label }), mount, el('div', { class: 'ss-actions', style: 'margin-top:10px' }, [b])]);
-      mountCard(mount, d.public_key).catch(function (e) { fail(e); });
+      wantCard = d.public_key; // render() が、画面に置いたあとで入力欄を用意する
       return wrap;
     }
 
