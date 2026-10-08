@@ -144,9 +144,11 @@ final class SS_Billing {
             return new WP_Error('invalid_card', 'カード情報が正しく受け取れませんでした。もう一度入力してください。', array('status' => 400));
         }
         $c = SS_Payjp::update_customer_card($tenant['payjp_customer_id'], $card_token);
-        if (is_wp_error($c)) {
+        // すでに同じカードが登録されている場合（やり直しなど）は、エラーにせず、そのカードを使うカードにして続ける
+        if (is_wp_error($c) && $c->get_error_code() !== 'payjp_already_have_card') {
             return $c;
         }
+        self::use_card_as_default($tenant['payjp_customer_id'], $card_token);
         $b = self::billing_settings($tenant);
         if ($tenant['payjp_subscription_id'] !== '' && empty($b['cancel_at'])) {
             $sub = SS_Payjp::get_subscription($tenant['payjp_subscription_id']);
@@ -162,6 +164,29 @@ final class SS_Billing {
             return self::apply_subscription_state(self::tenant($tenant['id']), $sub);
         }
         return $tenant;
+    }
+
+    /**
+     * 登録したカードを、課金に使うカードにする（PAY.JPでは、追加しただけでは切り替わらない場合がある）。
+     * 調べられないときは何もしない（これまでの動作のまま）。
+     */
+    private static function use_card_as_default($customer_id, $card_token) {
+        $tok = SS_Payjp::get_token($card_token);
+        $cus = SS_Payjp::get_customer($customer_id);
+        if (is_wp_error($tok) || is_wp_error($cus) || empty($tok['card']['fingerprint']) || empty($cus['cards']['data'])) {
+            return;
+        }
+        $t = $tok['card'];
+        foreach ($cus['cards']['data'] as $card) {
+            if (isset($card['fingerprint'], $card['exp_month'], $card['exp_year'], $card['id'])
+                && $card['fingerprint'] === $t['fingerprint']
+                && (int) $card['exp_month'] === (int) $t['exp_month'] && (int) $card['exp_year'] === (int) $t['exp_year']) {
+                if (!isset($cus['default_card']) || $cus['default_card'] !== $card['id']) {
+                    SS_Payjp::set_default_card($customer_id, $card['id']);
+                }
+                return;
+            }
+        }
     }
 
     /**

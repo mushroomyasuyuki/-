@@ -155,7 +155,25 @@ unset($pj['fail']['POST subscriptions']);
 $before = count(calls('POST', '#^customers$#'));
 $r = SS_Billing::subscribe(T($C), SS_Billing::plan($STD), 'tok_c2');
 check('retry succeeds and reuses the customer (card updated, no new customer)', !is_wp_error($r) && count(calls('POST', '#^customers$#')) === $before && count(calls('POST', '#^customers/cus_#')) === 1);
-$pj['fail']['POST customers'] = array(500, array('type' => 'server_error', 'code' => '', 'message' => 'boom <script>'));
+
+/* カード変更：同じカードがすでにある場合も成功し、そのカードを「使うカード」にする */
+{
+    $pj['fail']['POST customers/ID'] = array(400, array('type' => 'client_error', 'code' => 'already_have_card', 'message' => 'same'));
+    $keep = SS_Payjp::$transport;
+    SS_Payjp::$transport = function ($m, $u, $a) use ($keep, &$pj) {
+        $path = substr($u, strlen(SS_Payjp::BASE));
+        if ($m === 'GET' && strpos($path, 'tokens/') === 0) { $pj['calls'][] = array($m, $path, array()); return pj_resp(200, array('card' => array('fingerprint' => 'fp1', 'exp_month' => 12, 'exp_year' => 2030))); }
+        if ($m === 'GET' && strpos($path, 'customers/') === 0) { $pj['calls'][] = array($m, $path, array()); return pj_resp(200, array('default_card' => 'car_old', 'cards' => array('data' => array(array('id' => 'car_old', 'fingerprint' => 'fp0', 'exp_month' => 1, 'exp_year' => 2030), array('id' => 'car_new', 'fingerprint' => 'fp1', 'exp_month' => 12, 'exp_year' => 2030))))); }
+        if ($m === 'POST' && isset($a['body']) && strpos($a['body'], 'default_card') !== false) { $pj['calls'][] = array($m, $path, array('default_card' => 'x')); return pj_resp(200, array('id' => 'cus_x')); }
+        return call_user_func($keep, $m, $u, $a);
+    };
+    $t0 = SS_System::tenant_by_id($C);
+    $r = SS_Billing::update_card($t0, 'tok_abc123');
+    $dc = array_filter($pj['calls'], function ($c) { return isset($c[2]['default_card']); });
+    check('card update: already_have_card is not an error and default card is switched', !is_wp_error($r) && count($dc) === 1);
+    unset($pj['fail']['POST customers/ID']);
+    SS_Payjp::$transport = $keep;
+}$pj['fail']['POST customers'] = array(500, array('type' => 'server_error', 'code' => '', 'message' => 'boom <script>'));
 $Cn = mk_tenant('通信エラー店', 'trial', 10, 2);
 $r = SS_Billing::subscribe(T($Cn), SS_Billing::plan($STD), 'tok_zz');
 check('server error: generic message (PAY.JP text not shown)', is_wp_error($r) && strpos($r->msg, 'boom') === false && strpos($r->msg, 'エラー') !== false);

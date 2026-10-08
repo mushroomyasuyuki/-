@@ -112,6 +112,18 @@ final class SS_Payjp {
         return self::request('POST', 'customers/' . rawurlencode($customer_id), array('card' => $card_token));
     }
 
+    public static function get_token($id) {
+        return self::request('GET', 'tokens/' . rawurlencode($id));
+    }
+
+    public static function get_customer($id) {
+        return self::request('GET', 'customers/' . rawurlencode($id));
+    }
+
+    public static function set_default_card($customer_id, $card_id) {
+        return self::request('POST', 'customers/' . rawurlencode($customer_id), array('default_card' => $card_id));
+    }
+
     /** $trial_end：Unix時刻。指定すると、その時刻まで課金しない。 */
     public static function create_subscription($customer_id, $plan_id, $trial_end, array $metadata) {
         $p = array('customer' => $customer_id, 'plan' => $plan_id, 'metadata' => $metadata);
