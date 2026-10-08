@@ -59,6 +59,17 @@ final class SS_Stats {
             $industry[isset($industry[$r['industry']]) ? $r['industry'] : 'other'] += (int) $r['n'];
         }
 
+        // 月額の見込み：契約中（お支払い確認中を含む）のプランの月額の合計。プランごとに税込を計算する。
+        $mrr = array('ex' => 0, 'incl' => 0);
+        $by_plan = $wpdb->get_results($wpdb->prepare(
+            "SELECT p.price AS price, COUNT(*) AS n FROM {$t} t JOIN " . SS_System::table('plans') . " p ON p.id = t.plan_id
+             WHERE t.deleted_at IS NULL AND t.payjp_subscription_id <> '' AND (t.status IN ('active','grace') OR (t.status = 'trial' AND t.trial_end < %s))
+             GROUP BY p.id, p.price", $now), ARRAY_A);
+        foreach ($by_plan as $r) {
+            $mrr['ex'] += (int) $r['price'] * (int) $r['n'];
+            $mrr['incl'] += SS_Tax::incl($r['price']) * (int) $r['n'];
+        }
+
         $st = SS_System::table('staff');
         $sc = SS_System::table('schedules');
         return array(
@@ -70,9 +81,8 @@ final class SS_Stats {
             'trial_ending'   => (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$t} WHERE deleted_at IS NULL AND status = 'trial' AND trial_end >= %s AND trial_end <= %s", $now, gmdate('Y-m-d H:i:s', $ts + 14 * 86400))),
             'months'         => $months,
             'industry'       => $industry,
-            'mrr'            => (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COALESCE(SUM(p.price), 0) FROM {$t} t JOIN " . SS_System::table('plans') . " p ON p.id = t.plan_id
-                 WHERE t.deleted_at IS NULL AND t.payjp_subscription_id <> '' AND (t.status IN ('active','grace') OR (t.status = 'trial' AND t.trial_end < %s))", $now)),
+            'mrr'            => $mrr['incl'],
+            'mrr_ex'         => $mrr['ex'],
             'staff_total'    => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$st} s JOIN {$t} t ON t.id = s.tenant_id WHERE s.active = 1 AND t.deleted_at IS NULL AND t.status <> 'unverified'"),
             'schedules'      => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$sc} c JOIN {$t} t ON t.id = c.tenant_id WHERE t.deleted_at IS NULL AND t.status <> 'unverified'"),
             'schedules_pub'  => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$sc} c JOIN {$t} t ON t.id = c.tenant_id WHERE c.status = 'published' AND t.deleted_at IS NULL AND t.status <> 'unverified'"),

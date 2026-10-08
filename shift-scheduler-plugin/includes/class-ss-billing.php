@@ -70,9 +70,9 @@ final class SS_Billing {
         return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id = %d", (int) $id), ARRAY_A);
     }
 
-    /** お客様が選べるプラン：有効で、PAY.JP側のプランの金額が、画面に出す金額と一致しているもの */
+    /** お客様が選べるプラン：有効で、PAY.JP側のプランの金額が、画面に出す金額（税込）と一致しているもの */
     public static function plan_ready(array $plan) {
-        return (int) $plan['active'] === 1 && $plan['payjp_plan_id'] !== '' && (int) $plan['payjp_amount'] === (int) $plan['price'];
+        return (int) $plan['active'] === 1 && $plan['payjp_plan_id'] !== '' && (int) $plan['payjp_amount'] === SS_Tax::incl($plan['price']);
     }
 
     public static function fits(array $plan, $staff_count) {
@@ -564,14 +564,15 @@ final class SS_Billing {
         if (!$plan) {
             return new WP_Error('not_found', 'プランが見つかりません。');
         }
-        if ($plan['payjp_plan_id'] !== '' && (int) $plan['payjp_amount'] === (int) $plan['price']) {
+        $amount = SS_Tax::incl($plan['price']); // PAY.JPには、税込の金額で請求する
+        if ($plan['payjp_plan_id'] !== '' && (int) $plan['payjp_amount'] === $amount) {
             return null;
         }
-        $r = SS_Payjp::create_plan((int) $plan['price'], $plan['name']);
+        $r = SS_Payjp::create_plan($amount, $plan['name']);
         if (is_wp_error($r)) {
             return $r;
         }
-        $wpdb->update(SS_System::table('plans'), array('payjp_plan_id' => (string) $r['id'], 'payjp_amount' => (int) $plan['price']), array('id' => (int) $plan['id']));
+        $wpdb->update(SS_System::table('plans'), array('payjp_plan_id' => (string) $r['id'], 'payjp_amount' => $amount), array('id' => (int) $plan['id']));
         return true;
     }
 
@@ -595,7 +596,8 @@ final class SS_Billing {
                 $out['errors'][] = '「' . ($name !== '' ? $name : '（名前なし）') . '」：名前（60文字以内）、スタッフ数の上限（1〜1000）、月額（50〜1,000,000円）を確認してください。';
                 continue;
             }
-            $data = array('name' => $name, 'max_staff' => $max, 'price' => $price, 'active' => empty($row['active']) ? 0 : 1, 'sort_order' => isset($row['sort_order']) ? (int) $row['sort_order'] : 0);
+            $data = array('name' => $name, 'max_staff' => $max, 'price' => $price, // price = 税抜の月額
+                           'active' => empty($row['active']) ? 0 : 1, 'sort_order' => isset($row['sort_order']) ? (int) $row['sort_order'] : 0);
             if ($id > 0) {
                 if (!self::plan($id)) {
                     continue;

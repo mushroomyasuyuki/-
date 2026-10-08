@@ -43,7 +43,7 @@ final class SS_Rest_Billing {
         $plans = array();
         foreach (SS_Tenants::plans() as $p) {
             $plans[] = array(
-                'id' => (int) $p['id'], 'name' => $p['name'], 'price' => (int) $p['price'], 'max_staff' => (int) $p['max_staff'],
+                'id' => (int) $p['id'], 'name' => $p['name'], 'price' => SS_Tax::incl($p['price']), 'price_ex' => (int) $p['price'], 'max_staff' => (int) $p['max_staff'],
                 'fits' => SS_Billing::fits($p, $count), 'ready' => SS_Billing::plan_ready($p),
             );
         }
@@ -61,6 +61,8 @@ final class SS_Rest_Billing {
             'grace_since'  => isset($b['grace_since']) ? $b['grace_since'] : null,
             'staff_count'  => $count,
             'plans'        => $plans,
+            'tax_rate'     => SS_Tax::rate(),
+            'terms'        => SS_Terms::sections(),
         ));
     }
 

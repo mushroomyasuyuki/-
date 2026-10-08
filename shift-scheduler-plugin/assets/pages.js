@@ -607,6 +607,17 @@
 
     function done(msg) { say(msg, true); return load(); }
 
+    /** 料金・無料期間・請求の開始・支払い方法・支払い失敗時・プラン変更・解約の説明（サーバーが、実際の設定から作る） */
+    function termsBlock(d, open) {
+      if (!d.terms || !d.terms.length) { return null; }
+      var box = el('details', { class: 'ss-terms', open: open }, [el('summary', { text: '料金とお支払いについて（無料期間・請求・解約など）' })]);
+      d.terms.forEach(function (sec) {
+        box.appendChild(el('h3', { class: 'ss-terms-h', text: sec.title }));
+        sec.body.split('\n').forEach(function (line) { box.appendChild(el('p', { class: 'ss-terms-p', text: line })); });
+      });
+      return box;
+    }
+
     /** 特定商取引法に基づく表記・利用規約・プライバシーポリシーへのリンク（ページが見つからないものは出さない） */
     function legalLinks() {
       var legal = cfg.legal || {};
@@ -629,7 +640,7 @@
       if (d.trial_end && d.trial_running) { facts.push(el('dt', { text: '無料期間の終了日' }), el('dd', { text: day(d.trial_end) })); }
       var cur = null;
       d.plans.forEach(function (p) { if (p.id === d.plan_id) { cur = p; } });
-      if (d.has_subscription && cur) { facts.push(el('dt', { text: 'プラン' }), el('dd', { text: cur.name + '（' + yen(cur.price) + '／月、スタッフ' + cur.max_staff + '名まで）' })); }
+      if (d.has_subscription && cur) { facts.push(el('dt', { text: 'プラン' }), el('dd', { text: cur.name + '（月額' + yen(cur.price) + '（税込）、スタッフ' + cur.max_staff + '名まで）' })); }
       if (d.has_subscription && d.next_billing_at && !d.cancel_at) { facts.push(el('dt', { text: '次回の請求日' }), el('dd', { text: day(d.next_billing_at) })); }
       facts.push(el('dt', { text: 'いまのスタッフ数' }), el('dd', { text: d.staff_count + '名' }));
       root.appendChild(el('dl', { class: 'ss-facts' }, facts));
@@ -657,7 +668,7 @@
         var ok = p.ready && p.fits;
         var note = !p.ready ? '（現在お選びいただけません）' : (!p.fits ? '（スタッフ数が上限を超えています）' : '');
         var input = el('input', { type: 'radio', name: name, value: String(p.id), disabled: !ok, checked: p.id === selected });
-        box.appendChild(el('div', {}, [el('label', { class: 'ss-inline', style: 'margin:6px 0' }, [input, p.name + '　' + yen(p.price) + '／月（スタッフ' + p.max_staff + '名まで）' + note])]));
+        box.appendChild(el('div', {}, [el('label', { class: 'ss-inline', style: 'margin:6px 0' }, [input, p.name + '　月額' + yen(p.price) + '（税込）　※税抜' + yen(p.price_ex) + '　スタッフ' + p.max_staff + '名まで' + note])]));
       });
       return box;
     }
@@ -702,10 +713,12 @@
     function subscribeForm(d) {
       var rec = d.plans.filter(function (p) { return p.ready && p.fits; })[0];
       var choices = planChoices(d, 'plan', rec ? rec.id : 0);
+      var terms = termsBlock(d, true);
       var first = d.trial_running ? 'お申し込みいただいても、請求は無料期間の終了日（' + day(d.trial_end) + '）から始まります。それまでは、お支払いは発生しません。' : 'お申し込みの時点で、最初のご請求が行われます。';
       root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'プランを選んで契約する' }));
       root.appendChild(choices);
       root.appendChild(el('p', { class: 'ss-sub', text: first }));
+      if (terms) { root.appendChild(terms); }
       var links = legalLinks();
       if (links.length) {
         root.appendChild(el('p', { class: 'ss-sub ss-legal-links' }, ['お申し込みの前に、'].concat(links, ['をご確認ください。'])));
@@ -747,6 +760,8 @@
         if (!window.confirm('解約します。よろしいですか？（お支払い済みの期間の終わりまでは、ご利用いただけます）')) { return; }
         api('POST', 'billing/cancel').then(function () { return done('解約を受け付けました。'); }).catch(fail);
       }, true));
+      var tb = termsBlock(d, false);
+      if (tb) { root.appendChild(tb); }
       var tail = legalLinks();
       if (tail.length) { root.appendChild(el('p', { class: 'ss-sub ss-legal-links', style: 'margin-top:24px' }, tail)); }
     }

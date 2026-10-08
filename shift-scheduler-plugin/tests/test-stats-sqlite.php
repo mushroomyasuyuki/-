@@ -48,7 +48,8 @@ function wp_unslash($s) { return $s; }
 function add_action() {}
 function add_menu_page() {} function add_submenu_page() {}
 $GLOBALS['is_admin_user'] = true;
-foreach (array('system', 'tenants', 'stats') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
+function get_option($k, $d = '') { return $d; }
+foreach (array('system', 'tenants', 'tax', 'stats') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
 
 $failed = 0;
 function check($n, $c, $x = '') { global $failed; echo ($c ? 'PASS ' : 'FAIL ') . $n . (!$c && $x ? '  ' . $x : '') . "\n"; if (!$c) { $failed++; } }
@@ -159,7 +160,8 @@ $wpdb->insert('wp_shift_plans', array('name' => 'スタンダード', 'price' =>
 $wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 1, payjp_subscription_id = 'sub_d' WHERE id = {$d}");   // 契約中・ライト
 $wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 2, payjp_subscription_id = 'sub_e' WHERE id = {$e}");   // お支払い確認中・スタンダード
 $wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 1, payjp_subscription_id = 'sub_a' WHERE id = {$a}");   // 無料期間中に契約済み（まだ請求なし）
-check('monthly revenue estimate: active + grace only (500 + 1000), trial-period subscriptions excluded', SS_Stats::summary($NOW)['mrr'] === 1500, 'mrr=' . SS_Stats::summary($NOW)['mrr']);
+$m = SS_Stats::summary($NOW);
+check('monthly revenue estimate: active + grace only, TAX-INCLUDED (550 + 1100); tax-excluded (500 + 1000) reported too; trial-period subscriptions excluded', $m['mrr'] === 1650 && $m['mrr_ex'] === 1500, 'mrr=' . $m['mrr'] . ' ex=' . $m['mrr_ex']);
 
 // 無料期間が終わっても、定期課金がある（まだ状態が更新されていない）お客様は「閲覧のみ」ではなく「契約中」として数える
 $before = SS_Stats::summary($NOW);
@@ -167,7 +169,7 @@ $k = tenant('契約済みK', 'restaurant', 'trial', '2026-07-01 00:00:00', '2026
 $wpdb->pdo->exec("UPDATE wp_shift_tenants SET plan_id = 1, payjp_subscription_id = 'sub_k' WHERE id = {$k}");
 $after = SS_Stats::summary($NOW);
 check('expired trial with a subscription counts as paying, not readonly', $after['by_status']['active'] === $before['by_status']['active'] + 1 && $after['by_status']['readonly'] === $before['by_status']['readonly'] && $after['by_status']['trial'] === $before['by_status']['trial'] && $after['total'] === $before['total'] + 1);
-check('...and adds to monthly revenue', $after['mrr'] === 2000, 'mrr=' . $after['mrr']);
+check('...and adds to monthly revenue (tax-included 550)', $after['mrr'] === 2200 && $after['mrr_ex'] === 2000, 'mrr=' . $after['mrr']);
 $byK = array(); foreach (SS_Stats::tenants(array(), $NOW)['rows'] as $r) { $byK[$r['name']] = $r; }
 check('list shows it as active', $byK['契約済みK']['effective_status'] === 'active');
 check('status filter: active includes it, readonly does not', SS_Stats::tenants(array('status' => 'active'), $NOW)['total'] === 2 && SS_Stats::tenants(array('status' => 'readonly'), $NOW)['total'] === 2);

@@ -24,6 +24,7 @@ final class SS_Admin {
         add_action('admin_post_ss_save_plans', array(__CLASS__, 'save_plans'));
         add_action('admin_post_ss_migrate_plan', array(__CLASS__, 'migrate_plan'));
         add_action('admin_post_ss_save_legal', array(__CLASS__, 'save_legal'));
+        add_action('admin_post_ss_save_terms', array(__CLASS__, 'save_terms'));
     }
 
     public static function menu() {
@@ -80,7 +81,7 @@ final class SS_Admin {
         echo self::card('無料期間中（社）', number_format($by['trial']), '14日以内に終了 ' . $s['trial_ending'] . '社');
         echo self::card('閲覧のみ（社）', number_format($by['readonly']), '無料期間が終わって未契約');
         echo self::card('停止中（社）', number_format($by['suspended']));
-        echo self::card('月額の見込み（円）', number_format($s['mrr']), '契約中のプランの月額の合計');
+        echo self::card('月額の見込み（税込・円）', number_format($s['mrr']), '税抜 ' . number_format($s['mrr_ex']) . '円（契約中のプランの月額の合計）');
         echo '</div>';
 
         echo '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0">';
@@ -245,28 +246,32 @@ final class SS_Admin {
 
         // 2) プラン
         echo '<h2>2. プラン</h2>';
-        echo '<p>お客様が選べるプランです。<strong>金額を変えると、PAY.JPに新しいプランを作ります。</strong>すでに契約中のお客様は、下の「切り替える」を押すまで、これまでの金額のままです。値上げ・値下げは、事前にお客様へお知らせしてください（利用規約にも記載が必要です）。</p>';
+        echo '<p>お客様が選べるプランです。<strong>月額は「税抜」で入力します。</strong>お客様への表示と、PAY.JPへの請求は、消費税を加えた「税込」の金額になります（消費税額の端数は切り捨て）。</p>';
+echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しいプランを作ります。</strong>すでに契約中のお客様は、下の「切り替える」を押すまで、これまでの金額のままです。値上げ・値下げは、事前にお客様へお知らせしてください（利用規約にも記載が必要です）。</p>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         wp_nonce_field('ss_save_plans');
         echo '<input type="hidden" name="action" value="ss_save_plans">';
-        echo '<table class="widefat striped" style="max-width:1000px"><thead><tr><th>名前</th><th>スタッフ数の上限</th><th>月額（円・税込）</th><th>表示順</th><th>有効</th><th>PAY.JPへの反映</th><th>契約中のお客様</th></tr></thead><tbody>';
+        echo '<table class="widefat striped" style="max-width:1000px"><thead><tr><th>名前</th><th>スタッフ数の上限</th><th>月額（円・税抜）</th><th>税込（自動）</th><th>表示順</th><th>有効</th><th>PAY.JPへの反映</th><th>契約中のお客様</th></tr></thead><tbody>';
         global $wpdb;
         $plans = $wpdb->get_results('SELECT * FROM ' . SS_System::table('plans') . ' ORDER BY sort_order ASC, id ASC', ARRAY_A);
         $plans[] = array('id' => 0, 'name' => '', 'max_staff' => '', 'price' => '', 'sort_order' => count($plans) + 1, 'active' => 1, 'payjp_plan_id' => '', 'payjp_amount' => 0);
         foreach ($plans as $i => $p) {
             $id = (int) $p['id'];
-            $synced = $id > 0 && SS_Billing::plan_ready($p) || ($id > 0 && (int) $p['active'] === 0 && $p['payjp_plan_id'] !== '' && (int) $p['payjp_amount'] === (int) $p['price']);
+            $synced = $id > 0 && SS_Billing::plan_ready($p) || ($id > 0 && (int) $p['active'] === 0 && $p['payjp_plan_id'] !== '' && (int) $p['payjp_amount'] === SS_Tax::incl($p['price']));
             $subs = $id > 0 ? (int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM ' . SS_System::table('tenants') . " WHERE plan_id = %d AND payjp_subscription_id <> '' AND deleted_at IS NULL", $id)) : 0;
             $stale = $id > 0 ? count(SS_Billing::stale_subscribers($id)) : 0;
             printf('<tr><td><input type="hidden" name="plans[%1$d][id]" value="%2$d"><input type="text" name="plans[%1$d][name]" value="%3$s" maxlength="60" placeholder="%4$s"></td>', $i, $id, esc_attr($p['name']), $id ? '' : '新しいプランの名前');
             printf('<td><input type="number" name="plans[%d][max_staff]" value="%s" min="1" max="1000" style="width:90px"></td>', $i, esc_attr($p['max_staff']));
             printf('<td><input type="number" name="plans[%d][price]" value="%s" min="50" max="1000000" style="width:100px"></td>', $i, esc_attr($p['price']));
+            echo '<td>' . ($id === 0 || $p['price'] === '' ? '-' : esc_html(SS_Tax::yen(SS_Tax::incl($p['price'])))) . '</td>';
             printf('<td><input type="number" name="plans[%d][sort_order]" value="%s" style="width:60px"></td>', $i, esc_attr($p['sort_order']));
             printf('<td><input type="checkbox" name="plans[%d][active]" value="1"%s></td>', $i, (int) $p['active'] === 1 ? ' checked' : '');
             echo '<td>' . ($id === 0 ? '-' : ($synced ? '反映済み' : '<span style="color:#b32d2e">未反映（お客様は選べません）</span>')) . '</td>';
             echo '<td>' . ($id === 0 ? '-' : esc_html($subs . '社')) . ($stale > 0 ? ' <span style="color:#b32d2e">（うち旧金額のまま ' . (int) $stale . '社）</span> <a class="button button-small" href="' . esc_url(wp_nonce_url(admin_url('admin-post.php?action=ss_migrate_plan&plan_id=' . $id), 'ss_migrate_plan')) . '">切り替える（20社ずつ）</a>' : '') . '</td></tr>';
         }
-        echo '</tbody></table><p><button class="button button-primary">プランを保存</button></p></form>';
+        echo '</tbody></table>';
+        echo '<p><label>消費税率（％）：<input type="number" name="tax_rate" value="' . esc_attr(SS_Tax::rate()) . '" min="0" max="30" style="width:70px"' . (defined('SS_TAX_RATE') ? ' disabled' : '') . '></label> <span class="description">税率を変えると、全プランのPAY.JPの金額が変わるため、新しいプランが作られます。</span></p>';
+        echo '<p><button class="button button-primary">プランを保存</button></p></form>';
         if (!SS_Payjp::configured()) {
             echo '<p class="description">※ PAY.JPのキーが未設定の間は、保存だけ行います。キーを設定してからもう一度「プランを保存」を押すと、PAY.JPに反映されます。</p>';
         }
@@ -302,6 +307,17 @@ final class SS_Admin {
             echo '<p style="color:#b32d2e">※ ' . esc_html(implode('、', $missing)) . ' のページが見つかりません。公開前に、固定ページとして作成してください（特定商取引法に基づく表記は、有料のサービスを提供するうえで必要です）。</p>';
         }
         echo '<p><button class="button button-primary">リンク先を保存</button></p></form>';
+
+        // 4) 規約・表記ページに載せる文面
+        echo '<h2>4. 特定商取引法に基づく表記・利用規約に載せる文面（コピー用）</h2>';
+        echo '<p>いまのプラン・税率・無料期間・猶予日数から作った文面です。お客様の画面（登録ページ・ご契約・お支払い）にも、同じ内容が表示されます。固定ページの本文に貼り付けて使ってください。<strong>金額や設定を変えたら、この文面も更新されます</strong>（貼り付けたページは、手作業で直してください）。</p>';
+        echo '<textarea readonly rows="22" style="width:100%;max-width:1000px;font-family:inherit" onclick="this.select()">' . esc_textarea(SS_Terms::plain_text()) . '</textarea>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="margin-top:12px">';
+        wp_nonce_field('ss_save_terms');
+        echo '<input type="hidden" name="action" value="ss_save_terms">';
+        echo '<p><label><strong>解約・返金に関する記載</strong>（「解約」の最後の1文に入ります）<br><input type="text" class="large-text" name="refund_text" value="' . esc_attr(SS_Terms::refund_text()) . '" maxlength="300" style="max-width:1000px"></label></p>';
+        echo '<p class="description">返金の方針は、事業者の判断で決めてください。初期値は「日割りによる返金は行いません。」です。</p>';
+        echo '<p><button class="button button-primary">記載を保存</button></p></form>';
         echo '</div>';
     }
 
@@ -359,6 +375,9 @@ final class SS_Admin {
     public static function save_plans() {
         self::guard('ss_save_plans');
         $rows = isset($_POST['plans']) && is_array($_POST['plans']) ? wp_unslash($_POST['plans']) : array();
+        if (isset($_POST['tax_rate']) && !defined('SS_TAX_RATE')) {
+            update_option('ss_tax_rate', max(0, min(30, (int) $_POST['tax_rate'])), false); // 先に税率を保存してから、金額を計算・反映する
+        }
         $res = SS_Billing::save_plans(array_values($rows));
         $msg = $res['saved'] . '件のプランを保存しました。';
         if ($res['synced']) {
@@ -388,6 +407,14 @@ final class SS_Admin {
         $input = isset($_POST['legal']) && is_array($_POST['legal']) ? wp_unslash($_POST['legal']) : array();
         $res = SS_Legal::save($input);
         self::flash($res['errors'] ? 'error' : 'ok', $res['errors'] ? implode(' ', $res['errors']) : 'リンク先を保存しました。');
+        self::back_billing();
+    }
+
+    public static function save_terms() {
+        self::guard('ss_save_terms');
+        $t = isset($_POST['refund_text']) ? mb_substr(trim(sanitize_text_field(wp_unslash($_POST['refund_text']))), 0, 300) : '';
+        update_option('ss_refund_text', $t, false);
+        self::flash('ok', '記載を保存しました。');
         self::back_billing();
     }
 }

@@ -4,6 +4,20 @@ $privacy_url = SS_Legal::url('privacy'); ?>
 <section class="ss-card ss-narrow">
   <h1>無料登録</h1>
   <p class="ss-lead">登録から<?php echo (int) SS_TRIAL_MONTHS; ?>か月は無料です。カードの登録は不要です。</p>
+  <?php $plan_lines = SS_Terms::plan_lines(); $term_sections = SS_Terms::sections(); ?>
+  <?php if ($plan_lines) : ?>
+    <div class="ss-card-note">
+      <strong>無料期間のあと、ご利用を続ける場合の料金</strong>
+      <ul style="margin:6px 0 0 1.2em;padding:0"><?php foreach ($plan_lines as $line) : ?><li><?php echo esc_html($line); ?></li><?php endforeach; ?></ul>
+    </div>
+  <?php endif; ?>
+  <details class="ss-terms">
+    <summary>料金とお支払いについて（無料期間・請求・解約など）</summary>
+    <?php foreach ($term_sections as $sec) : ?>
+      <h3 class="ss-terms-h"><?php echo esc_html($sec['title']); ?></h3>
+      <?php foreach (explode("\n", $sec['body']) as $line) : ?><p class="ss-terms-p"><?php echo esc_html($line); ?></p><?php endforeach; ?>
+    <?php endforeach; ?>
+  </details>
   <?php if (!empty($err)) : ?><p class="ss-alert ss-alert-error"><?php echo esc_html($err); ?></p><?php endif; ?>
   <?php if (!empty($msg)) : ?><p class="ss-alert ss-alert-ok"><?php echo esc_html($msg); ?></p><?php endif; ?>
   <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="ss-form">

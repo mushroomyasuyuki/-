@@ -87,3 +87,8 @@ body.ss{margin:0;background:var(--ss-bg);color:var(--ss-text);font:16px/1.6 -app
 
 .ss-card-note{font-size:.85rem;line-height:1.6;color:var(--ss-text);background:var(--ss-bg);border:1px solid var(--ss-line);border-radius:8px;padding:10px 12px;margin:8px 0}
 .ss-card-note a{color:var(--ss-accent)}
+
+.ss-terms{border:1px solid var(--ss-line);border-radius:8px;padding:8px 14px;margin:12px 0;background:var(--ss-bg)}
+.ss-terms summary{cursor:pointer;font-weight:600;padding:4px 0}
+.ss-terms-h{font-size:.95rem;margin:14px 0 2px}
+.ss-terms-p{font-size:.88rem;line-height:1.7;margin:2px 0;color:var(--ss-text)}

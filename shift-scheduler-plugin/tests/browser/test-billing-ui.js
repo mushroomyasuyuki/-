@@ -10,16 +10,26 @@ let failed = 0;
 function check(n, c, extra) { console.log((c ? 'PASS ' : 'FAIL ') + n + (!c && extra ? '  ' + extra : '')); if (!c) failed++; }
 
 const plans = [
-  { id: 1, name: 'ライト', price: 500, max_staff: 50, fits: true, ready: true },
-  { id: 2, name: 'スタンダード', price: 1000, max_staff: 100, fits: true, ready: true },
-  { id: 3, name: '準備中', price: 2000, max_staff: 200, fits: true, ready: false },
-  { id: 4, name: '小規模', price: 300, max_staff: 2, fits: false, ready: true }
+  { id: 1, name: 'ライト', price: 550, price_ex: 500, max_staff: 50, fits: true, ready: true },
+  { id: 2, name: 'スタンダード', price: 1100, price_ex: 1000, max_staff: 100, fits: true, ready: true },
+  { id: 3, name: '準備中', price: 2200, price_ex: 2000, max_staff: 200, fits: true, ready: false },
+  { id: 4, name: '小規模', price: 330, price_ex: 300, max_staff: 2, fits: false, ready: true }
+];
+const TERMS = [
+  { title: '料金', body: 'ライト：月額550円（税込。税抜500円）、スタッフ50名まで\nスタンダード：月額1,100円（税込。税抜1,000円）、スタッフ100名まで\n消費税率は10％です（表示の金額は税込です）。' },
+  { title: '無料期間', body: '登録の日から2か月間は、すべての機能を無料でご利用いただけます。' },
+  { title: '請求の開始', body: '無料期間中にお申し込みいただいた場合は、無料期間の終了日から請求が始まります。' },
+  { title: 'お支払い方法', body: 'クレジットカード（決済代行サービス「PAY.JP」を通じて処理します）。' },
+  { title: 'お支払いに失敗したとき', body: '7日間は、引き続きご利用いただけます。' },
+  { title: 'プランの変更', body: '新しい料金は、次回の請求日から適用されます。' },
+  { title: '解約', body: 'お支払い済みの期間の終了日まで、引き続きご利用いただけます。\n日割りによる返金は行いません。' },
+  { title: '料金の改定', body: '料金を改定する場合は、事前にお知らせします。' }
 ];
 let S, posts;
 function reset(over) {
   S = Object.assign({
     configured: true, public_key: 'pk_test_abc', status: 'trial', trial_end: '2026-12-31 00:00:00', trial_days_left: 40, trial_running: true,
-    has_subscription: false, plan_id: null, next_billing_at: null, cancel_at: null, grace_since: null, staff_count: 3, plans: plans
+    has_subscription: false, plan_id: null, next_billing_at: null, cancel_at: null, grace_since: null, staff_count: 3, plans: plans, tax_rate: 10, terms: TERMS
   }, over || {});
   posts = [];
 }
@@ -106,12 +116,17 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   const radios = page.locator('input[name=plan]');
   check('4 plans listed; not-ready and too-small plans are disabled', (await radios.count()) === 4 && await radios.nth(2).isDisabled() && await radios.nth(3).isDisabled() && !(await radios.nth(0).isDisabled()));
   check('first selectable plan is preselected', await radios.nth(0).isChecked());
+  check('plan choices show TAX-INCLUDED price first, with the tax-excluded price', t.includes('ライト 月額550円（税込） ※税抜500円') || t.includes('ライト　月額550円（税込）　※税抜500円'));
+  check('standard plan: 1,100円 (税込) / 税抜1,000円', t.includes('1,100円（税込）') && t.includes('税抜1,000円'));
+  check('terms block is open on the subscribe screen and lists all seven items (+ price revision)', await page.locator('details.ss-terms').getAttribute('open') !== null && (await page.locator('.ss-terms-h').allTextContents()).slice(0, 7).join('|') === '料金|無料期間|請求の開始|お支払い方法|お支払いに失敗したとき|プランの変更|解約');
+  check('terms text shows the tax-included prices and the trial/billing/cancel wording', (await page.locator('details.ss-terms').textContent()).includes('月額550円（税込。税抜500円）') && (await page.locator('details.ss-terms').textContent()).includes('無料期間の終了日から請求が始まります') && (await page.locator('details.ss-terms').textContent()).includes('日割りによる返金は行いません'));
   check('unavailable plans show the reason', t.includes('現在お選びいただけません') && t.includes('スタッフ数が上限を超えています'));
 
   const lk = await page.locator('.ss-legal-links a').evaluateAll(as => as.map(a => [a.textContent, a.href, a.target, a.rel]));
   check('before subscribing: links to 特商法・利用規約・プライバシーポリシー (in this order, new tab, noopener)', lk.length === 3 && lk[0][0] === '特定商取引法に基づく表記' && lk[1][0] === '利用規約' && lk[2][0] === 'プライバシーポリシー' && lk.every(x => x[2] === '_blank' && /noopener/.test(x[3])) && lk[0][1] === 'https://example.test/tokushoho/');
   check('the links are shown above the card form', await page.evaluate(() => document.querySelector('.ss-legal-links').getBoundingClientRect().top < document.querySelector('#ss-card-number').getBoundingClientRect().top));
 
+  await page.screenshot({ path: path.join(process.env.SS_SHOT_DIR || '/tmp', 'billing-subscribe.png'), fullPage: true });
   /* 2. 契約する */
   await radios.nth(1).check();
   await page.getByRole('button', { name: 'カードを登録して契約する' }).click();
@@ -119,8 +134,9 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   check('token is created from the card number element', (await page.evaluate(() => window.__tokenFrom)).join() === 'cardNumber');
   check('subscribe sends chosen plan and token (no card number)', posts.length === 1 && posts[0].path === 'billing/subscribe' && posts[0].body.plan_id === 2 && posts[0].body.card_token === 'tok_test123' && Object.keys(posts[0].body).sort().join() === 'card_token,plan_id');
   t = await text();
-  check('after subscribing: management view (plan, card, cancel)', t.includes('スタンダード') && t.includes('1,000円') && t.includes('カードの変更') && t.includes('解約') && (await page.getByRole('button', { name: 'カードを登録して契約する' }).count()) === 0);
+  check('after subscribing: management view (plan, card, cancel)', t.includes('スタンダード') && t.includes('1,100円（税込）') && t.includes('カードの変更') && t.includes('解約') && (await page.getByRole('button', { name: 'カードを登録して契約する' }).count()) === 0);
 
+  check('terms block is also on the management screen (collapsed)', (await page.locator('details.ss-terms').count()) === 1 && (await page.locator('details.ss-terms').getAttribute('open')) === null);
   /* 3. プラン変更 */
   await page.locator('input[name=plan]').nth(0).check();
   await page.getByRole('button', { name: 'このプランに変更する' }).click();

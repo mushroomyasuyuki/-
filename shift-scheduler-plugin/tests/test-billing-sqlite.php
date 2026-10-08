@@ -60,7 +60,7 @@ class FakeWpdb {
     function update($t, $d, $w) { $s = array(); foreach ($d as $k => $v) { $s[] = "{$k} = " . $this->lit($v); } $c = array(); foreach ($w as $k => $v) { $c[] = "{$k} = " . $this->lit($v); } return $this->pdo->exec("UPDATE {$t} SET " . implode(', ', $s) . ' WHERE ' . implode(' AND ', $c)); }
 }
 $wpdb = new FakeWpdb();
-foreach (array('system', 'context', 'repo', 'tenants', 'view', 'router', 'payjp', 'billing', 'rest-billing', 'stats') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
+foreach (array('system', 'context', 'repo', 'tenants', 'tax', 'view', 'router', 'payjp', 'billing', 'terms', 'rest-billing', 'stats') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
 
 /* ---- PAY.JP の模擬サーバー ---- */
 $pj = array('calls' => array(), 'subs' => array(), 'n' => 0, 'fail' => array());
@@ -115,10 +115,10 @@ function mk_tenant($name, $status, $trial_days, $staff = 3, $extra = array()) {
     for ($k = 0; $k < $staff; $k++) { $wpdb->insert('wp_shift_staff', array('tenant_id' => $id, 'name' => 's' . $k, 'active' => 1)); }
     return $id;
 }
-$wpdb->insert('wp_shift_plans', array('name' => 'ライト', 'max_staff' => 50, 'price' => 500, 'payjp_plan_id' => 'plan_light', 'payjp_amount' => 500, 'active' => 1, 'sort_order' => 1));
-$wpdb->insert('wp_shift_plans', array('name' => 'スタンダード', 'max_staff' => 100, 'price' => 1000, 'payjp_plan_id' => 'plan_std', 'payjp_amount' => 1000, 'active' => 1, 'sort_order' => 2));
+$wpdb->insert('wp_shift_plans', array('name' => 'ライト', 'max_staff' => 50, 'price' => 500, 'payjp_plan_id' => 'plan_light', 'payjp_amount' => 550, 'active' => 1, 'sort_order' => 1));
+$wpdb->insert('wp_shift_plans', array('name' => 'スタンダード', 'max_staff' => 100, 'price' => 1000, 'payjp_plan_id' => 'plan_std', 'payjp_amount' => 1100, 'active' => 1, 'sort_order' => 2));
 $wpdb->insert('wp_shift_plans', array('name' => '準備中', 'max_staff' => 200, 'price' => 2000, 'payjp_plan_id' => '', 'active' => 1, 'sort_order' => 3));
-$wpdb->insert('wp_shift_plans', array('name' => '停止中', 'max_staff' => 10, 'price' => 100, 'payjp_plan_id' => 'plan_old', 'payjp_amount' => 100, 'active' => 0, 'sort_order' => 4));
+$wpdb->insert('wp_shift_plans', array('name' => '停止中', 'max_staff' => 10, 'price' => 100, 'payjp_plan_id' => 'plan_old', 'payjp_amount' => 110, 'active' => 0, 'sort_order' => 4));
 $LIGHT = 1; $STD = 2; $NOTREADY = 3; $INACTIVE = 4;
 
 /* ---- 設定前 ---- */
@@ -338,7 +338,7 @@ SS_Billing::send_trial_reminders();
 check('reminder: not sent to subscribed tenants or to trials far from the end', count(array_filter($GLOBALS['mails'], function ($m) use ($R3, $R4) { return $m[0] === "owner{$R3}@example.test" || $m[0] === "owner{$R4}@example.test"; })) === 0);
 
 /* ---- 運営：金額変更後に、既存の契約者を新しい金額へ ---- */
-$wpdb->pdo->exec("UPDATE wp_shift_plans SET payjp_plan_id = 'plan_light_v2', payjp_amount = 600, price = 600 WHERE id = {$LIGHT}");
+$wpdb->pdo->exec("UPDATE wp_shift_plans SET payjp_plan_id = 'plan_light_v2', payjp_amount = 660, price = 600 WHERE id = {$LIGHT}");
 $light_subs = scalar("SELECT COUNT(*) FROM wp_shift_tenants WHERE plan_id = {$LIGHT} AND payjp_subscription_id <> ''");
 $res = SS_Billing::migrate_plan_subscribers($LIGHT, 1);
 check('migrate: batch limit respected, remaining reported', $res['migrated'] === 1 && $res['remaining'] === $light_subs - 1, json_encode($res) . ' subs=' . $light_subs);
@@ -361,10 +361,10 @@ $res = SS_Billing::save_plans(array(
 ));
 $plans_calls = array_slice(calls('POST', '#^plans$#'), $n0);
 check('save_plans: saved 3, synced 2 (changed price + new plan), 1 error', $res['saved'] === 3 && $res['synced'] === 2 && count($res['errors']) === 1, json_encode($res));
-check('save_plans: PAY.JP plan created with new amount, JPY, monthly', count($plans_calls) === 2 && $plans_calls[0][2]['amount'] === '1200' && $plans_calls[0][2]['currency'] === 'jpy' && $plans_calls[0][2]['interval'] === 'month');
+check('save_plans: PAY.JP plan is created with the TAX-INCLUDED amount (1200 + 10% = 1320), JPY, monthly', count($plans_calls) === 2 && $plans_calls[0][2]['amount'] === '1320' && $plans_calls[0][2]['currency'] === 'jpy' && $plans_calls[0][2]['interval'] === 'month');
 $std = SS_Billing::plan($STD);
-check('save_plans: tenant-facing plan now points at the new PAY.JP plan and is ready', (int) $std['price'] === 1200 && (int) $std['payjp_amount'] === 1200 && $std['payjp_plan_id'] !== 'plan_std' && SS_Billing::plan_ready($std));
-check('save_plans: new plan stored and ready', scalar("SELECT COUNT(*) FROM wp_shift_plans WHERE name = 'プレミアム' AND payjp_amount = 3000 AND payjp_plan_id <> ''") === 1);
+check('save_plans: tenant-facing plan now points at the new PAY.JP plan and is ready', (int) $std['price'] === 1200 && (int) $std['payjp_amount'] === 1320 && $std['payjp_plan_id'] !== 'plan_std' && SS_Billing::plan_ready($std));
+check('save_plans: new plan stored and ready', scalar("SELECT COUNT(*) FROM wp_shift_plans WHERE name = 'プレミアム' AND price = 3000 AND payjp_amount = 3300 AND payjp_plan_id <> ''") === 1);
 $pj['fail']['POST plans'] = array(500, array('type' => 'server_error', 'code' => '', 'message' => 'x'));
 $res = SS_Billing::save_plans(array(array('id' => $STD, 'name' => 'スタンダード', 'max_staff' => 100, 'price' => 1500, 'active' => 1)));
 check('save_plans: PAY.JP failure reported; plan stays not-ready (never charges a wrong amount)', count($res['errors']) === 1 && !SS_Billing::plan_ready(SS_Billing::plan($STD)));
@@ -394,6 +394,23 @@ check('re-saving plans recreates them in the new mode', SS_Billing::plan_ready(S
 as_user(1000 + $A);
 $info = SS_Rest_Billing::get_billing();
 check('get_billing returns own tenant only (plan, staff count)', (int) $info['plan_id'] === $STD && $info['staff_count'] === 3 && $info['has_subscription'] === true && $info['configured'] === true && $info['public_key'] === 'pk_test_public');
+check('get_billing shows TAX-INCLUDED prices (price) and the tax-excluded price (price_ex), plus the tax rate', $info['tax_rate'] === 10 && count(array_filter($info['plans'], function ($p) { return $p['price'] === SS_Tax::incl($p['price_ex']) && $p['price'] > $p['price_ex']; })) === count($info['plans']));
+check('get_billing includes the generated terms (料金・無料期間・請求の開始…)', count($info['terms']) >= 7 && $info['terms'][0]['title'] === '料金');
+// 税込への切り替え：PAY.JP側が税抜の金額のまま（古いデータ）や、税率変更後は、選べない（請求額と画面の金額がずれないように）
+$std_amount = (int) SS_Billing::plan($STD)['payjp_amount'];
+$wpdb->pdo->exec("UPDATE wp_shift_plans SET payjp_amount = price WHERE id = {$STD}");
+check('a PAY.JP plan that still has the pre-tax amount is NOT ready (would undercharge)', !SS_Billing::plan_ready(SS_Billing::plan($STD)));
+$wpdb->pdo->exec("UPDATE wp_shift_plans SET payjp_amount = {$std_amount} WHERE id = {$STD}");
+check('...and is ready again with the tax-included amount', SS_Billing::plan_ready(SS_Billing::plan($STD)));
+$GLOBALS['opts']['ss_tax_rate'] = 8;
+check('after the tax rate changes, plans are not ready until re-synced', !SS_Billing::plan_ready(SS_Billing::plan($STD)) && !SS_Billing::plan_ready(SS_Billing::plan($LIGHT)));
+$n0 = count(calls('POST', '#^plans$#'));
+SS_Billing::save_plans(array(array('id' => $STD, 'name' => 'スタンダード', 'max_staff' => 100, 'price' => 1500, 'active' => 1, 'sort_order' => 2)));
+$pc = array_slice(calls('POST', '#^plans$#'), $n0);
+check('re-saving with the new tax rate creates a PAY.JP plan with the new amount (1500 + 8% = 1620)', count($pc) === 1 && $pc[0][2]['amount'] === '1620' && SS_Billing::plan_ready(SS_Billing::plan($STD)));
+$GLOBALS['opts']['ss_tax_rate'] = 10;
+SS_Billing::save_plans(array(array('id' => $STD, 'name' => 'スタンダード', 'max_staff' => 100, 'price' => 1500, 'active' => 1, 'sort_order' => 2), array('id' => $LIGHT, 'name' => 'ライト', 'max_staff' => 50, 'price' => 600, 'active' => 1, 'sort_order' => 1)));
+check('...and back to 10%: plans re-synced', SS_Billing::plan_ready(SS_Billing::plan($STD)) && SS_Billing::plan_ready(SS_Billing::plan($LIGHT)));
 check('get_billing never exposes secret key or customer ids', strpos(json_encode($info), 'sk_test_secret') === false && strpos(json_encode($info), 'cus_') === false && strpos(json_encode($info), 'sub_') === false);
 check('plans listed with fit and ready flags (Light fits 3 staff; unsynced plan not ready)', $info['plans'][0]['fits'] === true && $info['plans'][0]['ready'] === true && count($info['plans']) >= 3 && count(array_filter($info['plans'], function ($p) { return $p['name'] === '準備中' && !$p['ready']; })) === 1);
 as_user(2000 + $A);
@@ -406,8 +423,9 @@ check('owner of C cancels only C (A unaffected)', code($r) === 'ok' && !empty(SS
 
 /* ---- 統計（月額の見込み） ---- */
 $st = SS_Stats::summary(gmdate('Y-m-d H:i:s'));
-$expect = scalar("SELECT COALESCE(SUM(p.price),0) FROM wp_shift_tenants t JOIN wp_shift_plans p ON p.id = t.plan_id WHERE t.payjp_subscription_id <> '' AND (t.status IN ('active','grace'))");
-check('stats: monthly revenue estimate = sum of plan prices of paying tenants', $st['mrr'] === $expect && $st['mrr'] > 0, 'mrr=' . $st['mrr'] . ' expect=' . $expect);
+$expect = 0; $expect_ex = 0;
+foreach ($wpdb->get_results("SELECT p.price AS price FROM wp_shift_tenants t JOIN wp_shift_plans p ON p.id = t.plan_id WHERE t.payjp_subscription_id <> '' AND (t.status IN ('active','grace'))", ARRAY_A) as $row) { $expect += SS_Tax::incl($row['price']); $expect_ex += (int) $row['price']; }
+check('stats: monthly revenue estimate = sum of TAX-INCLUDED plan prices of paying tenants (and the tax-excluded sum is reported too)', $st['mrr'] === $expect && $st['mrr_ex'] === $expect_ex && $st['mrr'] > $st['mrr_ex'], 'mrr=' . $st['mrr'] . ' expect=' . $expect);
 
 /* ---- PAY.JPへのリクエストの形 ---- */
 $cap = null;
