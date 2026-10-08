@@ -666,8 +666,15 @@
           el('div', { id: id, class: 'ss-card-input' })
         ]);
       }
+      var note = el('p', { class: 'ss-card-note' }, [
+        el('strong', { text: 'カード情報のお取り扱いについて' }), el('br'),
+        'お支払いは、決済代行サービス「',
+        el('a', { href: 'https://pay.jp/', target: '_blank', rel: 'noopener noreferrer', text: 'PAY.JP' }),
+        '」を通じて行われます。入力されたカード情報は、PAY.JPに直接送信され、PAY.JPが安全に処理・保管します。当サービス（このサイト）では、カード番号・有効期限・セキュリティコードを受け取ることも、保存することもありません。'
+      ]);
       var wrap = el('div', {}, [
         el('p', { class: 'ss-sub', text: label }),
+        note,
         el('div', { class: 'ss-card-grid' }, [
           field3('ss-card-number', 'カード番号', { style: 'grid-column:1/-1' }),
           field3('ss-card-expiry', '有効期限（月 / 年）'),
@@ -703,7 +710,7 @@
         return;
       }
       root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'プランの変更' }));
-      root.appendChild(el('p', { class: 'ss-sub', text: '新しい料金は、次回の請求日（' + day(d.next_billing_at) + '）から適用されます。変更の時点で、請求が発生することはありません。' }));
+      root.appendChild(el('p', { class: 'ss-sub', text: '新しい料金は、次回の請求日' + (d.next_billing_at ? '（' + day(d.next_billing_at) + '）' : '') + 'から適用されます。変更の時点で、請求が発生することはありません。' }));
       var choices = planChoices(d, 'plan', d.plan_id);
       root.appendChild(choices);
       root.appendChild(el('div', { class: 'ss-actions' }, [btn('このプランに変更する', function () {

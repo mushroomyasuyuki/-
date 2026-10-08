@@ -84,3 +84,6 @@ body.ss{margin:0;background:var(--ss-bg);color:var(--ss-text);font:16px/1.6 -app
 .ss-card-label{font-size:.9rem;font-weight:600;margin-bottom:2px}
 .ss-card-grid .ss-card-input{margin:2px 0 6px}
 @media (max-width:480px){.ss-card-grid{grid-template-columns:1fr}}
+
+.ss-card-note{font-size:.85rem;line-height:1.6;color:var(--ss-text);background:var(--ss-bg);border:1px solid var(--ss-line);border-radius:8px;padding:10px 12px;margin:8px 0}
+.ss-card-note a{color:var(--ss-accent)}

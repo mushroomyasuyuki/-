@@ -95,6 +95,10 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   }
   check('three separate card boxes, each with a visible border, white background and enough height', boxes.every(b => b.border === '1px' && b.bg === 'rgb(255, 255, 255)' && b.h >= 50), JSON.stringify(boxes));
   check('expiry and CVC boxes are half width, side by side (card number is full width)', boxes[0].w > boxes[1].w * 1.8 && Math.abs(boxes[1].w - boxes[2].w) < 4, JSON.stringify(boxes));
+  const noteText = await page.locator('.ss-card-note').first().textContent();
+  check('card form states that PAY.JP processes the card data and the site stores none', noteText.includes('決済代行サービス') && noteText.includes('PAY.JP') && noteText.includes('PAY.JPに直接送信') && noteText.includes('保存することもありません'));
+  check('PAY.JP link opens safely in a new tab', await page.locator('.ss-card-note a').first().evaluate(a => a.href === 'https://pay.jp/' && a.target === '_blank' && /noopener/.test(a.rel)));
+  check('the notice is shown above the card boxes', await page.evaluate(() => { const n = document.querySelector('.ss-card-note').getBoundingClientRect().top, c = document.querySelector('#ss-card-number').getBoundingClientRect().top; return n < c; }));
   check('each box has its own label', ['カード番号', '有効期限（月 / 年）', 'セキュリティコード（CVC）'].every(l => t.includes(l)));
   check('split elements created: number, expiry, cvc — all three mounted', (await page.evaluate(() => window.__created)).join() === 'cardNumber,cardExpiry,cardCvc' && (await page.locator('[data-mounted]').count()) === 3);
   check('card input mounted with the public key', (await page.evaluate(() => window.__payjpKeys)).join() === 'pk_test_abc');
@@ -121,6 +125,7 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   await page.waitForSelector('text=現在と違うプランを選んでください');
   check('choosing the same plan is refused without calling the server', posts[posts.length - 1].path === 'billing/plan' && posts.filter(p => p.path === 'billing/plan').length === 1);
 
+  check('the same notice is also on the card-change form', (await page.locator('.ss-card-note').count()) === 1 && (await page.locator('.ss-card-note').first().textContent()).includes('PAY.JP'));
   /* 4. カード変更 */
   await page.getByRole('button', { name: 'カードを変更する' }).click();
   await page.waitForSelector('text=カードを変更しました');
