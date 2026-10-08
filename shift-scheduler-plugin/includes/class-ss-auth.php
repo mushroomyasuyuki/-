@@ -77,7 +77,8 @@ final class SS_Auth {
             'role'         => 'shift_owner',
         ));
         if (is_wp_error($wp_user_id)) {
-            self::back($back, 'failed');
+            error_log('[shift-scheduler] wp_insert_user failed: ' . $wp_user_id->get_error_code() . ' ' . $wp_user_id->get_error_message());
+            self::back($back, 'failed_user');
         }
 
         $public_id = SS_System::new_public_id();
@@ -99,8 +100,9 @@ final class SS_Auth {
             'created_at' => SS_System::now(),
         ));
         if (!$user_row_ok) {
+            error_log('[shift-scheduler] register db insert failed: ' . $wpdb->last_error);
             self::discard_registration($wp_user_id, $tenant_id);
-            self::back($back, 'failed');
+            self::back($back, 'failed_db');
         }
         $user_id = (int) $wpdb->insert_id;
 
@@ -301,7 +303,7 @@ final class SS_Auth {
     private static function verify_nonce($action, $back) {
         $nonce = isset($_POST['_ss_nonce']) ? sanitize_text_field(wp_unslash($_POST['_ss_nonce'])) : '';
         if (!wp_verify_nonce($nonce, $action)) {
-            self::back($back, 'failed');
+            self::back($back, 'nonce');
         }
     }
 
