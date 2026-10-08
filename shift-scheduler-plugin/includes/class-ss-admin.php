@@ -23,6 +23,7 @@ final class SS_Admin {
         add_action('admin_post_ss_check_payjp', array(__CLASS__, 'check_payjp'));
         add_action('admin_post_ss_save_plans', array(__CLASS__, 'save_plans'));
         add_action('admin_post_ss_migrate_plan', array(__CLASS__, 'migrate_plan'));
+        add_action('admin_post_ss_save_legal', array(__CLASS__, 'save_legal'));
     }
 
     public static function menu() {
@@ -269,6 +270,38 @@ final class SS_Admin {
         if (!SS_Payjp::configured()) {
             echo '<p class="description">※ PAY.JPのキーが未設定の間は、保存だけ行います。キーを設定してからもう一度「プランを保存」を押すと、PAY.JPに反映されます。</p>';
         }
+
+        // 3) 規約・表記ページ
+        echo '<h2>3. 規約・表記ページへのリンク</h2>';
+        echo '<p>登録ページとご契約・お支払いの画面に、リンクを表示します。サイトの固定ページから自動で探しています。違うページが選ばれているときは、ここで選び直してください。</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field('ss_save_legal');
+        echo '<input type="hidden" name="action" value="ss_save_legal">';
+        echo '<table class="widefat striped" style="max-width:1000px"><thead><tr><th>ページ</th><th>いま表示されるリンク先</th><th>固定ページから選ぶ</th><th>URLを直接入力（優先）</th></tr></thead><tbody>';
+        $pages = get_pages(array('post_status' => 'publish', 'number' => 300, 'sort_column' => 'post_title'));
+        $src_label = array('custom' => '直接入力', 'page' => '選択したページ', 'auto' => '自動で検出', 'legacy' => '旧設定', 'none' => '');
+        $missing = array();
+        foreach (SS_Legal::KEYS as $k) {
+            $r = SS_Legal::resolve($k);
+            $chosen = (int) get_option('ss_legal_page_' . $k, 0);
+            echo '<tr><td><strong>' . esc_html(SS_Legal::label($k)) . '</strong></td><td>';
+            if ($r['url'] !== '') {
+                printf('<a href="%s" target="_blank" rel="noopener">%s</a><br><span class="description">%s</span>', esc_url($r['url']), esc_html($r['title']), esc_html($src_label[$r['source']]));
+            } else {
+                echo '<span style="color:#b32d2e">見つかりません</span>';
+                $missing[] = SS_Legal::label($k);
+            }
+            echo '</td><td><select name="legal[' . esc_attr($k) . '][page]"><option value="0">（自動で探す）</option>';
+            foreach ((array) $pages as $pg) {
+                printf('<option value="%d"%s>%s</option>', (int) $pg->ID, selected($chosen, (int) $pg->ID, false), esc_html($pg->post_title));
+            }
+            echo '</select></td><td><input type="url" class="regular-text" name="legal[' . esc_attr($k) . '][url]" value="' . esc_attr((string) get_option('ss_legal_url_' . $k, '')) . '" placeholder="https://"></td></tr>';
+        }
+        echo '</tbody></table>';
+        if ($missing) {
+            echo '<p style="color:#b32d2e">※ ' . esc_html(implode('、', $missing)) . ' のページが見つかりません。公開前に、固定ページとして作成してください（特定商取引法に基づく表記は、有料のサービスを提供するうえで必要です）。</p>';
+        }
+        echo '<p><button class="button button-primary">リンク先を保存</button></p></form>';
         echo '</div>';
     }
 
@@ -347,6 +380,14 @@ final class SS_Admin {
         if (!empty($r['skipped'])) { $msg .= $r['skipped'] . '社は、お支払い確認中・解約予約中のため、スキップしました（状態が戻ってから、もう一度押してください）。'; }
         if ($r['remaining']) { $msg .= '残り ' . $r['remaining'] . '社。もう一度押してください。'; }
         self::flash($r['failed'] ? 'error' : 'ok', $msg);
+        self::back_billing();
+    }
+
+    public static function save_legal() {
+        self::guard('ss_save_legal');
+        $input = isset($_POST['legal']) && is_array($_POST['legal']) ? wp_unslash($_POST['legal']) : array();
+        $res = SS_Legal::save($input);
+        self::flash($res['errors'] ? 'error' : 'ok', $res['errors'] ? implode(' ', $res['errors']) : 'リンク先を保存しました。');
         self::back_billing();
     }
 }

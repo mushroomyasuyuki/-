@@ -189,6 +189,9 @@ final class SS_Router {
                 'today'    => wp_date('Y-m-d'),
                 'schedule_url' => SS_View::app_url($tenant['public_id'], 'schedules/__ID__'),
             );
+            if ($def['page'] === 'billing') {
+                $config['legal'] = SS_Legal::links_map(); // 特定商取引法に基づく表記・利用規約・プライバシーポリシー
+            }
             $config = array_merge($config, $extra);
             $scripts = array();
             foreach ((array) $def['script'] as $file) {

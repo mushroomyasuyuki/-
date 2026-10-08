@@ -1,5 +1,6 @@
 <?php if (!defined('ABSPATH')) { exit; }
-$terms_url = get_option('ss_terms_url', ''); ?>
+$terms_url = SS_Legal::url('terms');
+$privacy_url = SS_Legal::url('privacy'); ?>
 <section class="ss-card ss-narrow">
   <h1>無料登録</h1>
   <p class="ss-lead">登録から<?php echo (int) SS_TRIAL_MONTHS; ?>か月は無料です。カードの登録は不要です。</p>
@@ -19,9 +20,11 @@ $terms_url = get_option('ss_terms_url', ''); ?>
     <label>メールアドレス<input type="email" name="email" maxlength="190" autocomplete="email" required></label>
     <label>パスワード（8文字以上）<input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
     <div class="ss-hp" aria-hidden="true"><label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
-    <label class="ss-inline"><input type="checkbox" name="agree" value="1" required>
-      <?php if ($terms_url) : ?><a href="<?php echo esc_url($terms_url); ?>" target="_blank" rel="noopener">利用規約</a><?php else : ?>利用規約<?php endif; ?>に同意します</label>
+    <label class="ss-inline"><input type="checkbox" name="agree" value="1" required><?php echo $terms_url ? '<a href="' . esc_url($terms_url) . '" target="_blank" rel="noopener">利用規約</a>' : '利用規約'; echo $privacy_url ? 'と<a href="' . esc_url($privacy_url) . '" target="_blank" rel="noopener">プライバシーポリシー</a>' : ''; ?>に同意します</label>
     <button type="submit" class="ss-btn">無料で登録する</button>
   </form>
+  <?php $tok_url = SS_Legal::url('tokushoho'); if ($tok_url) : ?>
+    <p class="ss-sub"><a href="<?php echo esc_url($tok_url); ?>" target="_blank" rel="noopener">特定商取引法に基づく表記</a></p>
+  <?php endif; ?>
   <p class="ss-sub">すでに登録済みの方は <a href="<?php echo esc_url(SS_Router::url('login')); ?>">ログイン</a></p>
 </section>

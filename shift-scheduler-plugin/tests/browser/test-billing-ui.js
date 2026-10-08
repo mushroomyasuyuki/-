@@ -24,6 +24,7 @@ function reset(over) {
   posts = [];
 }
 let nextError = null;
+let LEGAL = { tokushoho: { label: '特定商取引法に基づく表記', url: 'https://example.test/tokushoho/' }, terms: { label: '利用規約', url: 'https://example.test/terms/' }, privacy: { label: 'プライバシーポリシー', url: 'https://example.test/privacy/' } };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -54,7 +55,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   const port = server.address().port;
-  const cfg = { page: 'billing', rest: 'http://127.0.0.1:' + port + '/api/', nonce: 'x', writable: true, today: '2026-10-20' };
+  const cfg = { page: 'billing', rest: 'http://127.0.0.1:' + port + '/api/', nonce: 'x', writable: true, today: '2026-10-20', legal: LEGAL };
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(`<!doctype html><html lang="ja"><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/app.css"></head><body class="ss"><main class="ss-main"><section class="ss-card"><h1>ご契約・お支払い</h1><div id="ss-notice" class="ss-alert" hidden></div><div id="ss-root"></div></section></main>
 <script>window.SS_CONFIG=${JSON.stringify(cfg)};
@@ -107,6 +108,10 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   check('first selectable plan is preselected', await radios.nth(0).isChecked());
   check('unavailable plans show the reason', t.includes('現在お選びいただけません') && t.includes('スタッフ数が上限を超えています'));
 
+  const lk = await page.locator('.ss-legal-links a').evaluateAll(as => as.map(a => [a.textContent, a.href, a.target, a.rel]));
+  check('before subscribing: links to 特商法・利用規約・プライバシーポリシー (in this order, new tab, noopener)', lk.length === 3 && lk[0][0] === '特定商取引法に基づく表記' && lk[1][0] === '利用規約' && lk[2][0] === 'プライバシーポリシー' && lk.every(x => x[2] === '_blank' && /noopener/.test(x[3])) && lk[0][1] === 'https://example.test/tokushoho/');
+  check('the links are shown above the card form', await page.evaluate(() => document.querySelector('.ss-legal-links').getBoundingClientRect().top < document.querySelector('#ss-card-number').getBoundingClientRect().top));
+
   /* 2. 契約する */
   await radios.nth(1).check();
   await page.getByRole('button', { name: 'カードを登録して契約する' }).click();
@@ -149,6 +154,19 @@ window.Payjp=function(key){window.__payjpKeys.push(key);return{elements:function
   await page.getByRole('button', { name: 'カードを登録して契約する' }).click();
   await page.waitForSelector('text=カードが承認されませんでした');
   check('card error message is shown; still on the subscribe form; button usable again', (await page.getByRole('button', { name: 'カードを登録して契約する' }).isEnabled()) && (await page.locator('#ss-notice').getAttribute('class')).includes('ss-alert-error'));
+
+  /* リンク先が見つからないページは、リンクを出さない */
+  LEGAL = { terms: { label: '利用規約', url: 'https://example.test/terms/' } };
+  reset();
+  await page.goto(base);
+  await page.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
+  const lk2 = await page.locator('.ss-legal-links a').evaluateAll(as => as.map(a => a.textContent));
+  check('missing pages are simply not linked (no empty or broken links)', lk2.length === 1 && lk2[0] === '利用規約');
+  LEGAL = {};
+  await page.goto(base);
+  await page.waitForSelector('#ss-card-number[data-mounted]', { state: 'attached' });
+  check('with no legal pages at all, the sentence is not shown', (await page.locator('.ss-legal-links').count()) === 0);
+  LEGAL = { tokushoho: { label: '特定商取引法に基づく表記', url: 'https://example.test/tokushoho/' }, terms: { label: '利用規約', url: 'https://example.test/terms/' }, privacy: { label: 'プライバシーポリシー', url: 'https://example.test/privacy/' } };
 
   /* 7. 設定前・閲覧のみ・支払い確認中 */
   reset({ configured: false });

@@ -607,6 +607,19 @@
 
     function done(msg) { say(msg, true); return load(); }
 
+    /** 特定商取引法に基づく表記・利用規約・プライバシーポリシーへのリンク（ページが見つからないものは出さない） */
+    function legalLinks() {
+      var legal = cfg.legal || {};
+      var order = ['tokushoho', 'terms', 'privacy'];
+      var parts = [];
+      order.forEach(function (k) {
+        if (!legal[k]) { return; }
+        if (parts.length) { parts.push('｜'); }
+        parts.push(el('a', { href: legal[k].url, target: '_blank', rel: 'noopener noreferrer', text: legal[k].label }));
+      });
+      return parts;
+    }
+
     function render(d) {
       clear(root);
       cardEl = null;
@@ -693,6 +706,10 @@
       root.appendChild(el('h2', { class: 'ss-h2 ss-section', text: 'プランを選んで契約する' }));
       root.appendChild(choices);
       root.appendChild(el('p', { class: 'ss-sub', text: first }));
+      var links = legalLinks();
+      if (links.length) {
+        root.appendChild(el('p', { class: 'ss-sub ss-legal-links' }, ['お申し込みの前に、'].concat(links, ['をご確認ください。'])));
+      }
       root.appendChild(cardBox(d, 'クレジットカード（カード番号は、このサイトには保存されません）', function (token) {
         var plan = chosen(choices);
         if (!plan) { throw new Error('プランを選んでください。'); }
@@ -730,6 +747,8 @@
         if (!window.confirm('解約します。よろしいですか？（お支払い済みの期間の終わりまでは、ご利用いただけます）')) { return; }
         api('POST', 'billing/cancel').then(function () { return done('解約を受け付けました。'); }).catch(fail);
       }, true));
+      var tail = legalLinks();
+      if (tail.length) { root.appendChild(el('p', { class: 'ss-sub ss-legal-links', style: 'margin-top:24px' }, tail)); }
     }
 
     load();
