@@ -3007,9 +3007,10 @@
       return t;
     };
     const trim = (rx, ry, rw, rh, qx0, qx1, qy0, qy1, lab, tdSize) => {
-      let t = K(0, 0, 0, 1) + lw(0.03);
-      t += line(rx - TL, qy0, rx, qy0) + line(rx - TL, qy1, rx, qy1) + line(rx + rw, qy0, rx + rw + TL, qy0) + line(rx + rw, qy1, rx + rw + TL, qy1);
-      t += line(qx0, ry - TL, qx0, ry) + line(qx1, ry - TL, qx1, ry) + line(qx0, ry + rh, qx0, ry + rh + TL) + line(qx1, ry + rh, qx1, ry + rh + TL);
+      // トンボは各所とも、下に白線（0.2268pt）・上に黒線（0.03pt）の2本（画像の上でも見えるように。見本と同じ）
+      const ticks = line(rx - TL, qy0, rx, qy0) + line(rx - TL, qy1, rx, qy1) + line(rx + rw, qy0, rx + rw + TL, qy0) + line(rx + rw, qy1, rx + rw + TL, qy1)
+        + line(qx0, ry - TL, qx0, ry) + line(qx1, ry - TL, qx1, ry) + line(qx0, ry + rh, qx0, ry + rh + TL) + line(qx1, ry + rh, qx1, ry + rh + TL);
+      let t = K(0, 0, 0, 0) + lw(0.2268) + ticks + K(0, 0, 0, 1) + lw(0.03) + ticks;
       t += Kf(0, 0, 0, 0.99);
       t += text(lab, qx0 + 2.6 * PTM, ry - 0.29 * PTM, NS, 'l') + text(lab, qx0 + 2.6 * PTM, ry + rh + 1.21 * PTM, NS, 'l');
       const ts = tdSize || TD;

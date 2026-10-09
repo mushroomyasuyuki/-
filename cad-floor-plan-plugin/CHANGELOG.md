@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.87.1
+- 壁紙の AI（確認用シート）のトンボを、各所とも「下に白線（0.2268pt）・上に黒線（0.03pt）」の2本重ねにした（見本と同じ。画像の上に重なっても見える）。
+
 ## 2.87.0
 - 壁紙の AI（確認用シート）の文字に、フォント Noto Sans JP Regular を埋め込むようにした（使った文字だけのサブセット・アウトライン化なし・ToUnicode 付きで文字として選択・検索できる）。Mac・Windows のどちらで開いても同じ見た目になる。
   - フォントはプラグインに同梱（assets/fonts/NotoSansJP-Regular.ttf・SIL Open Font License 1.1。ライセンス文は assets/fonts/OFL-NotoSansJP.txt）。保存するときだけ読み込む。
