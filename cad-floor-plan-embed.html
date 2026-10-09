@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.86.1 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.86.2 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -3482,7 +3482,7 @@
       if (/in-min/.test(name)) return Math.min(75, Math.max(25, Math.round((isNaN(v) ? 50 : v) / 5) * 5));
       if (/side/.test(name)) return Math.min(100, Math.max(10, Math.round((isNaN(v) ? 10 : v) / 5) * 5));
       if (/trim/.test(name)) return Math.min(100, Math.max(30, Math.round((isNaN(v) ? 100 : v) / 5) * 5));
-      return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 910 : v)));
+      return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 900 : v)));
     }
     // roll width / overlap changed: the print size, the total and the 3D margins follow
     _wpChanged() {

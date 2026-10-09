@@ -1330,7 +1330,7 @@
       if (/in-min/.test(name)) return Math.min(75, Math.max(25, Math.round((isNaN(v) ? 50 : v) / 5) * 5));
       if (/side/.test(name)) return Math.min(100, Math.max(10, Math.round((isNaN(v) ? 10 : v) / 5) * 5));
       if (/trim/.test(name)) return Math.min(100, Math.max(30, Math.round((isNaN(v) ? 100 : v) / 5) * 5));
-      return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 910 : v)));
+      return Math.min(930, Math.max(850, Math.round(isNaN(v) ? 900 : v)));
     }
 
     // roll width / overlap changed: the print size, the total and the 3D margins follow

@@ -452,7 +452,7 @@
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
       <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（元データ・全体・910mm幅の連続データ・ZIP）</button>
     </div>
-    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを910mm幅（ロール幅）の巾に分割し、巾ごとのCMYK PSD（幅910mm × 高さ＝図面の壁の高さ＋上下の余白（初期100mm・壁紙の巾の枠で30〜100mmに変更可）、1px=1mm）をZIPにまとめて保存します。隣の巾とは合わせ代（初期10mm）だけ重なり（1巾が受け持つ壁は初期900mm。重なりの真ん中がカット線）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・910mm幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
+    <div class="file-note" style="text-align:center;">※「壁紙へ印刷用に保存」は、壁のデザインを巾ごとに分割し、巾ごとのCMYK PSD（幅＝巾＋合わせ代×2（初期 900＋10＋10＝920mm。910mm巾なら 925mm） × 高さ＝図面の壁の高さ＋上下の余白（初期100mm・壁紙の巾の枠で30〜100mmに変更可）、1px=1mm）をZIPにまとめて保存します。隣の巾とは合わせ代2つ分重なり（1巾が受け持つ壁は巾と同じ初期900mm。重なりの真ん中がカット線）、壁の範囲を赤枠（別レイヤー）で示します。ZIPには、元データ・変換後全体データ・巾の幅で切った長いデータ（巾を縦につなげ、1巾おきに180°回転して天井側どうし・床側どうしがつながる連続データ）も入ります。</div>
     <div class="file-note" style="text-align:center;">※壁紙画像はCMYKのPSD形式（①デザイン層＋②裁断ガイド層の2層）で保存されます（RGBからの単純変換のため、印刷色は校正してください）。高さは「壁の高さ＋上下の余白（裁断代。初期100mm、30〜100mm）」です。ガイドは、壁の範囲の赤枠と、巾の境目（910mm幅で左右10mmずつ重ねるため890mmごと）の縦線です。</div>
       </div>
     </details>
@@ -2528,10 +2528,10 @@
   // を使用する。
   // =====================================================================
   // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代。
-  // 巾（PITCH：仕上がりの幅＝1巾が受け持つ壁の幅、初期910mm）の左右に合わせ代（MARGIN：片側、初期7.5mm）を足した幅で
-  // 1巾を作る（ROLL＝910＋7.5＋7.5＝925mm）。隣の巾とは合わせ代2つ分（OVERLAP＝15mm）重なり、重なりの真ん中がカット線
+  // 巾（PITCH：仕上がりの幅＝1巾が受け持つ壁の幅、初期900mm）の左右に合わせ代（MARGIN：片側、初期10mm）を足した幅で
+  // 1巾を作る（ROLL＝900＋10＋10＝920mm。910mm なら 910＋7.5＋7.5＝925mm）。隣の巾とは合わせ代2つ分（OVERLAP＝20mm）重なり、重なりの真ん中がカット線
   // （巾の端から合わせ代＝EDGE）。SIDE：貼り始め（スタート側）の端の余白（壁の端から最初の巾の端まで。10〜100mm・5mm刻み）
-  const WALL_PRINT = { PITCH: 910, MARGIN: 7.5, TRIM_TOP: 100, TRIM_BOTTOM: 100, SIDE: 10 };
+  const WALL_PRINT = { PITCH: 900, MARGIN: 10, TRIM_TOP: 100, TRIM_BOTTOM: 100, SIDE: 10 };
   WALL_PRINT.ROLL = WALL_PRINT.PITCH + WALL_PRINT.MARGIN * 2; // 1巾の幅（合わせ代込み。925mm）
   WALL_PRINT.OVERLAP = WALL_PRINT.MARGIN * 2;                  // 隣の巾と重なる幅（15mm）
   WALL_PRINT.EDGE = WALL_PRINT.MARGIN;                         // カット線の外側の余白（合わせ代）
@@ -2554,7 +2554,7 @@
   };
   WALL_PRINT.set = function (roll, overlap, trim, side) {
     if (side !== undefined) this.SIDE = Math.min(100, Math.max(10, Math.round((parseFloat(side) || 10) / 5) * 5));
-    const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
+    const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 900));
     const o = Math.min(15, Math.max(6, Math.round((parseFloat(overlap) || 10) * 2) / 2));
     // r：巾（仕上がりの幅）、o：合わせ代（片側）→ 1巾の幅は r + o × 2
     this.PITCH = r;
