@@ -2418,10 +2418,16 @@
       return getReducedImageData(original, original.width, original.height, factor, entries, { lut: carpetLut(entries) });
     },
     // 色の対応表（32768：RGB を5bitずつ → entries の番号）で変換した画像
-    renderLut: (entries, lut) => {
+    renderLut: (entries, lut, factor) => {
       const original = $('cc-original');
-      return getReducedImageData(original, original.width, original.height, 0, entries, { lut });
+      return getReducedImageData(original, original.width, original.height, Math.min(1, Math.max(0, factor || 0)), entries, { lut });
     },
+    // いま選ばれている色（人間が選んだ色）・階調表現（0〜100）・いまの変換画像（シミュレーターで変換した結果）
+    active: () => ({
+      indices: Array.from(state.activePaletteIndices).sort((a, b) => a - b),
+      dither: Math.round(Math.min(100, Math.max(0, parseFloat(($('cc-dither') || {}).value) || 0))),
+      canvas: $('cc-reduced')
+    }),
     // 学習した変換の色の組合せを、パレットに反映する（そのあとの変換・見積もり・保存はシステムの変換）
     select: (indices) => {
       state.activePaletteIndices.clear();

@@ -1,5 +1,8 @@
 /**
- * カーペットの色変換：人間の変換の癖を Gemini で学ぶ（管理者だけに表示。サーバー側は includes/class-cfp-gemini.php）
+ * カーペットの色変換：人間の変換の癖を Gemini で学ぶ（サーバー側は includes/class-cfp-gemini.php）
+ *
+ * - 正解：シミュレーターで変換した画像に、人間がパレットで色を選んだ結果（いまの変換画像）をそのまま送る。
+ * - どの画像にも、階調表現（0〜100%）をデータとして付けて送る。
  *
  * - 元画像の色を 24 のまとまりに分け（Lab の k-means）、まとまりごとに「人間が選んだ色」「システムが選んだ色」を
  *   同じ位置の画素で数えて、画像と一緒に送る。
@@ -15,7 +18,6 @@
   const K = 24;          // 色のまとまりの数
   const SEND = 768;      // 送る画像の長い辺（px）
 
-  let human = null;      // 人間が変換した画像（元画像と同じ大きさの canvas）
   let last = null;       // 最後に作った学習の変換：{ indices }
 
   function status(msg, kind) {
@@ -156,42 +158,21 @@
     return { L, orig };
   }
 
-  // 人間が変換した画像を、元画像と同じ大きさにして持つ
-  function loadHuman(file) {
-    const a = api();
-    if (!a) return;
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const cv = $('cfp-gemini-human-cv');
-      cv.width = a.orig.width; cv.height = a.orig.height;
-      const x = cv.getContext('2d');
-      // 元の画像から人間が変換した画像として、元画像と同じ切り抜き方（指定サイズ・画像の大きさ）で重ねる
-      x.imageSmoothingEnabled = false;
-      a.L.drawCover(x, img, cv.width, cv.height);
-      human = cv;
-      $('cfp-gemini-human-card').hidden = false;
-      $('cfp-gemini-human-name').textContent = file.name + '（' + img.naturalWidth + '×' + img.naturalHeight + 'px → 元画像と同じ切り抜き方で ' + cv.width + '×' + cv.height + 'px にして比べます）';
-      $('cfp-gemini-send').disabled = false;
-      URL.revokeObjectURL(url);
-    };
-    img.onerror = () => { status('画像として読み込めませんでした。', 'err'); URL.revokeObjectURL(url); };
-    img.src = url;
-  }
-
   async function learn() {
     const a = api();
     if (!a) return;
-    if (!human) { status('先に「人間が変換した画像を選ぶ」で画像を選んでください。', 'err'); return; }
-    if (!cfg.has_key) { status('Gemini のAPIキーが未設定です。管理画面「壁紙・カーペット」で設定してください。', 'err'); return; }
+    if (!cfg.has_key) { status('Gemini のAPIキーが未設定のため、送れません（サイトの管理者が設定します）。', 'err'); return; }
+    const { L, orig } = a;
+    const act = L.active();
+    if (!act.canvas ? true : !act.canvas.width) { status('先に色を選んで、変換画像を作ってください。', 'err'); return; }
     const btn = $('cfp-gemini-send');
     btn.disabled = true;
-    status('システムの変換を作り、Gemini に送っています…（数十秒かかることがあります）');
+    status('システムの変換を作り、いまの変換（人間が選んだ色）を正解として Gemini に送っています…（数十秒かかることがあります）');
     try {
-      const { L, orig } = a;
       const sets = L.sets();
       const sys = {};
       ['std', 'op3', 'op6'].forEach((k) => { sys[k] = imageDataCanvas(L.render(sets[k]).imageData); });
+      const human = act.canvas;
       const cl = clusterOriginal(orig);
       if (!cl) throw new Error('元画像に色がありません。');
       const hum = tally(cl, human.getContext('2d').getImageData(0, 0, human.width, human.height), L.colors);
@@ -201,13 +182,18 @@
         sys: st[k] ? L.colors[st[k].idx].name : '',
         human: hum[k] ? L.colors[hum[k].idx].name : '', human_pct: hum[k] ? hum[k].pct : 0
       })).filter((c) => c.share > 0);
+      const same = ['std', 'op3', 'op6'].filter((k) => sets[k].length === act.indices.length ? sets[k].every((i) => act.indices.indexOf(i) >= 0) : false);
       const res = await post('cfp_gemini_learn', {
         original: dataUrl(orig, 'image/jpeg'), human: dataUrl(human), sys_std: dataUrl(sys.std), sys_op3: dataUrl(sys.op3), sys_op6: dataUrl(sys.op6),
+        dither: String(act.dither),
+        human_colors: JSON.stringify(act.indices.map((i) => L.colors[i].name)),
+        sys_colors: JSON.stringify({ std: sets.std.map((i) => L.colors[i].name), op3: sets.op3.map((i) => L.colors[i].name), op6: sets.op6.map((i) => L.colors[i].name) }),
+        same_as: same.join(','),
         clusters: JSON.stringify(clusters), palette: paletteJson(L.colors)
       });
       cfg.rules = res.rules; cfg.examples = res.examples;
       showRules(res.rules, res.examples);
-      status('✅ 学習しました（例 ' + res.examples + ' 件）。' + (res.observations ? '\n今回わかった癖：\n' + res.observations : ''), 'ok');
+      status('✅ 送りました（学習した例 ' + res.examples + ' 件）。' + (same.length ? '\n※ いまの色はシステムの変換と同じです（人間が色を選び直した結果のほうが、よく学べます）。' : '') + (res.observations ? '\n今回わかった癖：\n' + res.observations : ''), 'ok');
     } catch (e) {
       status('❌ ' + e.message, 'err');
     } finally {
@@ -218,7 +204,7 @@
   async function applyLearned() {
     const a = api();
     if (!a) return;
-    if (!cfg.has_key) { status('Gemini のAPIキーが未設定です。管理画面「壁紙・カーペット」で設定してください。', 'err'); return; }
+    if (!cfg.has_key) { status('Gemini のAPIキーが未設定のため、使えません（サイトの管理者が設定します）。', 'err'); return; }
     const btn = $('cfp-gemini-apply');
     btn.disabled = true;
     status('学習した癖で、Gemini に色を選ばせています…（数十秒かかることがあります）');
@@ -229,7 +215,9 @@
       const sets = L.sets();
       const st = tally(cl, L.render(sets.std).imageData, L.colors);
       const clusters = cl.list.map((c, k) => ({ hex: hex(c.rgb), share: Math.round(c.n / cl.total * 1000) / 10, sys: st[k] ? L.colors[st[k].idx].name : '' }));
-      const res = await post('cfp_gemini_apply', { original: dataUrl(orig, 'image/jpeg'), clusters: JSON.stringify(clusters), palette: paletteJson(L.colors) });
+      const dither = L.active().dither;
+      const res = await post('cfp_gemini_apply', { original: dataUrl(orig, 'image/jpeg'), dither: String(dither), clusters: JSON.stringify(clusters), palette: paletteJson(L.colors) });
+      const dz = res.dither === null || res.dither === undefined ? dither : Math.min(100, Math.max(0, Number(res.dither) || 0));
       // まとまり → パレットの色（名前が分からなければ、システムの色）
       const byName = new Map(L.colors.map((c, i) => [c.name, i]));
       const pick = cl.list.map((c, k) => (st[k] ? st[k].idx : 0));
@@ -259,7 +247,7 @@
         cl.list.forEach((q, k) => { const e = (q.lab[0] - c[0]) ** 2 + (q.lab[1] - c[1]) ** 2 + (q.lab[2] - c[2]) ** 2; if (e < bd) { bd = e; bk = k; } });
         lut[key] = slot[bk];
       }
-      const out = L.renderLut(entries, lut);
+      const out = L.renderLut(entries, lut, dz / 100);
       const cv = $('cfp-gemini-result');
       cv.width = orig.width; cv.height = orig.height;
       cv.getContext('2d').putImageData(out.imageData, 0, 0);
@@ -273,10 +261,10 @@
         chips.appendChild(c);
       });
       const paid = out.usedEntries.filter((c) => (c.isOp ? c.price > 0 : false));
-      $('cfp-gemini-result-text').textContent = '使用 ' + out.usedEntries.length + '色' + (paid.length ? '（うち有償オプション ' + paid.length + '色：' + paid.map((c) => c.name).join('・') + '）' : '（すべて無償色）') + (res.comment ? '\nGemini：' + res.comment : '');
+      $('cfp-gemini-result-text').textContent = '使用 ' + out.usedEntries.length + '色' + (paid.length ? '（うち有償オプション ' + paid.length + '色：' + paid.map((c) => c.name).join('・') + '）' : '（すべて無償色）') + '・階調表現 ' + Math.round(dz) + '%' + (res.comment ? '\nGemini：' + res.comment : '');
       $('cfp-gemini-result-card').hidden = false;
       last = { indices: out.usedEntries.map((e) => L.colors.indexOf(e)).filter((i) => i >= 0) };
-      status('✅ 学習した癖で変換しました（例 ' + (cfg.examples || 0) + ' 件から学習）。', 'ok');
+      status('✅ 学習した癖（例 ' + (res.examples || cfg.examples || 0) + ' 件をまとめた癖）で変換しました。', 'ok');
     } catch (e) {
       status('❌ ' + e.message, 'err');
     } finally {
@@ -287,8 +275,7 @@
   function init() {
     if (!$('cfp-gemini-box')) return;
     showRules(cfg.rules, cfg.examples);
-    if (!cfg.has_key) status('Gemini のAPIキーが未設定です。管理画面「壁紙・カーペット」の「人間の変換の学習（Gemini）」で設定してください。', 'err');
-    $('cfp-gemini-human').onchange = (e) => { const f = e.target.files ? e.target.files[0] : null; if (f) loadHuman(f); e.target.value = ''; };
+    if (!cfg.has_key) status('Gemini のAPIキーが未設定のため、まだ使えません（サイトの管理者が管理画面で設定します）。', 'err');
     $('cfp-gemini-send').onclick = learn;
     $('cfp-gemini-apply').onclick = applyLearned;
     $('cfp-gemini-use').onclick = () => {
