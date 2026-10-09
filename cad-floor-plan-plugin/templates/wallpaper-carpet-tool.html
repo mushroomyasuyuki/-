@@ -3218,6 +3218,10 @@
       const ticks = line(rx - TL, qy0, rx, qy0) + line(rx - TL, qy1, rx, qy1) + line(rx + rw - RI, qy0, rx + rw + TL - RI, qy0) + line(rx + rw - RI, qy1, rx + rw + TL - RI, qy1)
         + line(qx0, ry - TL, qx0, ry) + line(qx1, ry - TL, qx1, ry) + line(qx0, ry + rh, qx0, ry + rh + TL) + line(qx1, ry + rh, qx1, ry + rh + TL);
       let t = K(0, 0, 0, 0) + lw(0.2268) + ticks + K(0, 0, 0, 1) + lw(0.03) + ticks;
+      // 裁断ライン：仕上がりの四角（左右＝カット線、上下＝壁の上端・下端）を透明な線で重ねる（見えないが選択できる）
+      t += SVG
+        ? '<rect class="cut-line" x="' + n3(qx0) + '" y="' + n3(qy0) + '" width="' + n3(qx1 - qx0) + '" height="' + n3(qy1 - qy0) + '" fill="none" stroke="#000000" stroke-opacity="0" stroke-width="' + n3(PTM) + '"><title>裁断ライン</title></rect>\n'
+        : 'q /GS0 gs ' + lw(1) + X(qx0) + ' ' + Y(qy1) + ' ' + n3((qx1 - qx0) * kk) + ' ' + n3((qy1 - qy0) * kk) + ' re S Q\n' + K(0, 0, 0, 1) + lw(0.03);
       t += Kf(0, 0, 0, 0.99);
       t += text(lab, qx0 + 2.6 * PTM, ry - 0.29 * PTM, NS, 'l') + text(lab, qx0 + 2.6 * PTM, ry + rh + 1.21 * PTM, NS, 'l');
       const ts = (tdSize || TD) * 2 / 3;   // 「天↑地」は見本の 2/3 の大きさ
@@ -3365,7 +3369,7 @@
     const cbytes = enc.encode(content);
     put(contentId, ['<< /Length ' + cbytes.length + ' >>\nstream\n', cbytes, '\nendstream']);
     put(pageId, ['<< /Type /Page /Parent ' + pagesId + ' 0 R /MediaBox [0 0 ' + n3(pageW * kk) + ' ' + n3(Hp) + ']' + (u > 1 ? ' /UserUnit ' + u : '')
-      + ' /Resources << /Font << /F1 ' + fontId + ' 0 R >> /XObject << ' + xobj.join(' ') + ' >> /Properties << ' + ocgs.map((id, i) => '/L' + i + ' ' + id + ' 0 R').join(' ') + ' >> >> /Contents ' + contentId + ' 0 R >>']);
+      + ' /Resources << /ExtGState << /GS0 << /Type /ExtGState /CA 0 /ca 0 >> >> /Font << /F1 ' + fontId + ' 0 R >> /XObject << ' + xobj.join(' ') + ' >> /Properties << ' + ocgs.map((id, i) => '/L' + i + ' ' + id + ' 0 R').join(' ') + ' >> >> /Contents ' + contentId + ' 0 R >>']);
     put(pagesId, ['<< /Type /Pages /Kids [' + pageId + ' 0 R] /Count 1 >>']);
     const refs = ocgs.map((id) => id + ' 0 R').join(' ');
     put(catalogId, ['<< /Type /Catalog /Pages ' + pagesId + ' 0 R /OCProperties << /OCGs [' + refs + '] /D << /Order [' + refs + '] /ON [' + refs + '] >> >> >>']);
