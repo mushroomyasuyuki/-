@@ -3015,7 +3015,7 @@
       let t = K(0, 0, 0, 0) + lw(0.2268) + ticks + K(0, 0, 0, 1) + lw(0.03) + ticks;
       t += Kf(0, 0, 0, 0.99);
       t += text(lab, qx0 + 2.6 * PTM, ry - 0.29 * PTM, NS, 'l') + text(lab, qx0 + 2.6 * PTM, ry + rh + 1.21 * PTM, NS, 'l');
-      const ts = tdSize || TD;
+      const ts = (tdSize || TD) * 2 / 3;   // 「天↑地」は見本の 2/3 の大きさ
       t += Kf(0, 0, 0, 1) + tategaki('天↑地', rx - 0.66 * PTM, ry + 0.56 * PTM, ts) + tategaki('天↑地', rx - 0.66 * PTM, ry + rh - 0.56 * PTM, ts, true);
       return t;
     };
