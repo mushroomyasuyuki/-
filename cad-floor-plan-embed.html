@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.86.0 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.86.1 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -3092,13 +3092,45 @@
         activePlan: this.fromFile && this.planFile ? this.planFile.name : null,
         activeElev: this._elevFile ? this._elevFile.name : null,
         applySize: this.$('apply-size').checked,
+        wp: this._wpExport(),
       };
+    }
+    // 壁紙の巾の枠の設定（巾と合わせ代の組合せ・余白・出隅入隅・任意サイズ・案件名・右寄せ）も途中保存に入れる
+    _wpExport() {
+      const v = (n) => (this.$(n) ? this.$(n).value : null);
+      return {
+        roll: v('wp-roll-sel'), ov: v('wp-ov-r'), trim: v('wp-trim-r'), side: v('wp-side-r'),
+        outMin: v('wp-out-min-r'), inMin: v('wp-in-min-r'), freeW: v('wp-free-w'), freeH: v('wp-free-h'), name: v('wp-name'),
+        right: this.$('wp-right') ? this.$('wp-right').checked : false,
+      };
+    }
+    _wpImport(w) {
+      if (!w || !this.$('wp-roll-sel')) return;
+      const set = (n, val) => { if (val != null ? this.$(n) : false) this.$(n).value = val; };
+      // 巾を選ぶと合わせ代は組合せ（900mm → 10mm、910mm → 7.5mm）になる。保存した合わせ代があればそれを使う
+      if (w.roll === '900' || w.roll === '910') {
+        this.$('wp-roll-sel').value = w.roll;
+        this.$('wp-roll-r').value = this.$('wp-roll').value = w.roll;
+        const ov = w.ov != null ? w.ov : (w.roll === '900' ? 10 : 7.5);
+        this.$('wp-ov-r').value = this.$('wp-ov').value = ov;
+      }
+      [['wp-trim', w.trim], ['wp-side', w.side], ['wp-out-min', w.outMin], ['wp-in-min', w.inMin]].forEach(([n, val]) => {
+        if (val != null ? this.$(n + '-r') : false) { this.$(n + '-r').value = val; if (this.$(n)) this.$(n).value = val; }
+      });
+      set('wp-free-w', w.freeW); set('wp-free-h', w.freeH); set('wp-name', w.name);
+      if (this.$('wp-right')) this.$('wp-right').checked = !!w.right;
+      this._wpView = null;
+      this._wpChanged();
     }
     files() {
       return this.drawings.map((d, i) => ({ key: 'cad' + i, file: d.file }));
     }
     // filesByKey: { cad0: File, ... }
     async importState(st, filesByKey) {
+      await this._importStateCad(st, filesByKey);
+      if (st ? st.wp : false) this._wpImport(st.wp);
+    }
+    async _importStateCad(st, filesByKey) {
       if (!st || !Array.isArray(st.drawings)) return;
       this.$('apply-size').checked = st.applySize !== false;
       this.drawings = [];
