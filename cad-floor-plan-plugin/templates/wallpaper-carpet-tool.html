@@ -2833,8 +2833,26 @@
   // レイヤーは「グラフィック」（画像）「分割」（巾の枠・トンボ・名前）「壁面ライン」「寸法」「仕様」（下から）。
   // 中身は PDF 互換の .ai。画像は CMYK（実寸 1px=1mm の画像をシートに 1/10 で配置。分割図は同じ画像を巾ごとに切り抜いて再利用）。
   // o: { W, WH, right, shapes, walls: [{ W, WH, no }], off, name, onProgress }
+  // AI の文字に埋め込むフォント（Noto Sans JP Regular・SIL Open Font License。Mac・Windows どちらでも同じ見た目）。
+  // 読み込めないときは null（文字はフォントを埋め込まずに書く）
+  const SHEET_FONT_JS = '{{CFP_ASSET_URL}}js/pdf-font.js?ver={{CFP_VERSION}}';
+  const SHEET_FONT_URL = '{{CFP_ASSET_URL}}fonts/NotoSansJP-Regular.ttf?ver={{CFP_VERSION}}';
+  function loadSheetFont() {
+    const ready = () => (window.CFPPdfFont ? window.CFPPdfFont.load(SHEET_FONT_URL) : Promise.reject(new Error('フォントの部品がありません')));
+    if (window.CFPPdfFont) return ready().catch(() => null);
+    return new Promise((resolve) => {
+      const sc = document.createElement('script');
+      sc.src = SHEET_FONT_JS;
+      sc.onload = () => ready().then(resolve, () => resolve(null));
+      sc.onerror = () => resolve(null);
+      document.head.appendChild(sc);
+    });
+  }
+
   WALL_PRINT.buildAiSheet = async function (o) {
     const P = WALL_PRINT;
+    const font = await loadSheetFont();
+    if (o.onFont) o.onFont(font);
     const off = o.off || { img: { x: 0, y: 0 }, frame: { x: 0, y: 0 } };
     const W = o.W, WH = o.WH, right = !!o.right;
     const H = WH + P.TRIM_TOP + P.TRIM_BOTTOM;
@@ -2932,17 +2950,33 @@
     const lw = (pt) => n3(pt / u) + ' w\n';
     const line = (x1, y1, x2, y2) => X(x1) + ' ' + Y(y1) + ' m ' + X(x2) + ' ' + Y(y2) + ' l S\n';
     const rect = (x, y, w, h) => X(x) + ' ' + Y(y + h) + ' ' + n3(w * kk) + ' ' + n3(h * kk) + ' re S\n';
-    const tw = (t, size) => { let w = 0; for (const ch of t) w += ch.charCodeAt(0) < 128 ? 0.55 : 1; return w * size; };
+    // 文字の幅（フォントを埋め込むときはフォントの幅）。使った文字を数えて、あとで埋め込むフォントに入れる
+    const usedG = new Map();   // グリフ番号 → 文字
+    const tw = (t, size) => {
+      let w = 0;
+      for (const ch of t) w += font ? font.adv(font.gid(ch.codePointAt(0))) / 1000 : (ch.charCodeAt(0) < 128 ? 0.55 : 1);
+      return w * size;
+    };
+    const enc16 = (t) => {
+      if (!font) return utf16(t);
+      let h = '';
+      for (const ch of t) {
+        const g = font.gid(ch.codePointAt(0));
+        if (!usedG.has(g)) usedG.set(g, ch);
+        h += g.toString(16).toUpperCase().padStart(4, '0');
+      }
+      return h;
+    };
     // 文字（size はシートの mm）。align: 'c' 中央 / 'l' 左 / 'r' 右。rot: 90 で縦（左に倒す）
     const text = (str, x, y, size, align, rot) => {
       const w = tw(str, size), a = align || 'c';
       const fs = n3(size * kk);
       if (rot) {
         const yy = a === 'c' ? y + w / 2 : y;
-        return 'BT /F1 ' + fs + ' Tf 0 1 -1 0 ' + X(x) + ' ' + Y(yy) + ' Tm <' + utf16(str) + '> Tj ET\n';
+        return 'BT /F1 ' + fs + ' Tf 0 1 -1 0 ' + X(x) + ' ' + Y(yy) + ' Tm <' + enc16(str) + '> Tj ET\n';
       }
       const xx = a === 'c' ? x - w / 2 : (a === 'r' ? x - w : x);
-      return 'BT /F1 ' + fs + ' Tf ' + X(xx) + ' ' + Y(y) + ' Td <' + utf16(str) + '> Tj ET\n';
+      return 'BT /F1 ' + fs + ' Tf ' + X(xx) + ' ' + Y(y) + ' Td <' + enc16(str) + '> Tj ET\n';
     };
     // 寸法：見本と同じ（文字 20pt・線 0.455pt・端の線 4mm）。上の寸法は線の 12.6pt 上、下の寸法は線の 27.8pt 下に数字
     const TS = 20 * PTM;
@@ -3061,9 +3095,41 @@
     let content = '';
     bodies.forEach((b, i) => { content += '/OC /L' + i + ' BDC\n' + b + 'EMC\n'; });
     const fontId = alloc(), cidId = alloc(), fdId = alloc();
-    put(fdId, ['<< /Type /FontDescriptor /FontName /KozGoPr6N-Regular /Flags 4 /FontBBox [-538 -374 1254 1418] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 763 /StemV 116 >>']);
-    put(cidId, ['<< /Type /Font /Subtype /CIDFontType0 /BaseFont /KozGoPr6N-Regular /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /FontDescriptor ' + fdId + ' 0 R /DW 1000 /W [1 95 500 231 632 500] >>']);
-    put(fontId, ['<< /Type /Font /Subtype /Type0 /BaseFont /KozGoPr6N-Regular-UniJIS-UTF16-H /Encoding /UniJIS-UTF16-H /DescendantFonts [' + cidId + ' 0 R] >>']);
+    if (font) {
+      // 使った文字だけのフォント（サブセット）を埋め込む（CIDFontType2・Identity-H・ToUnicode 付きで、文字として編集・検索できる）
+      const gids = Array.from(usedG.keys()).sort((a, b) => a - b);
+      const sub = font.subset(gids);
+      let fdata = new Blob([sub]), filter = '';
+      if (typeof CompressionStream === 'function') {
+        fdata = await new Response(new Blob([sub]).stream().pipeThrough(new CompressionStream('deflate'))).blob();
+        filter = ' /Filter /FlateDecode';
+      }
+      const tagChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      let tag = '';
+      for (let i = 0; i !== 6; i++) tag += tagChars[Math.floor(Math.random() * 26)];
+      const base = tag + '+' + font.name;
+      const ffId = alloc(), tuId = alloc();
+      put(ffId, ['<< /Length ' + fdata.size + ' /Length1 ' + sub.length + filter + ' >>\nstream\n', fdata, '\nendstream']);
+      put(fdId, ['<< /Type /FontDescriptor /FontName /' + base + ' /Flags 4 /FontBBox [' + font.bbox.join(' ') + '] /ItalicAngle 0 /Ascent ' + font.ascent + ' /Descent ' + font.descent + ' /CapHeight ' + font.capHeight + ' /StemV 80 /FontFile2 ' + ffId + ' 0 R >>']);
+      const Wd = gids.map((g) => g + ' [' + font.adv(g) + ']').join(' ');
+      put(cidId, ['<< /Type /Font /Subtype /CIDFontType2 /BaseFont /' + base + ' /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ' + fdId + ' 0 R /DW 1000 /W [' + Wd + '] /CIDToGIDMap /Identity >>']);
+      // ToUnicode（グリフ番号 → 文字）
+      const hex4 = (v) => v.toString(16).toUpperCase().padStart(4, '0');
+      const uni = (ch) => { let h = ''; for (let i = 0; i !== ch.length; i++) h += hex4(ch.charCodeAt(i)); return h; };
+      let cmap = '/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n';
+      for (let i = 0; i < gids.length; i += 100) {
+        const chunk = gids.slice(i, i + 100);
+        cmap += chunk.length + ' beginbfchar\n' + chunk.map((g) => '<' + hex4(g) + '> <' + uni(usedG.get(g)) + '>').join('\n') + '\nendbfchar\n';
+      }
+      cmap += 'endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n';
+      const cb = enc.encode(cmap);
+      put(tuId, ['<< /Length ' + cb.length + ' >>\nstream\n', cb, '\nendstream']);
+      put(fontId, ['<< /Type /Font /Subtype /Type0 /BaseFont /' + base + ' /Encoding /Identity-H /DescendantFonts [' + cidId + ' 0 R] /ToUnicode ' + tuId + ' 0 R >>']);
+    } else {
+      put(fdId, ['<< /Type /FontDescriptor /FontName /KozGoPr6N-Regular /Flags 4 /FontBBox [-538 -374 1254 1418] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 763 /StemV 116 >>']);
+      put(cidId, ['<< /Type /Font /Subtype /CIDFontType0 /BaseFont /KozGoPr6N-Regular /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 6 >> /FontDescriptor ' + fdId + ' 0 R /DW 1000 /W [1 95 500 231 632 500] >>']);
+      put(fontId, ['<< /Type /Font /Subtype /Type0 /BaseFont /KozGoPr6N-Regular-UniJIS-UTF16-H /Encoding /UniJIS-UTF16-H /DescendantFonts [' + cidId + ' 0 R] >>']);
+    }
     const contentId = alloc(), pageId = alloc(), pagesId = alloc(), catalogId = alloc(), infoId = alloc();
     const cbytes = enc.encode(content);
     put(contentId, ['<< /Length ' + cbytes.length + ' >>\nstream\n', cbytes, '\nendstream']);
@@ -3085,7 +3151,7 @@
     if (o.onProgress) o.onProgress(1);
     return {
       name: 'wallpaper_sheet_' + N + 'strips_' + FW + 'x' + H + 'mm_pitch' + P.PITCH + '_margin' + P.MARGIN + (right ? '_right' : '_left') + '_' + Date.now() + '.ai',
-      blob: new Blob(parts, { type: 'application/postscript' }), width: FW, height: H, strips: N, ai: true, sheet: true
+      blob: new Blob(parts, { type: 'application/postscript' }), width: FW, height: H, strips: N, ai: true, sheet: true, font: font ? font.name : ''
     };
   };
 
