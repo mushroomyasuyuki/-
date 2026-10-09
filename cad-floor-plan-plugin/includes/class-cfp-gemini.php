@@ -21,7 +21,7 @@ class CFP_Gemini {
     const OPT_KEY = 'cfp_gemini_api_key';
     const OPT_MODEL = 'cfp_gemini_model';
     const OPT_RULES = 'cfp_gemini_rules';
-    const DEFAULT_MODEL = 'gemini-2.5-flash';
+    const DEFAULT_MODEL = 'gemini-3.8-flash';
     const MAX_EXAMPLES = 100;
     const RATE_PER_HOUR = 30;
 
@@ -596,8 +596,9 @@ class CFP_Gemini {
     }
 
     /** Calls Gemini (generateContent, JSON answer). Returns the decoded JSON or WP_Error. */
-    private static function call($parts) {
-        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode(self::model()) . ':generateContent';
+    private static function call($parts, $retry = true) {
+        $model = self::model();
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent';
         $resp = wp_remote_post($url, [
             'timeout' => 120,
             'headers' => [
@@ -616,6 +617,14 @@ class CFP_Gemini {
         $body = json_decode((string) wp_remote_retrieve_body($resp), true);
         if ($code !== 200) {
             $msg = is_array($body) && isset($body['error']['message']) ? (string) $body['error']['message'] : 'HTTP ' . $code;
+            // 使えなくなったモデル：Gemini が案内する新しいモデルに切り替えて、もう一度だけ送る（設定も書き換える）
+            if ($retry && preg_match('#use (?:models/)?(gemini-[A-Za-z0-9._-]+)#i', $msg, $m)) {
+                $next = rtrim($m[1], '.');
+                if ($next !== $model) {
+                    update_option(self::OPT_MODEL, $next, false);
+                    return self::call($parts, false);
+                }
+            }
             return new WP_Error('cfp_gemini', 'Gemini からエラーが返りました：' . $msg);
         }
         $text = '';
