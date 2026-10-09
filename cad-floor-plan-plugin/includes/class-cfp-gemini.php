@@ -40,6 +40,9 @@ class CFP_Gemini {
         add_action('wp_ajax_nopriv_cfp_gemini_learn', [$this, 'handle_learn']);
         add_action('wp_ajax_nopriv_cfp_gemini_apply', [$this, 'handle_apply']);
         add_action('admin_post_cfp_gemini_settings', [$this, 'handle_settings']);
+        add_action('admin_post_cfp_gemini_delete', [$this, 'handle_delete']);
+        add_action('admin_post_cfp_gemini_rebuild', [$this, 'handle_rebuild']);
+        add_action('admin_post_cfp_gemini_image', [$this, 'handle_image']);
     }
 
     public static function can_use() {
@@ -97,6 +100,9 @@ class CFP_Gemini {
         <h2 id="cfp-gemini">人間の変換の学習（Gemini）</h2>
         <?php if ($saved === 'ok') : ?><div class="notice notice-success inline"><p>保存しました。</p></div><?php endif; ?>
         <?php if ($saved === 'reset') : ?><div class="notice notice-success inline"><p>学習内容を消しました。</p></div><?php endif; ?>
+        <?php if ($saved === 'deleted') : ?><div class="notice notice-success inline"><p>例を1件消しました。消した例の分は、変換に使う集計からすぐ外れます。学習メモからも外すには「学習メモを作り直す」を押してください。</p></div><?php endif; ?>
+        <?php if ($saved === 'rebuilt') : ?><div class="notice notice-success inline"><p>残っている例から学習メモを作り直しました。</p></div><?php endif; ?>
+        <?php if ($saved === 'error') : ?><div class="notice notice-error inline"><p><?php echo esc_html((string) get_transient('cfp_gemini_admin_error')); ?></p></div><?php endif; ?>
         <p>カーペットの色変換で、シミュレーターの変換に人間が色を選んだ結果を Gemini に送り、変換の癖を学ばせます（変換画面に、どなたにも表示されます）。APIキーはこのサーバーにだけ保存し、ページには出しません。使いすぎを防ぐため、同じ IP からの送信は1時間に <?php echo (int) self::RATE_PER_HOUR; ?> 回までです。</p>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
             <input type="hidden" name="action" value="cfp_gemini_settings">
@@ -114,7 +120,148 @@ class CFP_Gemini {
             <?php if ($key !== '') : ?> <?php submit_button('APIキーを削除', 'secondary', 'delete_key', false); ?><?php endif; ?>
             <?php submit_button('学習内容を消す', 'delete', 'reset', false, ['onclick' => "return confirm('学習した例と学習メモをすべて消します。よろしいですか？');"]); ?>
         </form>
+        <?php self::render_examples(); ?>
         <?php
+    }
+
+    /** The saved examples (newest first), each with a delete button; and the button to rebuild the memo. */
+    private static function render_examples() {
+        $examples = self::examples();
+        $rules = (string) get_option(self::OPT_RULES, '');
+        $img = function ($id, $f) {
+            return esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_gemini_image&ex=' . rawurlencode($id) . '&f=' . $f), 'cfp_gemini_image'));
+        };
+        ?>
+        <h3>学習メモ（トータルの癖）</h3>
+        <div style="max-width:900px;white-space:pre-line;background:#fff;border:1px solid #ccd0d4;padding:10px 12px;"><?php echo $rules !== '' ? esc_html($rules) : 'まだありません。'; ?></div>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:8px 0 16px;">
+            <input type="hidden" name="action" value="cfp_gemini_rebuild">
+            <?php wp_nonce_field('cfp_gemini_rebuild'); ?>
+            <?php submit_button('学習メモを作り直す', 'secondary', 'rebuild', false, $examples ? ['onclick' => "return confirm('残っている例（" . count($examples) . " 件）から、Gemini に学習メモを書き直させます（Gemini を1回使います）。よろしいですか？');"] : ['disabled' => 'disabled']); ?>
+            <span class="description">例を消したあとに押すと、消した例から学んだ内容が学習メモから外れます。</span>
+        </form>
+        <h3>学習した例（<?php echo count($examples); ?> 件・新しい順）</h3>
+        <?php if (!$examples) : ?>
+            <p>まだありません。</p>
+        <?php else : ?>
+        <table class="widefat striped" style="max-width:1100px">
+            <thead><tr><th style="width:120px">日時</th><th style="width:230px">元画像 → 正解</th><th>人間が選んだ色・階調表現</th><th>この例から分かった癖</th><th style="width:90px"></th></tr></thead>
+            <tbody>
+            <?php foreach ($examples as $ex) :
+                $id = basename($ex['dir']);
+                $m = $ex['meta'];
+                $colors = array_filter((array) ($m['human_colors'] ?? []), 'is_string');
+                ?>
+                <tr>
+                    <td><?php echo esc_html(isset($m['time']) ? wp_date('Y/m/d H:i', (int) $m['time']) : ''); ?></td>
+                    <td><img src="<?php echo $img($id, 'original'); ?>" alt="" style="width:100px;height:auto;vertical-align:middle;border:1px solid #ccd0d4"> → <img src="<?php echo $img($id, 'human'); ?>" alt="" style="width:100px;height:auto;vertical-align:middle;border:1px solid #ccd0d4"></td>
+                    <td><?php echo esc_html($colors ? implode('、', $colors) : '—'); ?><br>階調表現 <?php echo isset($m['dither']) ? (int) $m['dither'] . '%' : '—'; ?><?php echo !empty($m['same_as']) ? '<br>（システムの変換と同じ色）' : ''; ?></td>
+                    <td style="white-space:pre-line"><?php echo esc_html((string) ($m['observations'] ?? '')); ?></td>
+                    <td>
+                        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('この例を消します。よろしいですか？');">
+                            <input type="hidden" name="action" value="cfp_gemini_delete">
+                            <input type="hidden" name="ex" value="<?php echo esc_attr($id); ?>">
+                            <?php wp_nonce_field('cfp_gemini_delete'); ?>
+                            <button type="submit" class="button button-link-delete">この例を消す</button>
+                        </form>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif;
+    }
+
+    /** The folder of one example from its id (ex-YYYYmmddHHMMSS-xxxxxx), or null. */
+    private static function example_dir($id) {
+        if (!preg_match('/^ex-\d{14}-[A-Za-z0-9]{6}$/', (string) $id)) {
+            return null;
+        }
+        $dir = self::base_dir() . '/' . $id;
+        return is_dir($dir) ? $dir : null;
+    }
+
+    public function handle_delete() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。');
+        }
+        check_admin_referer('cfp_gemini_delete');
+        $dir = self::example_dir(isset($_POST['ex']) ? sanitize_text_field(wp_unslash($_POST['ex'])) : '');
+        if ($dir) {
+            self::rmdir($dir);
+        }
+        wp_safe_redirect(admin_url('admin.php?page=cad-floor-plan&cfp_gemini=deleted#cfp-gemini'));
+        exit;
+    }
+
+    /** Shows an example's image to an admin (the folder is private). */
+    public function handle_image() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。', '', 403);
+        }
+        check_admin_referer('cfp_gemini_image');
+        $dir = self::example_dir(isset($_GET['ex']) ? sanitize_text_field(wp_unslash($_GET['ex'])) : '');
+        $f = isset($_GET['f']) && $_GET['f'] === 'human' ? 'human' : 'original';
+        $file = null;
+        if ($dir) {
+            foreach (['png' => 'image/png', 'jpg' => 'image/jpeg'] as $ext => $mime) {
+                if (is_readable($dir . '/' . $f . '.' . $ext)) {
+                    $file = [$dir . '/' . $f . '.' . $ext, $mime];
+                    break;
+                }
+            }
+        }
+        if (!$file) {
+            status_header(404);
+            exit;
+        }
+        nocache_headers();
+        header('Content-Type: ' . $file[1]);
+        header('Content-Length: ' . filesize($file[0]));
+        readfile($file[0]);
+        exit;
+    }
+
+    /** Rewrites the memo from the examples that are left (their observations and the totals). */
+    public function handle_rebuild() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。');
+        }
+        check_admin_referer('cfp_gemini_rebuild');
+        $examples = self::examples();
+        $result = 'rebuilt';
+        if (!$examples) {
+            delete_option(self::OPT_RULES);
+        } elseif (get_option(self::OPT_KEY, '') === '') {
+            set_transient('cfp_gemini_admin_error', 'Gemini のAPIキーが未設定です。', 60);
+            $result = 'error';
+        } else {
+            $obs = [];
+            foreach ($examples as $i => $ex) {
+                $m = $ex['meta'];
+                $o = trim((string) ($m['observations'] ?? ''));
+                $obs[] = '例' . ($i + 1) . '（階調表現 ' . (isset($m['dither']) ? (int) $m['dither'] . '%' : '不明') . '・人間が選んだ色：' . self::names($m['human_colors'] ?? []) . '）' . "\n" . ($o !== '' ? $o : '（記録なし）');
+            }
+            $parts = [['text' => "あなたはカーペット（タフテッド）の色変換の職人の癖を学ぶアシスタントです。元の画像をパレットの色（最大16色）だけで塗り直すとき、シミュレーターの変換で人間がパレットの色を選び直した結果を正解として学んできました。いくつかの例を消したので、残っている例だけから、学習メモ（トータルの癖）を作り直してください。消した例の内容は含めないでください。"
+                . "\n\n残っている例から集計した癖：\n" . self::habit_summary($examples)
+                . "\n\n残っている例ごとに分かった癖：\n" . implode("\n\n", $obs)
+                . "\n\n次の JSON だけを返してください：{\"rules\": \"すべての例に共通するトータルの癖（次の変換で使う具体的なルール。色の選び方・置き換え・階調表現の使い方。日本語・箇条書き・2000字以内。色の名前はパレットの名前で）\"}"]];
+            $res = self::call($parts);
+            if (is_wp_error($res)) {
+                set_transient('cfp_gemini_admin_error', $res->get_error_message(), 60);
+                $result = 'error';
+            } else {
+                $rules = isset($res['rules']) ? sanitize_textarea_field((string) $res['rules']) : '';
+                if ($rules === '') {
+                    set_transient('cfp_gemini_admin_error', 'Gemini の答えから学習メモを読み取れませんでした。', 60);
+                    $result = 'error';
+                } else {
+                    update_option(self::OPT_RULES, $rules, false);
+                }
+            }
+        }
+        wp_safe_redirect(admin_url('admin.php?page=cad-floor-plan&cfp_gemini=' . $result . '#cfp-gemini'));
+        exit;
     }
 
     public function handle_settings() {
