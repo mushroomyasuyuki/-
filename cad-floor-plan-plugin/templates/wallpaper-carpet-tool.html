@@ -2527,13 +2527,16 @@
   //   高さ = お部屋パースの「壁の高さ」(mm) + 200mm（裁断代）
   // を使用する。
   // =====================================================================
-  // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代。巾（初期910mm）は隣の巾と合わせ代（初期10mm）だけ重なり、
-  // 重なりの真ん中がカット線（枠の端から合わせ代の半分＝EDGE）。壁の左右の余白は合わせ代と同じ幅（10mm）
-  // SIDE：貼り始め（スタート側）の端の余白（壁の端から最初の巾の端まで。10〜100mm・5mm刻み）
-  const WALL_PRINT = { ROLL: 910, OVERLAP: 7.5, TRIM_TOP: 100, TRIM_BOTTOM: 100, SIDE: 10 };
-  WALL_PRINT.EDGE = WALL_PRINT.OVERLAP / 2; // カット線の外側の余白（合わせ代の半分）
-  WALL_PRINT.STEP = WALL_PRINT.ROLL - WALL_PRINT.OVERLAP; // 1巾が受け持つ壁の幅（カット線からカット線まで。900mm）
-  // 巾（横幅）は画面では 910mm / 900mm から選ぶ（合わせ代は 7.5mm / 10mm に自動。範囲としては850〜930mm）、合わせ代（隣の巾と重なる幅）は6〜15mmを0.5mm刻み、上下の余白（裁断代）は30〜100mmを5mm刻みで調整できる
+  // 壁紙の印刷・保存の寸法（mm）：壁の上下に100mmずつの裁断代。
+  // 巾（PITCH：仕上がりの幅＝1巾が受け持つ壁の幅、初期910mm）の左右に合わせ代（MARGIN：片側、初期7.5mm）を足した幅で
+  // 1巾を作る（ROLL＝910＋7.5＋7.5＝925mm）。隣の巾とは合わせ代2つ分（OVERLAP＝15mm）重なり、重なりの真ん中がカット線
+  // （巾の端から合わせ代＝EDGE）。SIDE：貼り始め（スタート側）の端の余白（壁の端から最初の巾の端まで。10〜100mm・5mm刻み）
+  const WALL_PRINT = { PITCH: 910, MARGIN: 7.5, TRIM_TOP: 100, TRIM_BOTTOM: 100, SIDE: 10 };
+  WALL_PRINT.ROLL = WALL_PRINT.PITCH + WALL_PRINT.MARGIN * 2; // 1巾の幅（合わせ代込み。925mm）
+  WALL_PRINT.OVERLAP = WALL_PRINT.MARGIN * 2;                  // 隣の巾と重なる幅（15mm）
+  WALL_PRINT.EDGE = WALL_PRINT.MARGIN;                         // カット線の外側の余白（合わせ代）
+  WALL_PRINT.STEP = WALL_PRINT.PITCH;                          // 1巾が受け持つ壁の幅（カット線からカット線まで。910mm）
+  // 巾（仕上がりの幅）は画面では 910mm / 900mm から選ぶ（合わせ代は 7.5mm / 10mm に自動。範囲としては850〜930mm）、合わせ代（片側）は6〜15mmを0.5mm刻み、上下の余白（裁断代）は30〜100mmを5mm刻みで調整できる
   // 巾の数：スタート側の余白＋壁の幅を覆い、反対側にも（合わせ代−5mm）以上の余白が残る数
   WALL_PRINT.count = function (W) { return Math.max(1, Math.ceil((this.SIDE + W - 5) / this.STEP)); };
   // 壁の左端の位置（絵の左端から mm）：左寄せスタートはスタート側の余白、右寄せスタートは右端から余白をとった位置
@@ -2542,7 +2545,7 @@
   // 足りなくなった側（壁の端から合わせ代−5mm以上の余白が要る）に巾を足す。
   // 返り値：N（巾の数）、FW（絵の幅＝最初の巾の左端から最後の巾の右端まで）、ox（絵の中での壁の左端）
   WALL_PRINT.frames = function (W, right, fx) {
-    const P = this, m = Math.max(0, P.OVERLAP - 5), o = fx || 0;
+    const P = this, m = Math.max(0, P.MARGIN - 5), o = fx || 0;
     const s0 = right ? W + P.SIDE + o - P.ROLL : o - P.SIDE; // 貼り始めの巾の左端（壁の左端から）
     const kmin = Math.floor((-m - s0) / P.STEP + 1e-9);
     const kmax = Math.max(kmin, Math.ceil((W + m - P.ROLL - s0) / P.STEP - 1e-9));
@@ -2553,10 +2556,13 @@
     if (side !== undefined) this.SIDE = Math.min(100, Math.max(10, Math.round((parseFloat(side) || 10) / 5) * 5));
     const r = Math.min(930, Math.max(850, Math.round(parseFloat(roll)) || 910));
     const o = Math.min(15, Math.max(6, Math.round((parseFloat(overlap) || 10) * 2) / 2));
-    this.ROLL = r;
-    this.OVERLAP = o;
-    this.EDGE = o / 2;
-    this.STEP = r - o;
+    // r：巾（仕上がりの幅）、o：合わせ代（片側）→ 1巾の幅は r + o × 2
+    this.PITCH = r;
+    this.MARGIN = o;
+    this.ROLL = r + o * 2;
+    this.OVERLAP = o * 2;
+    this.EDGE = o;
+    this.STEP = r;
     if (trim !== undefined) {
       const tv = Math.min(100, Math.max(30, Math.round((parseFloat(trim) || 100) / 5) * 5));
       this.TRIM_TOP = tv;
@@ -2840,7 +2846,6 @@
     const GAP = 80;                 // 分割図の巾と巾のすき間（実寸 mm）
     const MM = 72 / 25.4;
     const PTM = 25.4 / 72;          // 1pt（シートの mm）
-    const f0 = (v) => String(Math.round(v));
     const f1 = (v) => String(Math.round(v * 10) / 10);
     const multi = (o.walls || []).length > 1;
     // ---- シートの配置（シートの mm、左上が原点・下向き）。見本と同じ間隔 ----
@@ -2942,8 +2947,8 @@
     // 寸法：見本と同じ（文字 20pt・線 0.455pt・端の線 4mm）。上の寸法は線の 12.6pt 上、下の寸法は線の 27.8pt 下に数字
     const TS = 20 * PTM;
     const DT = 2;                    // 端の線の半分（シートの mm）
-    const hdim = (x1, x2, y, v, below) => line(x1, y, x2, y) + line(x1, y - DT, x1, y + DT) + line(x2, y - DT, x2, y + DT) + text(f0(v), (x1 + x2) / 2, below ? y + 27.8 * PTM : y - 12.6 * PTM, TS, 'c');
-    const vdim = (x, y1, y2, v) => line(x, y1, x, y2) + line(x - DT, y1, x + DT, y1) + line(x - DT, y2, x + DT, y2) + text(f0(v), x - 12.6 * PTM, (y1 + y2) / 2, TS, 'c', 90);
+    const hdim = (x1, x2, y, v, below) => line(x1, y, x2, y) + line(x1, y - DT, x1, y + DT) + line(x2, y - DT, x2, y + DT) + text(f1(v), (x1 + x2) / 2, below ? y + 27.8 * PTM : y - 12.6 * PTM, TS, 'c');
+    const vdim = (x, y1, y2, v) => line(x, y1, x, y2) + line(x - DT, y1, x + DT, y1) + line(x - DT, y2, x + DT, y2) + text(f1(v), x - 12.6 * PTM, (y1 + y2) / 2, TS, 'c', 90);
     const px1 = (xr) => s1x + xr * SC, py1 = (yr) => s1y + yr * SC;     // 全体図：絵の実寸 → シート
     const stripX = (i) => s1x + splitR(i) * SC;                           // 分割図：i 番目の巾の左端（シート）
     const stripNo = (i) => (right ? N - i : i + 1);                       // 貼り始めが 1
@@ -3014,7 +3019,7 @@
     const lines = [
       '案件名：' + name,
       '壁：幅 ' + f1(W) + ' × 高さ ' + f1(WH) + ' mm' + (multi ? '（壁 ' + o.walls.map((w) => w.no).join('→') + ' をつなげる）' : ''),
-      '巾 ' + f1(P.ROLL) + ' mm ／ 合わせ代 ' + f1(P.OVERLAP) + ' mm ／ ' + f1(P.STEP) + 'ピッチ ／ ' + N + ' 巾（' + (right ? '右' : '左') + 'から貼る）',
+      '巾 ' + f1(P.PITCH) + ' mm ＋ 合わせ代 ' + f1(P.MARGIN) + ' mm × 2 ＝ ' + f1(P.ROLL) + ' mm ／ ' + f1(P.STEP) + 'ピッチ ／ ' + N + ' 巾（' + (right ? '右' : '左') + 'から貼る）',
       '上下の余白 ' + f1(P.TRIM_TOP) + ' mm ／ スタート側の端の余白 ' + f1(P.SIDE) + ' mm ／ 全体 ' + f1(FW) + ' × ' + f1(H) + ' mm',
       '縮尺 1/10 ／ 作成日 ' + date + ' ／ 確認用'
     ];
@@ -3079,7 +3084,7 @@
     add(xr + 'trailer\n<< /Size ' + nextId + ' /Root ' + catalogId + ' 0 R /Info ' + infoId + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
     if (o.onProgress) o.onProgress(1);
     return {
-      name: 'wallpaper_sheet_' + N + 'strips_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + '.ai',
+      name: 'wallpaper_sheet_' + N + 'strips_' + FW + 'x' + H + 'mm_pitch' + P.PITCH + '_margin' + P.MARGIN + (right ? '_right' : '_left') + '_' + Date.now() + '.ai',
       blob: new Blob(parts, { type: 'application/postscript' }), width: FW, height: H, strips: N, ai: true, sheet: true
     };
   };
@@ -3110,7 +3115,7 @@
     const layerDefs = [
       { name: '①CAD図面（' + (label || '壁の範囲 ' + W + '×' + WH + 'mm') + '）', draw: cadL },
       { name: '②壁紙の画像（切り分けなし・左右の余白と上下' + P.TRIM_TOP + 'mmを含む）', draw: design },
-      { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', draw: frame }
+      { name: '③巾の枠（巾' + P.PITCH + 'mm＋合わせ代' + P.MARGIN + 'mm×2＝' + P.ROLL + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', draw: frame }
     ];
     const comp = (ctx) => { cadL(ctx); design(ctx); frame(ctx); };
     const MAXW = split === true ? 20000 : Math.max(Math.ceil(P.ROLL), +split || 0); // 1ファイルの幅の上限（mm）
@@ -3125,7 +3130,7 @@
       const stamp = Date.now();
       const lines = ['壁紙データ（巾の枠）：幅 ' + FW + 'mm が ' + MAXW + 'mm を超えるため、巾の区切りで ' + M + ' 個の ' + (ai ? 'AI（Illustrator）ファイル' : 'PSD') + '（それぞれ幅 ' + MAXW + 'mm 以内）に分けました。',
         (ai ? '各AI：実寸（1mm = 1mm）・PDF互換の .ai、壁紙の画像は CMYK、巾の枠は線（ベクトル）。レイヤーは' : '各PSD：CMYK・1px = 1mm・25.4dpi、レイヤーは') + ' ①CAD図面 ②壁紙の画像 ③巾の枠。ファイル名の先頭の番号（01, 02 …）の順に左から並べると、元の1枚の絵になります。',
-        '隣り合うファイルは、巾の重なり（合わせ代 ' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
+        '隣り合うファイルは、巾の重なり（合わせ代 ' + P.MARGIN + 'mm×2＝' + P.OVERLAP + 'mm）の分だけ同じ絵が入っています。', ''];
       for (let k = 0; k !== M; k++) {
         const first = k * per, last = Math.min(N, (k + 1) * per) - 1;
         const x0 = Math.max(0, Math.floor(xs[first])), x1 = Math.min(FW, Math.ceil(xs[last] + P.ROLL));
@@ -3149,7 +3154,7 @@
     const blob = await write(FW, H, layerDefs, comp, onProgress);
     const psb = ai ? false : (FW > 30000 || H > 30000);
     return {
-      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + (ai ? '.ai' : (psb ? '.psb' : '.psd')),
+      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_pitch' + P.PITCH + '_margin' + P.MARGIN + (right ? '_right' : '_left') + '_' + Date.now() + (ai ? '.ai' : (psb ? '.psb' : '.psd')),
       blob, width: FW, height: H, strips: N, psb, ai
     };
   };
@@ -3176,11 +3181,11 @@
     cx.drawImage(design, 0, 0);
     cx.drawImage(frame, 0, 0);
     return {
-      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_roll' + P.ROLL + '_ov' + P.OVERLAP + (right ? '_right' : '_left') + '_' + Date.now() + '.psd',
+      name: 'wallpaper_whole_' + FW + 'x' + H + 'mm_pitch' + P.PITCH + '_margin' + P.MARGIN + (right ? '_right' : '_left') + '_' + Date.now() + '.psd',
       blob: writeCmykPsd(FW, H, comp, [
         { name: '①CAD図面（' + (label || '壁の範囲 ' + W + '×' + WH + 'mm') + '）', canvas: cadL },
         { name: '②壁紙の画像（切り分けなし・左右の余白と上下' + P.TRIM_TOP + 'mmを含む）', canvas: design },
-        { name: '③巾の枠（巾' + P.ROLL + 'mm・合わせ代' + P.OVERLAP + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', canvas: frame }
+        { name: '③巾の枠（巾' + P.PITCH + 'mm＋合わせ代' + P.MARGIN + 'mm×2＝' + P.ROLL + 'mm・' + N + '巾・' + (right ? '右' : '左') + '寄せスタート・紫＝壁の範囲とカット線）', canvas: frame }
       ], 25.4),
       width: FW, height: H, strips: N
     };
@@ -3377,7 +3382,7 @@
         '',
         '壁のサイズ（図面）：幅 ' + W + ' mm × 高さ ' + WH + ' mm',
         '1巾のサイズ：幅 ' + P.ROLL + ' mm × 高さ ' + H + ' mm（壁の高さ + 上下 ' + P.TRIM_TOP + ' mm ずつの裁断代）',
-        '巾の重なり（合わせ代）：' + P.OVERLAP + ' mm（隣の巾と柄が重なります。重なりの真ん中がカット線）。1巾が受け持つ壁の幅は ' + P.STEP + ' mm',
+        '1巾の幅：巾 ' + P.PITCH + ' mm ＋ 合わせ代 ' + P.MARGIN + ' mm × 2 ＝ ' + P.ROLL + ' mm。隣の巾と ' + P.OVERLAP + ' mm 重なり、重なりの真ん中がカット線。1巾が受け持つ壁の幅は ' + P.STEP + ' mm',
         '巾数：' + N + ' 巾（左から順に 01, 02, …）',
         '赤枠：各巾が受け持つ壁の範囲（別レイヤー「②赤枠」。印刷しない場合はレイヤーを非表示にしてください）',
         '形式：CMYK・8bit・PSD・25.4dpi（1px = 1mm）。RGBからの単純変換のため、印刷色は校正してください。',

@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.85.1
+ * Version: 2.86.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.85.1');
+define('CFP_VERSION', '2.86.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -533,8 +533,8 @@ final class CAD_Floor_Plan_Plugin {
                     <label>画像の濃さ <input type="range" data-cfp="wp-dopacity" min="10" max="100" step="5" value="80"> <span data-cfp="wp-dopacity-val">80</span>%</label>
                   </div>
                   <div class="cfp-raster-row cfp-layout-sliders cfp-wp-ctrl">
-                    <label>巾（横幅）<select data-cfp="wp-roll-sel"><option value="910" selected>910mm（合わせ代 7.5mm）</option><option value="900">900mm（合わせ代 10mm）</option></select><input type="hidden" data-cfp="wp-roll-r" value="910"><input type="hidden" data-cfp="wp-roll" value="910"></label>
-                    <label>合わせ代（巾が重なる幅）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="7.5"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="7.5"> mm</label>
+                    <label>巾（横幅）<select data-cfp="wp-roll-sel"><option value="910" selected>910mm（＋合わせ代 7.5mm×2＝925mm）</option><option value="900">900mm（＋合わせ代 10mm×2＝920mm）</option></select><input type="hidden" data-cfp="wp-roll-r" value="910"><input type="hidden" data-cfp="wp-roll" value="910"></label>
+                    <label title="巾の左右それぞれに足す幅。1巾の幅＝巾＋合わせ代×2。隣の巾とは合わせ代2つ分重なり、その真ん中がカット線">合わせ代（片側）<input type="range" data-cfp="wp-ov-r" min="6" max="15" step="0.5" value="7.5"> <input type="number" data-cfp="wp-ov" min="6" max="15" step="0.5" value="7.5"> mm</label>
                     <label>上下の余白（裁断代）<input type="range" data-cfp="wp-trim-r" min="30" max="100" step="5" value="100"> <input type="number" data-cfp="wp-trim" min="30" max="100" step="5" value="100"> mm</label>
                     <label>スタート側の端の余白 <input type="range" data-cfp="wp-side-r" min="10" max="100" step="5" value="10"> <input type="number" data-cfp="wp-side" min="10" max="100" step="5" value="10"> mm</label>
                     <label title="出隅（外に出っぱった角）から壁紙の継ぎ目（カット線）までの、左右それぞれに必要な距離。これより近いと警告します">出隅から継ぎ目まで（左右） <input type="range" data-cfp="wp-out-min-r" min="50" max="150" step="5" value="100"> <input type="number" data-cfp="wp-out-min" min="50" max="150" step="5" value="100"> mm以上</label>

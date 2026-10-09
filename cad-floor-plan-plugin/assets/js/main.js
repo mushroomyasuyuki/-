@@ -1701,7 +1701,7 @@
       this.$('wp-note').textContent = (g.multi
         ? '壁 ' + g.walls.map((x) => x.no).join(' → ') + '（' + (this.$('wp-ccw').checked ? '左回り' : '右回り') + 'につなげる・' + ((this.$('wp-align') || {}).value === 'top' ? '上（天井）' : '下（床）') + '合わせ） 幅の合計 ' + fmt(W) + ' × 高さ（最大） ' + fmt(WH) + ' mm → '
         : '壁「' + w.name + '」 幅 ' + fmt(W) + ' × 高さ ' + fmt(WH) + ' mm → ') + '画像の大きさ（切り分けなし）：幅 ' + FW + ' × 高さ ' + H + ' mm（壁の実寸＋上下' + wp.TRIM_TOP + 'mmずつ）。'
-        + '巾 ' + wp.ROLL + ' mm・合わせ代（巾が重なる幅） ' + fmt(wp.OVERLAP) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート・スタート側の端の余白 ' + (wp.SIDE || wp.OVERLAP) + ' mm）。紫の線＝壁の範囲と、巾が重なる部分（' + fmt(wp.OVERLAP) + ' mm）の真ん中（' + fmt(wp.OVERLAP / 2) + ' mm）のカット線。'
+        + '巾 ' + wp.PITCH + ' mm ＋ 合わせ代 ' + fmt(wp.MARGIN) + ' mm × 2 ＝ 1巾の幅 ' + fmt(wp.ROLL) + ' mm・1巾が受け持つ壁の幅 ' + fmt(wp.STEP) + ' mm → ' + N + ' 巾（' + (right ? '右' : '左') + '寄せスタート・スタート側の端の余白 ' + (wp.SIDE || wp.OVERLAP) + ' mm）。紫の線＝壁の範囲と、巾が重なる部分（合わせ代×2＝' + fmt(wp.OVERLAP) + ' mm）の真ん中（巾の端から ' + fmt(wp.EDGE) + ' mm）のカット線。'
         + (off.img.x || off.img.y ? ' 画像を動かした量：横 ' + off.img.x + ' mm・縦 ' + off.img.y + ' mm。' : '')
         + ((off.scale || 1) !== 1 ? ' 画像の大きさ ' + Math.round(off.scale * 100) + '%。' : '')
         + (off.frame.x || off.frame.y ? ' 枠を動かした量：横 ' + off.frame.x + ' mm・縦 ' + off.frame.y + ' mm。' : '')
@@ -1864,7 +1864,7 @@
 
     // The walls ticked on every loaded elevation sheet: total width, area and wall paper strips (910 mm rolls).
     _updateWallTotal() {
-      // 910mm幅のロールを合わせ代10mmだけ重ねて貼る（1巾が受け持つのは900mm）。1巾の長さ = 壁の高さ + 上下100mm
+      // 巾（仕上がり910mm）の左右に合わせ代を足した1巾（925mm）を、合わせ代2つ分重ねて貼る（1巾が受け持つのは910mm）。1巾の長さ = 壁の高さ + 上下100mm
       const WP = window.cfpWallPrint || { OVERLAP: 10, STEP: 900, TRIM_TOP: 100, TRIM_BOTTOM: 100 };
       const OV = WP.OVERLAP || 10, ROLL = WP.STEP, TRIM = WP.TRIM_TOP + WP.TRIM_BOTTOM;
       const picked = [];
@@ -1889,7 +1889,7 @@
           strips, lengthM: Math.round(len * 10) / 10, files,
         };
         total.text = picked.length + '面（' + files.join('・') + '）幅の合計 ' + fmtMm(total.widthMm) + ' mm／面積の合計 ' + total.areaM2
-          + ' ㎡／' + (window.cfpWallPrint ? window.cfpWallPrint.ROLL : 910) + 'mm幅のロール（合わせ代' + (window.cfpWallPrint ? window.cfpWallPrint.OVERLAP : 10) + 'mm）で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下' + (window.cfpWallPrint ? window.cfpWallPrint.TRIM_TOP : 100) + 'mmずつ）';
+          + ' ㎡／' + (window.cfpWallPrint ? window.cfpWallPrint.PITCH + 'mm巾（＋合わせ代' + window.cfpWallPrint.MARGIN + 'mm×2＝' + window.cfpWallPrint.ROLL + 'mm）' : '910mm巾') + 'で ' + strips + ' 巾・長さの合計 約 ' + total.lengthM + ' m（1巾 = 壁の高さ + 上下' + (window.cfpWallPrint ? window.cfpWallPrint.TRIM_TOP : 100) + 'mmずつ）';
         out.textContent = '壁紙の合計: ' + total.text + '。扉・窓などの開口は差し引いていません。';
       } else out.textContent = '壁紙の合計: 一覧の左のチェックで、合計に入れる壁を選んでください。';
       window.cfpWallTotal = total;
