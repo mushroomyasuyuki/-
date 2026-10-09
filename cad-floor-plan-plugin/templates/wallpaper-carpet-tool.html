@@ -448,6 +448,7 @@
     <div class="palette-controls" style="justify-content:center;margin-top:16px;flex-wrap:wrap;">
       <!-- カーペットのPSD（簡易パースの畳んだ中に入れる） -->
       <button type="button" id="cc-download-psd" class="btn-chip-action" style="padding:10px 18px;font-size:13px;" disabled="">🟩 カーペットのPSDを保存（CAD画像・部屋・変換画像・割付の4レイヤー / RGB / 25.4 DPI / 実寸）</button>
+      <button type="button" id="cc-download-svg" class="btn-chip-action" style="padding:10px 18px;font-size:13px;" disabled="">🟪 カーペットのSVGを保存（CAD画像・部屋・変換画像（色ごとのベクター）・割付の4レイヤー / 実寸 mm）</button>
       <button type="button" id="btn-save-floor-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟧 床デザイン画像を保存（PNG）</button>
       <button type="button" id="btn-save-wall-image" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🟦 壁紙デザイン画像を保存（CMYK PSD・裁断ガイド付き）</button>
       <button type="button" id="btn-save-wall-print" class="btn-chip-action" style="padding:10px 18px;font-size:13px;">🖨 壁紙へ印刷用に保存（元データ・全体・910mm幅の連続データ・ZIP）</button>
@@ -1270,6 +1271,7 @@
     ctx.imageSmoothingQuality = 'high';
     drawImageCover(ctx, img, displayW, displayH);
     if ($('cc-download-psd')) $('cc-download-psd').disabled = false;
+    if ($('cc-download-svg')) $('cc-download-svg').disabled = false;
     
     reprocessReduction();
   }
@@ -2499,6 +2501,171 @@
   // 床デザイン画像の保存（PNG・①カーペット用の減色画像をそのまま保存するだけの簡易版）
   // =====================================================================
   // 実寸（1px = 1mm）の変換画像を PNG で保存（画面のプレビューの縮小画像ではなく、元画像を実寸にしてから変換したもの）
+
+  // ---------------------------------------------------------------------------
+  // カーペットの SVG（実寸 mm・Inkscape のレイヤー付き）：①CAD画像 ②部屋 ③変換画像 ④割付（50cm角・端で切るタイル・センター）
+  // ③は変換画像（実寸 1px = 1mm）を色ごとに画素の境目でなぞったベクター（パレットの色ごとのグループ・色の名前付き）。
+  // 点が細かすぎる（境目が多すぎる）ときは、③を画像（PNG）で入れる。
+  // ---------------------------------------------------------------------------
+  const SVG_MAX_EDGES = 4000000;
+  function traceColors(data, w, h, entries) {
+    // 画素 → 色の番号（255 = 余白・色なし）
+    const key = new Map(entries.map((e, i) => [(e.rgb[0] << 16) | (e.rgb[1] << 8) | e.rgb[2], i]));
+    const L = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < L.length; i++, j += 4) {
+      if (data[j + 3] < 128) { L[i] = 255; continue; }
+      const v = key.get((data[j] << 16) | (data[j + 1] << 8) | data[j + 2]);
+      L[i] = v === undefined ? 255 : v;
+    }
+    // 境目の数を先に数える（多すぎれば null）
+    let edges = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const c = L[y * w + x];
+      if (c === 255) continue;
+      if (y === 0 ? true : L[(y - 1) * w + x] !== c) edges++;
+      if (y === h - 1 ? true : L[(y + 1) * w + x] !== c) edges++;
+      if (x === 0 ? true : L[y * w + x - 1] !== c) edges++;
+      if (x === w - 1 ? true : L[y * w + x + 1] !== c) edges++;
+    }
+    if (edges > SVG_MAX_EDGES) return null;
+    const W1 = w + 1;
+    const out = [];
+    for (let c = 0; c < entries.length; c++) {
+      // 色 c の境目（色の側を右に見て時計回り）：始点 → 終点
+      const from = [], to = [];
+      const add = (x1, y1, x2, y2) => { from.push(y1 * W1 + x1); to.push(y2 * W1 + x2); };
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (L[y * w + x] !== c) continue;
+        if (y === 0 ? true : L[(y - 1) * w + x] !== c) add(x, y, x + 1, y);
+        if (x === w - 1 ? true : L[y * w + x + 1] !== c) add(x + 1, y, x + 1, y + 1);
+        if (y === h - 1 ? true : L[(y + 1) * w + x] !== c) add(x + 1, y + 1, x, y + 1);
+        if (x === 0 ? true : L[y * w + x - 1] !== c) add(x, y + 1, x, y);
+      }
+      if (!from.length) continue;
+      const first = new Map(), second = new Map();
+      for (let e = 0; e < from.length; e++) { if (first.has(from[e])) second.set(from[e], e); else first.set(from[e], e); }
+      const used = new Uint8Array(from.length);
+      const next = (v) => {
+        const a = first.get(v);
+        if (a !== undefined ? !used[a] : false) return a;
+        const b = second.get(v);
+        return b !== undefined ? (used[b] ? -1 : b) : -1;
+      };
+      let d = '';
+      for (let e0 = 0; e0 < from.length; e0++) {
+        if (used[e0]) continue;
+        // 1周なぞり、向きが変わる点だけを残す（横 H・縦 V だけのパス）
+        const pts = [];
+        let e = e0;
+        while (e >= 0) {
+          used[e] = 1;
+          pts.push(from[e]);
+          e = next(to[e]);
+        }
+        const xy = pts.map((v) => [v % W1, Math.floor(v / W1)]);
+        const keep = xy.filter((p, i) => {
+          const a = xy[(i + xy.length - 1) % xy.length], b = xy[(i + 1) % xy.length];
+          return !((a[0] === p[0] ? p[0] === b[0] : false) || (a[1] === p[1] ? p[1] === b[1] : false));
+        });
+        if (keep.length < 3) continue;
+        d += 'M' + keep[0][0] + ' ' + keep[0][1];
+        for (let i = 1; i < keep.length; i++) d += keep[i][0] === keep[i - 1][0] ? 'V' + keep[i][1] : 'H' + keep[i][0];
+        d += 'Z';
+      }
+      out.push({ entry: entries[c], d });
+    }
+    return out;
+  }
+
+  async function downloadCarpetSvg() {
+    if (!state.loadedImg) { alert('先に画像を選択してください。'); return; }
+    const button = $('cc-download-svg');
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'SVGを作成中…';
+    try {
+      const full = await carpetReducedFull((v) => { button.textContent = 'SVGを作成中…（変換画像 ' + Math.round(v * 100) + '%）'; });
+      if (!full) throw new Error('変換画像を作れませんでした。');
+      const w = full.width, h = full.height, B = full.bleed;
+      const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const toUrl = (blob) => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(new Error('画像を読み込めませんでした')); fr.readAsDataURL(blob); });
+      const pngOf = (cv) => new Promise((res) => cv.toBlob(res, 'image/png'));
+      const cadEl = document.querySelector('.cad-floor-plan-widget');
+      let info = null;
+      try { info = cadEl ? (cadEl.cfpWidget ? await cadEl.cfpWidget.carpetPsdInfo(full.sizeW, full.sizeH, B) : null) : null; } catch (e) { info = null; }
+      await new Promise((r) => setTimeout(r, 0));
+      // ① CAD画像
+      let cad = '';
+      if (info ? info.cad : false) {
+        const c = info.cad, k = Math.min(1, 4000 / Math.max(c.sw, c.sh));
+        const cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(c.sw * k)); cv.height = Math.max(1, Math.round(c.sh * k));
+        const x = cv.getContext('2d');
+        x.fillStyle = '#ffffff'; x.fillRect(0, 0, cv.width, cv.height);
+        x.imageSmoothingQuality = 'high';
+        x.drawImage(c.bitmap, c.sx, c.sy, c.sw, c.sh, 0, 0, cv.width, cv.height);
+        const url = await toUrl(await pngOf(cv));
+        cad = '<image x="0" y="0" width="' + w + '" height="' + h + '" preserveAspectRatio="none" href="' + url + '" xlink:href="' + url + '"/>\n';
+      }
+      // ② 部屋
+      let room = '';
+      if (info ? (info.room ? info.room.length >= 3 : false) : false) {
+        room = '<path d="' + info.room.map((q, i) => (i ? 'L' : 'M') + (Math.round(q[0] * 10) / 10) + ' ' + (Math.round(q[1] * 10) / 10)).join(' ') + ' Z" fill="#2563eb" fill-opacity="0.10" stroke="#2563eb" stroke-width="8"/>\n';
+      }
+      // ③ 変換画像（色ごとのベクター。細かすぎるときは画像）
+      button.textContent = 'SVGを作成中…（色ごとの形をなぞっています）';
+      await new Promise((r) => setTimeout(r, 30));
+      const data = full.canvas.getContext('2d').getImageData(0, 0, w, h).data;
+      const entries = getActivePaletteEntries();
+      const traced = traceColors(data, w, h, entries);
+      let img = '', vector = !!traced;
+      const hex = (rgb) => '#' + rgb.map((v) => v.toString(16).padStart(2, '0')).join('');
+      if (traced) {
+        traced.forEach((t) => {
+          img += '<g id="color-' + esc(t.entry.name) + '" inkscape:label="' + esc(t.entry.name) + '"><path d="' + t.d + '" fill="' + hex(t.entry.rgb) + '" fill-rule="nonzero" stroke="none"/></g>\n';
+        });
+      } else {
+        const url = await toUrl(await pngOf(full.canvas));
+        img = '<image x="0" y="0" width="' + w + '" height="' + h + '" preserveAspectRatio="none" style="image-rendering:pixelated" href="' + url + '" xlink:href="' + url + '"/>\n';
+      }
+      // ④ 割付（50cm角・端で切るタイルは薄い赤・外枠・センター）
+      const tiles = [];
+      if (info ? (info.tiles ? info.tiles.length : false) : false) info.tiles.forEach((t) => tiles.push(t));
+      else for (let y = B; y < h - B; y += 500) for (let x = B; x < w - B; x += 500) tiles.push({ x, y, w: Math.min(500, w - B - x), h: Math.min(500, h - B - y), cut: false });
+      const r1 = (v) => Math.round(v * 10) / 10;
+      let grid = '';
+      tiles.forEach((t) => { if (t.cut) grid += '<rect x="' + r1(t.x) + '" y="' + r1(t.y) + '" width="' + r1(t.w) + '" height="' + r1(t.h) + '" fill="#ef4444" fill-opacity="0.14" stroke="none"/>\n'; });
+      tiles.forEach((t) => { grid += '<rect x="' + r1(t.x) + '" y="' + r1(t.y) + '" width="' + r1(t.w) + '" height="' + r1(t.h) + '" fill="none" stroke="#ef4444" stroke-width="3"/>\n'; });
+      grid += '<rect x="' + (B + 2) + '" y="' + (B + 2) + '" width="' + (w - B * 2 - 4) + '" height="' + (h - B * 2 - 4) + '" fill="none" stroke="#dc2626" stroke-width="8"/>\n';
+      const cc = info ? info.center : null;
+      const cx = r1(cc ? cc[0] : w / 2), cy = r1(cc ? cc[1] : h / 2);
+      const m = Math.min(w, h), arm = r1(Math.min(Math.max(300, m * 0.12), m * 0.15)), rr = r1(arm * 0.45);
+      const cross = 'M' + (cx - arm) + ' ' + cy + ' H' + (cx + arm) + ' M' + cx + ' ' + (cy - arm) + ' V' + (cy + arm);
+      grid += '<g id="center" inkscape:label="センター"><path d="' + cross + '" fill="none" stroke="#ffffff" stroke-width="14"/><path d="' + cross + '" fill="none" stroke="#dc2626" stroke-width="7"/>'
+        + '<circle cx="' + cx + '" cy="' + cy + '" r="' + rr + '" fill="none" stroke="#dc2626" stroke-width="7"/><circle cx="' + cx + '" cy="' + cy + '" r="' + r1(rr * 0.3) + '" fill="#dc2626"/>'
+        + '<text x="' + r1(cx + rr * 1.2) + '" y="' + r1(cy - rr * 1.2) + '" font-size="' + Math.round(arm * 0.45) + '" font-weight="bold" font-family="Noto Sans JP, sans-serif" fill="#dc2626" stroke="#ffffff" stroke-width="10" paint-order="stroke">センター</text></g>\n';
+      const layer = (id, nm, body) => '<g id="' + id + '" inkscape:groupmode="layer" inkscape:label="' + esc(nm) + '">\n' + body + '</g>\n';
+      const imgName = '③変換画像（' + (vector ? '色ごとのベクター' : '画像') + '・実寸 ' + w + '×' + h + 'mm＝' + full.sizeW + '×' + full.sizeH + 'mm＋上下左右' + B + 'mm）';
+      const svg = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="' + w + 'mm" height="' + h + 'mm" viewBox="0 0 ' + w + ' ' + h + '">\n'
+        + '<title>' + esc('カーペット ' + full.sizeW + '×' + full.sizeH + 'mm') + '</title>\n'
+        + layer('layer1', '①CAD画像（図面）', cad) + layer('layer2', '②部屋' + (info ? '（' + info.name + '）' : ''), room)
+        + layer('layer3', imgName, img) + layer('layer4', '④割付（50cm角・端で切るタイルは薄い赤・センター）', grid)
+        + '</svg>\n';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+      a.download = 'carpet_' + full.sizeW + 'x' + full.sizeH + 'mm_' + Date.now() + '.svg';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      setStatus('ok', '✅ カーペットの SVG を保存しました（実寸 ' + w + '×' + h + 'mm・4レイヤー）。' + (vector ? '変換画像は色ごとのベクター（' + traced.length + '色）です。' : '変換画像は点が細かすぎるため、画像（PNG）で入れました（階調表現を下げるとベクターになります）。'));
+    } catch (err) {
+      alert('SVGを作成できませんでした: ' + err.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
+  }
+
   async function downloadFloorImagePng() {
     const canvas = $('cc-reduced');
     if (!canvas || !canvas.width || !state.loadedImg) {
@@ -2890,6 +3057,22 @@
     const objs = []; let nextId = 1;
     const alloc = () => nextId++;
     const put = (id, parts) => objs.push({ id, parts });
+    // o.svg：同じ内容を SVG（Inkscape のレイヤー付き・シートの mm 単位）で作る
+    const SVG = !!o.svg;
+    let picUrl = '';
+    if (SVG) {
+      // 全体の絵を1枚の PNG（実寸 1px = 1mm）にして埋め込み、全体図・分割図で使い回す
+      const c = document.createElement('canvas');
+      c.width = FW; c.height = H;
+      const x = c.getContext('2d');
+      x.fillStyle = '#ffffff'; x.fillRect(0, 0, FW, H);
+      if (src) drawWallDesign(x, src, ox + off.img.x, P.TRIM_TOP + off.img.y, W, WH, 1, FW, H, off.scale || 1);
+      const pb = await new Promise((res) => c.toBlob(res, 'image/png'));
+      c.width = c.height = 1;
+      if (!pb) throw new Error('画像を用意できませんでした（大きすぎる可能性があります）。');
+      picUrl = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(new Error('画像を読み込めませんでした')); fr.readAsDataURL(pb); });
+      if (o.onProgress) o.onProgress(0.9);
+    }
     // ---- 画像（全体の絵）を CMYK のタイルにする ----
     const TW = 4096, tiles = [];
     const tile = document.createElement('canvas');
@@ -2897,7 +3080,7 @@
     const deflate = typeof CompressionStream === 'function';
     let step = 0;
     const total = Math.ceil(FW / TW);
-    for (let x0 = 0; x0 < FW; x0 += TW) {
+    for (let x0 = 0; x0 < (SVG ? 0 : FW); x0 += TW) {
       const tw = Math.min(TW, FW - x0);
       tile.width = tw; tile.height = H;
       const x = tile.getContext('2d', { willReadFrequently: true });
@@ -2936,7 +3119,13 @@
     }
     tile.width = tile.height = 1;
     // 絵（実寸 mm）を、シートの (dx, dy) を左上にして 1/10 で描く。clip: シートの mm の四角 [x, y, w, h]
+    const svgDefs = [];
     const drawPic = (dx, dy, clip, from, to) => {
+      if (SVG) {
+        const id = 'clip' + svgDefs.length;
+        svgDefs.push('<clipPath id="' + id + '"><rect x="' + n3(clip[0]) + '" y="' + n3(clip[1]) + '" width="' + n3(clip[2]) + '" height="' + n3(clip[3]) + '"/></clipPath>');
+        return '<g clip-path="url(#' + id + ')"><use href="#pic" xlink:href="#pic" x="' + n3(dx) + '" y="' + n3(dy) + '"/></g>\n';
+      }
       let s = 'q ' + X(clip[0]) + ' ' + Y(clip[1] + clip[3]) + ' ' + n3(clip[2] * kk) + ' ' + n3(clip[3] * kk) + ' re W n\n';
       tiles.forEach((t) => {
         if (t.x0 + t.w < from || t.x0 > to) return;
@@ -2945,11 +3134,17 @@
       return s + 'Q\n';
     };
     // ---- 線・文字の道具 ----
-    const K = (c, m, y, k) => n3(c) + ' ' + n3(m) + ' ' + n3(y) + ' ' + n3(k) + ' K\n';
-    const Kf = (c, m, y, k) => n3(c) + ' ' + n3(m) + ' ' + n3(y) + ' ' + n3(k) + ' k\n';
-    const lw = (pt) => n3(pt / u) + ' w\n';
-    const line = (x1, y1, x2, y2) => X(x1) + ' ' + Y(y1) + ' m ' + X(x2) + ' ' + Y(y2) + ' l S\n';
-    const rect = (x, y, w, h) => X(x) + ' ' + Y(y + h) + ' ' + n3(w * kk) + ' ' + n3(h * kk) + ' re S\n';
+    // SVG では色・線の太さを覚えておき、線・四角・文字ごとに書く（CMYK は RGB に直す）
+    const st = { stroke: '#000000', fill: '#000000', width: 0.1 };
+    const rgbHex = (c, m, y, k) => '#' + [c, m, y].map((v) => Math.round(255 * (1 - v) * (1 - k)).toString(16).padStart(2, '0')).join('');
+    const K = (c, m, y, k) => { if (SVG) { st.stroke = rgbHex(c, m, y, k); return ''; } return n3(c) + ' ' + n3(m) + ' ' + n3(y) + ' ' + n3(k) + ' K\n'; };
+    const Kf = (c, m, y, k) => { if (SVG) { st.fill = rgbHex(c, m, y, k); return ''; } return n3(c) + ' ' + n3(m) + ' ' + n3(y) + ' ' + n3(k) + ' k\n'; };
+    const lw = (pt) => { if (SVG) { st.width = pt * PTM; return ''; } return n3(pt / u) + ' w\n'; };
+    const sAttr = () => ' fill="none" stroke="' + st.stroke + '" stroke-width="' + String(Math.round(st.width * 1e5) / 1e5) + '"';
+    const line = (x1, y1, x2, y2) => (SVG ? '<line x1="' + n3(x1) + '" y1="' + n3(y1) + '" x2="' + n3(x2) + '" y2="' + n3(y2) + '"' + sAttr() + '/>\n' : X(x1) + ' ' + Y(y1) + ' m ' + X(x2) + ' ' + Y(y2) + ' l S\n');
+    const rect = (x, y, w, h) => (SVG ? '<rect x="' + n3(x) + '" y="' + n3(y) + '" width="' + n3(w) + '" height="' + n3(h) + '"' + sAttr() + '/>\n' : X(x) + ' ' + Y(y + h) + ' ' + n3(w * kk) + ' ' + n3(h * kk) + ' re S\n');
+    const xmlEsc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const qo = SVG ? '' : 'q 0 J 0 j ', qc = SVG ? '' : 'Q\n';
     // 文字の幅（フォントを埋め込むときはフォントの幅）。使った文字を数えて、あとで埋め込むフォントに入れる
     const usedG = new Map();   // グリフ番号 → 文字
     const tw = (t, size) => {
@@ -2970,6 +3165,16 @@
     // 文字（size はシートの mm）。align: 'c' 中央 / 'l' 左 / 'r' 右。rot: 90 で縦（左に倒す）
     const text = (str, x, y, size, align, rot) => {
       const w = tw(str, size), a = align || 'c';
+      if (SVG) {
+        if (font) enc16(str); // 使った文字を数える（SVG に入れるフォントのため）
+        const fa = ' font-size="' + String(Math.round(size * 1e4) / 1e4) + '" fill="' + st.fill + '" font-family="Noto Sans JP, sans-serif"';
+        if (rot) {
+          const yy = a === 'c' ? y + w / 2 : y;
+          return '<text x="' + n3(x) + '" y="' + n3(yy) + '" transform="rotate(-90 ' + n3(x) + ' ' + n3(yy) + ')"' + fa + '>' + xmlEsc(str) + '</text>\n';
+        }
+        const xx = a === 'c' ? x - w / 2 : (a === 'r' ? x - w : x);
+        return '<text x="' + n3(xx) + '" y="' + n3(y) + '"' + fa + '>' + xmlEsc(str) + '</text>\n';
+      }
       const fs = n3(size * kk);
       if (rot) {
         const yy = a === 'c' ? y + w / 2 : y;
@@ -3028,7 +3233,7 @@
       gfx += drawPic(sx - xs * SC, s2y, [sx, s2y, P.ROLL * SC, s2h], xs, xs + P.ROLL);
     }
     // 分割：全体図の巾の枠（分割外枠・0.1mm）と、全体図・分割図の巾ごとのトンボと名前
-    div += 'q 0 J 0 j ' + K(0, 0, 0, 1) + lw(0.2835);
+    div += qo + K(0, 0, 0, 1) + lw(0.2835);
     for (let i = 0; i !== N; i++) div += rect(px1(i * P.STEP), s1y, P.ROLL * SC, s1h);
     const qy0 = P.TRIM_TOP * SC, qy1 = (P.TRIM_TOP + WH) * SC;
     for (let i = 0; i !== N; i++) {
@@ -3042,14 +3247,16 @@
     const lgx = s1x + (minR + 800) * SC, lgw = P.ROLL * SC, lgh = 30;
     div += K(0, 0, 0, 1) + lw(0.0312) + rect(lgx, specY, lgw, lgh);
     div += trim(lgx, specY, lgw, lgh, lgx + P.EDGE * SC, lgx + lgw - P.EDGE * SC, specY + 5, specY + lgh - 5, '1_【' + name + '】', 1.0 * PTM);
-    div += 'Q\n';
+    div += qc;
     // 壁面全体のライン：全体の範囲（マゼンタ）、壁の範囲（シアン）
-    wall += 'q 0 J 0 j ' + K(0, 1, 0, 0) + lw(0.99) + rect(s1x, s1y, s1w, s1h);
+    wall += qo + K(0, 1, 0, 0) + lw(0.99) + rect(s1x, s1y, s1w, s1h);
     wall += K(1, 0, 0, 0) + lw(0.99);
     (o.shapes || []).forEach((pts) => {
-      wall += pts.map((q, i) => X(px1(q[0])) + ' ' + Y(py1(q[1])) + (i ? ' l' : ' m')).join(' ') + ' h S\n';
+      wall += SVG
+        ? '<path d="' + pts.map((q, i) => (i ? 'L' : 'M') + n3(px1(q[0])) + ' ' + n3(py1(q[1]))).join(' ') + ' Z"' + sAttr() + '/>\n'
+        : pts.map((q, i) => X(px1(q[0])) + ' ' + Y(py1(q[1])) + (i ? ' l' : ' m')).join(' ') + ' h S\n';
     });
-    wall += 'Q\n';
+    wall += qc;
     // 仕様：ピッチ（見本の枠の上）と、案件名などの欄
     const today = new Date();
     const date = today.getFullYear() + '/' + (today.getMonth() + 1) + '/' + today.getDate();
@@ -3060,13 +3267,13 @@
       '上下の余白 ' + f1(P.TRIM_TOP) + ' mm ／ スタート側の端の余白 ' + f1(P.SIDE) + ' mm ／ 全体 ' + f1(FW) + ' × ' + f1(H) + ' mm',
       '縮尺 1/10 ／ 作成日 ' + date + ' ／ 確認用'
     ];
-    spec += 'q ' + Kf(0, 0, 0, 1);
+    spec += (SVG ? '' : 'q ') + Kf(0, 0, 0, 1);
     spec += text(f1(P.STEP) + 'ピッチ', lgx + lgw / 2, specY - 6, 53 * PTM, 'c');
     lines.forEach((t, i) => { spec += text(t, lgx + lgw + 25, specY + 4 + i * 6, 4, 'l'); });
-    spec += 'Q\n';
+    spec += qc;
     // 寸法：全体図の上（壁ごと → 余白｜壁｜余白 → 全体）・左（余白｜壁の高さ｜余白 → 全体）・下（巾ごとの仕上がり）、
     // 分割図の上（巾ごとに 左｜仕上がり｜右 → 巾）・左
-    dim += 'q 0 J 0 j ' + K(0, 0, 0, 1) + Kf(0, 0, 0, 1) + lw(0.455);
+    dim += qo + K(0, 0, 0, 1) + Kf(0, 0, 0, 1) + lw(0.455);
     const wl = px1(ox), wr = px1(ox + W);
     const r1 = s1y - 13.05, r2 = r1 - 15.2, r3 = r2 - 15.2;
     if (multi) {
@@ -3090,10 +3297,31 @@
       dim += hdim(sx, sx + q.l * SC, s2y - 13.6, q.l) + hdim(sx + q.l * SC, sx + q.r * SC, s2y - 13.6, q.r - q.l) + hdim(sx + q.r * SC, sx + sw, s2y - 13.6, P.ROLL - q.r);
     }
     dim += vd(stripX(0), s2y);
-    dim += 'Q\n';
-    // ---- PDF にまとめる ----
+    dim += qc;
     const names = ['グラフィック', '分割', '壁面ライン', '寸法', '仕様'];
     const bodies = [gfx, div, wall, dim, spec];
+    const fileBase = 'wallpaper_sheet_' + N + 'strips_' + FW + 'x' + H + 'mm_pitch' + P.PITCH + '_margin' + P.MARGIN + (right ? '_right' : '_left') + '_' + Date.now();
+    // ---- SVG にまとめる（Inkscape のレイヤー。文字は Noto Sans JP、使った文字だけのフォントも中に入れる）----
+    if (SVG) {
+      let fontCss = '';
+      if (font) {
+        const sub = font.subset(Array.from(usedG.keys()));
+        let bin = '';
+        for (let i = 0; i < sub.length; i += 0x8000) bin += String.fromCharCode.apply(null, sub.subarray(i, i + 0x8000));
+        fontCss = '<style>@font-face{font-family:"Noto Sans JP";src:url(data:font/ttf;base64,' + btoa(bin) + ') format("truetype");}</style>';
+      }
+      const svg = '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"'
+        + ' width="' + n3(pageW) + 'mm" height="' + n3(pageH) + 'mm" viewBox="0 0 ' + n3(pageW) + ' ' + n3(pageH) + '">\n'
+        + '<title>' + xmlEsc('確認用 ' + name) + '</title>\n' + fontCss + '\n'
+        + '<defs><image id="pic" width="' + n3(FW * SC) + '" height="' + n3(H * SC) + '" preserveAspectRatio="none" href="' + picUrl + '" xlink:href="' + picUrl + '"/>' + svgDefs.join('') + '</defs>\n'
+        + '<rect x="0" y="0" width="' + n3(pageW) + '" height="' + n3(pageH) + '" fill="#ffffff" sodipodi:insensitive="true"/>\n'
+        + bodies.map((b, i) => '<g id="layer' + (i + 1) + '" inkscape:groupmode="layer" inkscape:label="' + names[i] + '">\n' + b + '</g>\n').join('')
+        + '</svg>\n';
+      if (o.onProgress) o.onProgress(1);
+      return { name: fileBase + '.svg', blob: new Blob([svg], { type: 'image/svg+xml' }), width: FW, height: H, strips: N, svg: true, sheet: true, font: font ? font.name : '' };
+    }
+    // ---- PDF にまとめる ----
     const ocgs = names.map((nm) => { const id = alloc(); put(id, ['<< /Type /OCG /Name <FEFF' + utf16(nm) + '> >>']); return id; });
     let content = '';
     bodies.forEach((b, i) => { content += '/OC /L' + i + ' BDC\n' + b + 'EMC\n'; });
@@ -3153,7 +3381,7 @@
     add(xr + 'trailer\n<< /Size ' + nextId + ' /Root ' + catalogId + ' 0 R /Info ' + infoId + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n');
     if (o.onProgress) o.onProgress(1);
     return {
-      name: 'wallpaper_sheet_' + N + 'strips_' + FW + 'x' + H + 'mm_pitch' + P.PITCH + '_margin' + P.MARGIN + (right ? '_right' : '_left') + '_' + Date.now() + '.ai',
+      name: fileBase + '.ai',
       blob: new Blob(parts, { type: 'application/postscript' }), width: FW, height: H, strips: N, ai: true, sheet: true, font: font ? font.name : ''
     };
   };
@@ -4006,6 +4234,7 @@
     if ($('cw-wall-mode')) $('cw-wall-mode').addEventListener('change', () => { syncSingleUi(); if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
     if ($('cw-single-scale')) $('cw-single-scale').addEventListener('input', () => { syncSingleUi(); if (typeof onCarpetDesignUpdated === 'function') onCarpetDesignUpdated(); });
     if ($('cc-download-psd')) $('cc-download-psd').onclick = downloadPsd;
+    if ($('cc-download-svg')) $('cc-download-svg').onclick = downloadCarpetSvg;
     if ($('btn-save-floor-image')) $('btn-save-floor-image').onclick = downloadFloorImagePng;
     if ($('btn-save-wall-image')) $('btn-save-wall-image').onclick = downloadWallImagePsd;
     if ($('btn-save-wall-print')) $('btn-save-wall-print').onclick = downloadWallPrintStrips;

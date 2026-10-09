@@ -1,4 +1,4 @@
-<!-- CAD Floor Plan 3D Simulator v2.87.3 (embed) -->
+<!-- CAD Floor Plan 3D Simulator v2.88.0 (embed) -->
 <style>
 .cad-floor-plan-widget{max-width:1200px;margin:20px auto;color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .cad-floor-plan-widget *{box-sizing:border-box}
@@ -3332,6 +3332,7 @@
       ['wp-show-cad', 'wp-show-img', 'wp-show-frame', 'wp-right'].forEach((n) => this.$(n).addEventListener('change', () => this._wpRender()));
       this.$('wp-save').addEventListener('click', () => this._wpSave());
       if (this.$('wp-save-ai')) this.$('wp-save-ai').addEventListener('click', () => this._wpSave('ai'));
+      if (this.$('wp-save-svg')) this.$('wp-save-svg').addEventListener('click', () => this._wpSave('svg'));
       // joining several walls (clockwise, round the room)
       const jl = this.$('wp-join-list');
       this.$('wp-join').addEventListener('change', () => this._wpRender());
@@ -3898,9 +3899,10 @@
     // format: 'ai' = Illustrator 用（.ai・PDF互換）、省略 = CMYK の PSD
     async _wpSave(format) {
       const g = this._wpGeom();
-      const ai = format === 'ai';
-      const btn = this.$(ai ? 'wp-save-ai' : 'wp-save');
-      const kind = ai ? 'AI' : 'PSD';
+      const svg = format === 'svg';
+      const ai = format === 'ai' || svg;   // SVG は AI と同じ確認用シートを SVG で作る
+      const btn = this.$(svg ? 'wp-save-svg' : (ai ? 'wp-save-ai' : 'wp-save'));
+      const kind = svg ? 'SVG' : (ai ? 'AI' : 'PSD');
       if (!g) return;
       const { wp, w, W, WH } = g;
       const old = btn.textContent;
@@ -3925,13 +3927,17 @@
         // AI：参考データと同じ形式の確認用シート（全体図・分割図・仕様・寸法。縮尺 1/10）
         const out = ai && wp.buildAiSheet
           ? await wp.buildAiSheet({ W, WH, right, shapes: shapes.map((sh) => sh.pts), walls: g.walls.map((x) => ({ W: x.W, WH: x.WH, no: x.no })), off: this._wpO(),
-            name: (this.$('wp-name') || {}).value || '', onProgress: progress })
+            name: (this.$('wp-name') || {}).value || '', onProgress: progress, svg })
           : await wp.buildWholeAsync(cadDraw, W, WH, right, shapes.map((sh) => sh.pts), this._wpO(), label, progress, +this.$('wp-split').value || 0, format);
         const a = document.createElement('a');
         a.href = URL.createObjectURL(out.blob);
         a.download = out.name;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        if (out.svg) {
+          this.status('壁紙の確認用シートを SVG で保存しました（縮尺 1/10・単位 mm・AI と同じ内容）：全体図・分割図（' + out.strips + ' 巾）・仕様・寸法。レイヤー（Inkscape）：グラフィック（画像）／分割（巾の枠・トンボ・名前）／壁面ライン／寸法／仕様。文字は Noto Sans JP の文字のまま（アウトライン化なし）。全体 ' + out.width + ' × ' + out.height + ' mm。', 'success');
+          return;
+        }
         if (out.sheet) {
           this.status('壁紙の確認用シート（Illustrator用 .ai・PDF互換・縮尺 1/10）を保存しました：全体図・分割図（' + out.strips + ' 巾）・仕様・寸法。レイヤー：グラフィック（画像）／分割（巾の枠・トンボ・名前）／壁面ライン／寸法／仕様。' + (out.font ? '文字：Noto Sans JP（使った文字だけ埋め込み・アウトライン化なし）。' : '文字：フォントを読み込めなかったため埋め込みなし。') + '全体 ' + out.width + ' × ' + out.height + ' mm。', 'success');
           return;
