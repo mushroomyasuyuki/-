@@ -305,6 +305,7 @@
   <div class="preview-grid cc-manual-card" id="cc-manual-card" hidden>
     <div class="preview-card"><h3>手動で色を選んだ結果（最小1px表現）</h3><canvas id="cc-reduced"></canvas><div class="used-colors"><label>使用されたカラー（抽出結果）：</label><div id="cc-used-colors" class="psd-palette-grid"></div><div id="cc-used-colors-text" class="used-colors-text"></div></div></div>
   </div>
+{{CFP_GEMINI_PANEL}}
 
     <!-- ▼ 標準カラーパレット用セクション ▼ -->
     <div class="palette-box cc-pal-compact">
@@ -2385,6 +2386,54 @@
     return carpetFullCache;
   }
   window.cfpCarpetReducedFull = carpetReducedFull;
+
+  // 人間の変換の学習（Gemini・管理者だけ。assets/js/gemini-learn.js）が使う部品
+  window.cfpCarpetLearn = {
+    colors: ALL_COLORS,
+    freeCount: FREE_COUNT,
+    original: () => $('cc-original'),
+    // 元画像と同じ切り抜き方（縦横比を変えずにいっぱい・画像の大きさ）で描く
+    drawCover: (ctx, img, W, H) => drawImageCover(ctx, img, W, H),
+    // システムの変換の色の組合せ：std（標準色のみ）・op3（標準色13＋オプション3）・op6（標準色10＋オプション6）
+    sets: () => {
+      const original = $('cc-original');
+      if (!original || !original.width) return null;
+      const look = carpetLook();
+      const hist = colorHistogram(original, LOOKS[look].edge);
+      const rel = colorRelations(hist, original);
+      const free = [], opt = [];
+      for (let i = 0; i < ALL_COLORS.length; i++) (i < FREE_COUNT ? free : opt).push(i);
+      const vs = state.variantSets || {};
+      return {
+        std: vs.std || selectPalette(hist, free, 16, null, look, rel),
+        op3: vs.op3 || selectPalette(hist, free.concat(opt), 16, { free: 13, opt: 3 }, look, rel),
+        op6: selectPalette(hist, free.concat(opt), 16, { free: 10, opt: 6 }, look, rel)
+      };
+    },
+    // 色の組合せ（ALL_COLORS の番号）で、画面と同じ変換をした画像
+    render: (indices) => {
+      const original = $('cc-original');
+      const entries = indices.map((i) => ALL_COLORS[i]);
+      const factor = Math.min(1, Math.max(0, (parseFloat(($('cc-dither') || {}).value) || 0) / 100));
+      return getReducedImageData(original, original.width, original.height, factor, entries, { lut: carpetLut(entries) });
+    },
+    // 色の対応表（32768：RGB を5bitずつ → entries の番号）で変換した画像
+    renderLut: (entries, lut) => {
+      const original = $('cc-original');
+      return getReducedImageData(original, original.width, original.height, 0, entries, { lut });
+    },
+    // 学習した変換の色の組合せを、パレットに反映する（そのあとの変換・見積もり・保存はシステムの変換）
+    select: (indices) => {
+      state.activePaletteIndices.clear();
+      indices.forEach((i) => state.activePaletteIndices.add(i));
+      const base = $('cc-base-palette-selector'), op = $('cc-op-palette-selector');
+      if (base) Array.from(base.children).forEach((el, i) => el.classList.toggle('active', state.activePaletteIndices.has(i)));
+      if (op) Array.from(op.children).forEach((el, j) => el.classList.toggle('active', state.activePaletteIndices.has(FREE_COUNT + j)));
+      reprocessReduction();
+      calculateEstimate();
+      refreshVariantSelection();
+    }
+  };
 
   async function downloadPsd() {
     if (!state.loadedImg) {

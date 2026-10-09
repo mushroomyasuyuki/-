@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.82.0
+ * Version: 2.83.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.82.0');
+define('CFP_VERSION', '2.83.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -48,6 +48,8 @@ final class CAD_Floor_Plan_Plugin {
         $this->load_order_mailer();
         require_once CFP_PLUGIN_DIR . 'includes/class-cfp-resume.php';
         CFP_Resume::instance();
+        require_once CFP_PLUGIN_DIR . 'includes/class-cfp-gemini.php';
+        CFP_Gemini::instance();
         add_action('rest_api_init', [$this, 'register_rest']);
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_post_cfp_create_page', [$this, 'handle_create_page']);
@@ -244,6 +246,8 @@ final class CAD_Floor_Plan_Plugin {
         wp_localize_script('cfp-resume', 'cfpResumeConfig', CFP_Resume::client_config());
         $html = file_get_contents($file);
         $html = str_replace(['{{CFP_ASSET_URL}}', '{{CFP_VERSION}}'], [esc_url(CFP_PLUGIN_URL . 'assets/'), CFP_VERSION], $html);
+        // 人間の変換の学習（Gemini）：管理者だけ
+        $html = str_replace('{{CFP_GEMINI_PANEL}}', CFP_Gemini::panel_html(), $html);
         $html = $this->fill_badges($html);
         $html = $this->fill_photos($html);
         return str_replace('[' . CFP_SHORTCODE . ']', $this->render_shortcode(['height' => '600']), $html);
@@ -666,6 +670,8 @@ final class CAD_Floor_Plan_Plugin {
                     このプラグインに同梱の機能を使用しています。受信先メールアドレスは「設定」→「Design Order Mailer」で変更できます。
                 <?php endif; ?>
             </p>
+
+            <?php CFP_Gemini::render_settings(); ?>
 
             <h2>ショートコード</h2>
             <p><code>[wallpaper_carpet_simulator]</code>: 壁紙・カーペットのシミュレーション全体（CAD表示を含む）。固定ページに使われています。<br>
