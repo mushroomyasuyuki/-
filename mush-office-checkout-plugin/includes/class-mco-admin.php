@@ -53,6 +53,9 @@ final class MCO_Admin {
             delete_transient('mco_flash_' . get_current_user_id());
             printf('<div class="notice notice-%s"><p>%s</p></div>', $fl[0] === 'ok' ? 'success' : 'error', esc_html($fl[1]));
         }
+        if (MCO_Rest::has_conflict()) {
+            echo '<div class="notice notice-error"><p><strong>同じ窓口を、別のプラグインも使っています。</strong>古い「決済・ライセンス管理」プラグインが有効になっていないか、確認してください。有効なままだと、お客様の①の確認が、どちらに届くか分からず、不安定になります。先に、古い方を無効化してください（「削除」は、データを確認してから）。</p></div>';
+        }
         self::section_products();
         self::section_issue();
         self::section_licenses();

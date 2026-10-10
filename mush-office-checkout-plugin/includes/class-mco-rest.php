@@ -27,6 +27,27 @@ final class MCO_Rest {
         }
     }
 
+    /**
+     * 同じ窓口（mush-checkout/v1）を、別のプラグイン（古い「決済・ライセンス管理」など）も登録していないか。
+     * 重なっていると、どちらが応答するか分からず、①の確認が不安定になる。
+     * @return bool 重なっていれば true
+     */
+    public static function has_conflict() {
+        if (!function_exists('rest_get_server')) {
+            return false;
+        }
+        $routes = rest_get_server()->get_routes(MCO_REST_NS);
+        foreach ((array) $routes as $handlers) {
+            foreach ((array) $handlers as $h) {
+                $cb = isset($h['callback']) ? $h['callback'] : null;
+                if (!(is_array($cb) && isset($cb[0]) && $cb[0] === __CLASS__)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static function ip() {
         return isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
     }
