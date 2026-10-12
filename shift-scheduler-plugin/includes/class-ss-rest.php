@@ -236,8 +236,8 @@ final class SS_Rest {
         }
         $existing = self::user_of($repo, $id);
         if ($existing) {
-            if ($existing['role'] !== 'staff') {
-                // 管理者・副管理者のアカウント（ご自身など）のパスワードは、ここでは変えない
+            if ($existing['role'] === 'owner' || ($existing['role'] === 'manager' && !current_user_can('shift_manage_settings'))) {
+                // 契約者のアカウント（ご自身など）のパスワードは、ここでは変えない。副管理者のパスワードは、契約者だけが変えられる
                 return new WP_Error('not_staff', 'このスタッフには、管理者のアカウントが紐づいています。パスワードは、ご本人がログイン画面から変更してください。', array('status' => 409));
             }
             wp_set_password($password, (int) $existing['wp_user_id']);

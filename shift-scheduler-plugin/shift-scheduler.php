@@ -2,7 +2,7 @@
 /**
  * Plugin Name: マッシュオフィス 経理・管理・勤怠
  * Description: シフト作成・日報・勤怠などを、お客様ごとの専用URLで提供する月額サービス（mush-office.com 用）。お客様ごとにデータを分離します。
- * Version: 0.8.0
+ * Version: 0.8.1
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: shift-scheduler
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('SS_VERSION', '0.8.0');
+define('SS_VERSION', '0.8.1');
 define('SS_PRODUCT_NAME', 'マッシュオフィス 経理・管理・勤怠');
 define('SS_DIR', plugin_dir_path(__FILE__));
 define('SS_URL', plugin_dir_url(__FILE__));

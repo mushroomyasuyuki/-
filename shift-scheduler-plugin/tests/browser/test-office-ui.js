@@ -101,8 +101,8 @@ const server = http.createServer((req, res) => {
       check('jisha: no call for the shared admin password', !calls.some(c => c.p.startsWith('admin/password') || c.p.startsWith('admin/set-password')));
     }
     if (key === 'meibo') {
-      const v = await page.evaluate(() => { const vis = el => !!el && el.offsetParent !== null; return { add: vis(document.getElementById('addBtn')), dept: vis(document.getElementById('deptPanel')), imp: vis(document.getElementById('importPanel')), del: Array.from(document.querySelectorAll('.del-link,.pw-link,.admin-toggle-link')).some(vis), edit: Array.from(document.querySelectorAll('.name-edit-link')).some(vis) }; });
-      check('meibo: only detail editing is offered (no add/delete/department/import/password/admin)', !v.add && !v.dept && !v.imp && !v.del && v.edit, JSON.stringify(v));
+      const v = await page.evaluate(() => { const vis = el => !!el && el.offsetParent !== null; return { add: vis(document.getElementById('addBtn')), dept: vis(document.getElementById('deptPanel')), imp: vis(document.getElementById('importPanel')), del: Array.from(document.querySelectorAll('.del-link,.pw-link')).some(vis), admin: Array.from(document.querySelectorAll('.admin-toggle-link')).some(vis), edit: Array.from(document.querySelectorAll('.name-edit-link')).some(vis) }; });
+      check('meibo: detail editing and admin grant are offered (no add/delete/department/import/password)', !v.add && !v.dept && !v.imp && !v.del && v.edit && v.admin, JSON.stringify(v));
     }
     if (key === 'myleave') {
       check('myleave: own leave balance and payslips are requested', calls.some(c => c.p === 'my-leave-balance') && calls.some(c => c.p === 'my-payslips'), calls.map(c => c.p).join(','));

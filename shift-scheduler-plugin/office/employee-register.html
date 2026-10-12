@@ -1,8 +1,8 @@
 <!--
   ※ マッシュオフィス 経理・管理・勤怠 用：マッシュオフィスシステムの「従業員登録」画面を、従業員の詳細（給与・連絡先・口座）の編集にだけ使う。
-    従業員の追加・削除・部署・取り込み・パスワード・管理者権限の欄は、下のスタイルで隠す（これらは、このサービスの「従業員登録」で行う）。
+    従業員の追加・削除・部署・取り込み・パスワードの欄は、下のスタイルで隠す。管理者権限は、一覧の「付与・解除」で切り替える（契約者だけ）（これらは、このサービスの「従業員登録」で行う）。
 -->
-<style>.mo-hide,.pw-link,.admin-toggle-link,.del-link{display:none!important}</style>
+<style>.mo-hide,.pw-link,.del-link{display:none!important}</style>
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -575,7 +575,7 @@
 </div>
 
 <div class="container">
-  <p style="margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:13px;line-height:1.6;">氏名を押すと、生年月日・入社日・住所・口座・給与・手当・固定控除を編集できます。従業員の追加・削除・社員番号・パスワード・管理者権限は「従業員登録」で行います。</p>
+  <p style="margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:13px;line-height:1.6;">氏名を押すと、生年月日・入社日・住所・口座・給与・手当・固定控除を編集できます。一覧の「管理者権限」の「付与・解除」で、副管理者にできます（契約者だけ）。従業員の追加・削除・社員番号・パスワードは「従業員登録」で行います。</p>
 
   <div class="panel mo-hide" id="deptPanel">
     <details>

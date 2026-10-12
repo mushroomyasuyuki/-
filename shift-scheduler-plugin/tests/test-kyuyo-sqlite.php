@@ -24,6 +24,18 @@ SS_Tenants::save_settings($A, array('manager_payroll' => false)); SS_Context::re
 as_user(2);
 check('staff: no payroll', !SS_Rest_Kyuyo::can_payroll());
 
+/* ---- 管理者権限（副管理者）の付与・解除 ---- */
+as_user(4);
+check('admin grant: a manager cannot grant', st(SS_Rest_Office::set_admin(req(array('isAdmin' => true), array('id' => $a2)))) === 403);
+as_user(1);
+check('admin grant: someone without a login account is refused with guidance', st(SS_Rest_Office::set_admin(req(array('isAdmin' => true), array('id' => $a1)))) === 400);
+check('admin grant: owner makes the staff a manager', st(SS_Rest_Office::set_admin(req(array('isAdmin' => true), array('id' => $a2)))) === 200 && $wpdb->get_var("SELECT role FROM wp_shift_users WHERE wp_user_id = 2") === 'manager');
+$e = array_values(array_filter(body(SS_Rest_Office::employees(req())), function ($e) use ($a2) { return $e['id'] === (string) $a2; }))[0];
+check('admin grant: shown as 管理者 in the list', $e['is_admin'] === '1');
+check('admin grant: revoke back to staff', st(SS_Rest_Office::set_admin(req(array('isAdmin' => false), array('id' => $a2)))) === 200 && $wpdb->get_var("SELECT role FROM wp_shift_users WHERE wp_user_id = 2") === 'staff');
+as_user(3);
+check('admin grant: B cannot touch A\'s staff', st(SS_Rest_Office::set_admin(req(array('isAdmin' => true), array('id' => $a2)))) === 404 && $wpdb->get_var("SELECT role FROM wp_shift_users WHERE wp_user_id = 2") === 'staff');
+
 /* ---- 従業員の詳細・給与設定 ---- */
 as_user(1);
 check('profile: saved (name/department in the roster, address etc. in the profile)', st(SS_Rest_Kyuyo::save_profile(req(array('name' => '佐藤花子', 'department' => '製作', 'address' => '東京都', 'bankName' => 'A銀行', 'hireDate' => '2021-04-01'), array('id' => $a2)))) === 200

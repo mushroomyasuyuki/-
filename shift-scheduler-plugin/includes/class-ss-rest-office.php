@@ -48,6 +48,7 @@ final class SS_Rest_Office {
         $r('/schedule-tasks/upsert', 'POST', 'upsert_schedule_task', 'can_write');
         $r('/schedule-tasks/(?P<id>\d+)', 'DELETE', 'delete_schedule_task', 'can_write');
         $r('/schedule-tasks/(?P<id>\d+)/duplicate', 'POST', 'duplicate_schedule_task', 'can_admin_write');
+        $r('/employees/(?P<id>\d+)/admin', 'POST', 'set_admin', 'can_admin_write');
         $r('/activity-log', 'GET', 'get_activity_log', 'can_admin');
         $r('/activity-log', 'POST', 'post_activity_log', 'can_use');
         // まだ移していない機能（連絡・バックアップ）：画面が止まらないよう、空の結果を返す
@@ -222,6 +223,44 @@ final class SS_Rest_Office {
             $out[] = $row;
         }
         return self::ok($out);
+    }
+
+    /**
+     * 管理者権限（副管理者）の付与・解除。契約者だけができる。
+     * 名簿の人に紐づくアカウント（社員番号＋パスワード、または招待）の役割を、スタッフ ⇔ 副管理者 に切り替える。
+     * 契約者のアカウントは変えない。
+     */
+    public static function set_admin(WP_REST_Request $req) {
+        if (!current_user_can('shift_manage_settings')) {
+            return self::err('管理者権限の付与・解除は、契約者だけができます。', 403);
+        }
+        $staff = self::staff_in_tenant((int) $req['id']);
+        if (!$staff) {
+            return self::err('従業員が見つかりません。', 404);
+        }
+        $repo = SS_Repo::current();
+        $rows = $repo->all('users', array('staff_id' => (int) $staff['id']), 'id', 'ASC', 1);
+        $u = $rows ? $rows[0] : null;
+        if (!$u || !in_array($u['status'], array('active', 'invited'), true)) {
+            return self::err('先に、従業員登録で、この人のログイン（社員番号のパスワード設定、またはメールでの招待）を用意してください。', 400);
+        }
+        if ($u['role'] === 'owner') {
+            return self::err('契約者のアカウントは、変更できません。', 400);
+        }
+        $p = self::params($req);
+        $to_admin = !empty($p['isAdmin']) && $p['isAdmin'] !== 'false';
+        $role = $to_admin ? 'manager' : 'staff';
+        if ($u['role'] !== $role) {
+            $repo->update('users', (int) $u['id'], array('role' => $role));
+            if (class_exists('WP_User')) {
+                $wp = new WP_User((int) $u['wp_user_id']);
+                if ($wp->exists() && !user_can($wp, 'manage_options')) {
+                    $wp->set_role($to_admin ? 'shift_manager' : 'shift_staff');
+                }
+            }
+            self::log($to_admin ? '管理者権限を付与' : '管理者権限を解除', $staff['name']);
+        }
+        return self::ok(array('saved' => true, 'isAdmin' => $to_admin));
     }
 
     /** 部署：名簿に登録された部署から作る（色は、順番に割り当てる） */
