@@ -6,7 +6,8 @@
   var count = document.getElementById('ss-count');
   var form = document.getElementById('ss-add');
   var EMP = { full: '正社員', part: 'パート', baito: 'アルバイト' };
-  var ACCOUNT = { none: '未招待', invited: '招待中', active: '登録済み', disabled: '無効' };
+  var ACCOUNT = { none: '未設定', invited: '招待中', active: '利用中', disabled: '無効' };
+  var editing = null; // 編集中のスタッフ
 
   function api(method, path, body) {
     return fetch(cfg.rest + path, {
@@ -55,7 +56,7 @@
     if (!list.length) {
       var tr0 = document.createElement('tr');
       var td0 = cell('まだスタッフが登録されていません。');
-      td0.colSpan = 6;
+      td0.colSpan = 8;
       tr0.appendChild(td0);
       rows.appendChild(tr0);
       return;
@@ -63,15 +64,22 @@
     list.forEach(function (s) {
       var tr = document.createElement('tr');
       if (!s.active) { tr.className = 'ss-muted'; }
+      tr.appendChild(cell(s.employee_number || '-'));
       tr.appendChild(cell(s.name + (s.active ? '' : '（無効）')));
+      tr.appendChild(cell(s.department || ''));
       tr.appendChild(cell(EMP[s.employment] || s.employment));
       tr.appendChild(cell(s.roles.join(', ')));
       tr.appendChild(cell(s.qualifications.join(', ')));
-      tr.appendChild(cell((ACCOUNT[s.account] || '') + (s.email ? '（' + s.email + '）' : '')));
+      var how = [];
+      if (s.staff_login) { how.push('社員番号'); }
+      if (s.email) { how.push('メール（' + s.email + '）'); }
+      tr.appendChild(cell((ACCOUNT[s.account] || '') + (how.length ? '：' + how.join('・') : '')));
       var ops = document.createElement('td');
       if (cfg.writable && s.active) {
+        ops.appendChild(button('編集', function () { startEdit(s); }, true));
+        ops.appendChild(button(s.staff_login ? 'パスワード再設定' : 'パスワード設定', function () { setPassword(s); }, true));
         if (s.account !== 'active') {
-          ops.appendChild(button(s.account === 'none' ? '招待' : '再招待', function () { invite(s); }, true));
+          ops.appendChild(button(s.account === 'none' ? 'メールで招待' : '再招待', function () { invite(s); }, true));
         }
         ops.appendChild(button('無効にする', function () { deactivate(s); }, true));
       } else if (cfg.writable && !s.active) {
@@ -94,6 +102,37 @@
       .catch(function (e) { say(e.message); });
   }
 
+  function setPassword(s) {
+    if (!s.employee_number) { say('先に「編集」から、社員番号を登録してください（ログインに使います）。'); return; }
+    var pw = window.prompt(s.name + ' さんのパスワードを入力してください（8文字以上）。\nスタッフは、社員番号「' + s.employee_number + '」と、このパスワードでログインします。');
+    if (pw === null) { return; }
+    api('POST', 'staff/' + s.id + '/password', { password: pw })
+      .then(function () { say(s.name + ' さんのパスワードを設定しました。社員番号「' + s.employee_number + '」とパスワードを、ご本人に伝えてください。', true); return load(); })
+      .catch(function (e) { say(e.message); });
+  }
+
+  function startEdit(s) {
+    editing = s;
+    var f = form.elements;
+    f.employee_number.value = s.employee_number || '';
+    f.name.value = s.name;
+    f.kana.value = s.kana || '';
+    f.department.value = s.department || '';
+    f.employment.value = s.employment;
+    f.roles.value = s.roles.join(', ');
+    f.qualifications.value = s.qualifications.join(', ');
+    document.getElementById('ss-submit').textContent = '保存';
+    document.getElementById('ss-cancel').hidden = false;
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function endEdit() {
+    editing = null;
+    form.reset();
+    document.getElementById('ss-submit').textContent = '追加';
+    document.getElementById('ss-cancel').hidden = true;
+  }
+
   function deactivate(s) {
     if (!window.confirm(s.name + ' さんを無効にしますか？（ログインもできなくなります。過去の記録は残ります）')) { return; }
     api('DELETE', 'staff/' + s.id).then(function () { say('無効にしました。', true); return load(); }).catch(function (e) { say(e.message); });
@@ -111,17 +150,34 @@
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var f = form.elements;
-      api('POST', 'staff', {
+      var body = {
+        employee_number: f.employee_number.value,
         name: f.name.value,
         kana: f.kana.value,
+        department: f.department.value,
         employment: f.employment.value,
         roles: split(f.roles.value),
         qualifications: split(f.qualifications.value)
-      }).then(function () {
-        form.reset();
-        say('追加しました。', true);
+      };
+      var req = editing ? api('PUT', 'staff/' + editing.id, body) : api('POST', 'staff', body);
+      var wasEditing = !!editing;
+      req.then(function () {
+        endEdit();
+        say(wasEditing ? '保存しました。' : '追加しました。', true);
         return load();
       }).catch(function (e) { say(e.message); });
+    });
+    document.getElementById('ss-cancel').addEventListener('click', endEdit);
+  }
+
+  var copyBtn = document.getElementById('ss-copy-url');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function () {
+      var input = document.getElementById('ss-login-url');
+      input.select();
+      var done = function () { say('ログインページのURLをコピーしました。', true); };
+      if (navigator.clipboard) { navigator.clipboard.writeText(input.value).then(done, function () { document.execCommand('copy'); done(); }); }
+      else { document.execCommand('copy'); done(); }
     });
   }
 

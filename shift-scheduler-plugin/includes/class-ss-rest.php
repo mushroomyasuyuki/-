@@ -1,6 +1,6 @@
 <?php
 /**
- * REST API（/wp-json/shift/v1/…）。フェーズ1：スタッフの管理と招待。
+ * REST API（/wp-json/shift/v1/…）。スタッフの管理（名簿・招待・社員番号でのログイン設定）。
  * お客様IDは常にログイン中ユーザーの所属から決め、リクエストの値は使わない。
  */
 
@@ -26,6 +26,9 @@ final class SS_Rest {
         ));
         register_rest_route(self::NS, '/staff/(?P<id>\d+)/invite', array(
             array('methods' => 'POST', 'callback' => array(__CLASS__, 'invite_staff'), 'permission_callback' => array(__CLASS__, 'can_write_staff')),
+        ));
+        register_rest_route(self::NS, '/staff/(?P<id>\d+)/password', array(
+            array('methods' => 'POST', 'callback' => array(__CLASS__, 'set_staff_password'), 'permission_callback' => array(__CLASS__, 'can_write_staff')),
         ));
     }
 
@@ -74,6 +77,9 @@ final class SS_Rest {
         if ($repo->count('staff', array('active' => 1)) >= SS_Tenants::staff_limit($tenant)) {
             return new WP_Error('staff_limit', 'スタッフ数の上限に達しています。上位プランへの変更をご検討ください。', array('status' => 403));
         }
+        if (!empty($data['employee_number']) && self::empno_taken($repo, $data['employee_number'], 0)) {
+            return self::empno_error();
+        }
         $data['created_at'] = SS_System::now();
         $id = $repo->insert('staff', $data);
         if (!$id) {
@@ -92,6 +98,9 @@ final class SS_Rest {
         $data = self::sanitize($req, true);
         if (is_wp_error($data)) {
             return $data;
+        }
+        if (!empty($data['employee_number']) && self::empno_taken($repo, $data['employee_number'], $id)) {
+            return self::empno_error();
         }
         // 無効→有効に戻す場合も上限を確認する
         if (array_key_exists('active', $data) && (int) $data['active'] === 1 && (int) $row['active'] === 0) {
@@ -136,7 +145,7 @@ final class SS_Rest {
 
         // ご自身（ログイン中の管理者）のメールアドレスの場合：招待メールは送らず、このスタッフに自分のアカウントを紐づける
         $me = SS_Context::user();
-        if ($me && strtolower($me['email']) === strtolower($email)) {
+        if ($me && strtolower((string) $me['email']) === strtolower($email)) {
             if (!empty($me['staff_id']) && (int) $me['staff_id'] !== $id) {
                 return new WP_Error('already_linked', 'ご自身のアカウントは、すでに別のスタッフに紐づいています。', array('status' => 409));
             }
@@ -153,12 +162,12 @@ final class SS_Rest {
         }
 
         if ($existing) { // 招待中・無効 → 再招待（メールアドレスの変更も可）
-            if (strtolower($existing['email']) !== strtolower($email)) {
+            if (strtolower((string) $existing['email']) !== strtolower($email)) {
                 $other = email_exists($email);
                 if ($other && (int) $other !== (int) $existing['wp_user_id']) {
                     return new WP_Error('email_used', 'このメールアドレスは使用できません。すでにこのシステムで使われている可能性があります（ご自身や管理者のメールアドレスは招待できません）。別のメールアドレスをお試しください。', array('status' => 409));
                 }
-                wp_update_user(array('ID' => (int) $existing['wp_user_id'], 'user_email' => $email, 'user_login' => $email));
+                wp_update_user(array('ID' => (int) $existing['wp_user_id'], 'user_email' => $email));
                 $repo->update('users', (int) $existing['id'], array('email' => $email));
             }
             $repo->update('users', (int) $existing['id'], array('status' => 'invited'));
@@ -195,12 +204,99 @@ final class SS_Rest {
 
         $token = SS_System::create_token($user_id, (int) $tenant['id'], 'invite', SS_Auth::INVITE_TTL);
         $link = SS_Router::url('invite', $token);
-        SS_System::mail($email, '「' . $tenant['name'] . '」のシフトへの招待', $staff['name'] . " 様\n\n「" . $tenant['name'] . "」からシフトシステムに招待されました。\n下記のリンクからパスワードを設定して、登録を完了してください（7日間有効）。\n\n" . $link . "\n\n心当たりがない場合は、このメールを破棄してください。");
+        SS_System::mail($email, '「' . $tenant['name'] . '」への招待（' . SS_PRODUCT_NAME . '）', $staff['name'] . " 様\n\n「" . $tenant['name'] . "」から、" . SS_PRODUCT_NAME . "に招待されました。\n下記のリンクからパスワードを設定して、登録を完了してください（7日間有効）。\n\n" . $link . "\n\n心当たりがない場合は、このメールを破棄してください。");
 
         return rest_ensure_response(array('ok' => true));
     }
 
+    /**
+     * 社員番号でログインするための、パスワードの設定（管理者が行う）。
+     * メールアドレスがないスタッフにも使えるよう、アカウントがなければ作る。
+     * 招待中・無効のアカウントは、パスワードを設定した時点で、ログインできる状態にする。
+     */
+    public static function set_staff_password(WP_REST_Request $req) {
+        $repo = SS_Repo::current();
+        $id = (int) $req['id'];
+        $staff = $repo->find('staff', $id);
+        if (!$staff || (int) $staff['active'] !== 1) {
+            return new WP_Error('not_found', '見つかりません。', array('status' => 404));
+        }
+        if ((string) $staff['employee_number'] === '') {
+            return new WP_Error('no_empno', '先に、社員番号を登録してください（ログインに使います）。', array('status' => 400));
+        }
+        $password = (string) $req->get_param('password');
+        if (strlen($password) < 8 || strlen($password) > 100) {
+            return new WP_Error('password', 'パスワードは8文字以上にしてください。', array('status' => 400));
+        }
+        $existing = self::user_of($repo, $id);
+        if ($existing) {
+            if ($existing['role'] !== 'staff') {
+                // 管理者・副管理者のアカウント（ご自身など）のパスワードは、ここでは変えない
+                return new WP_Error('not_staff', 'このスタッフには、管理者のアカウントが紐づいています。パスワードは、ご本人がログイン画面から変更してください。', array('status' => 409));
+            }
+            wp_set_password($password, (int) $existing['wp_user_id']);
+            $repo->update('users', (int) $existing['id'], array('status' => 'active'));
+            SS_System::invalidate_tokens((int) $existing['id'], 'invite'); // 送ってある招待リンクは使えなくする
+            return rest_ensure_response(array('ok' => true));
+        }
+        // ログイン名は、社員番号とは別の、内部用の文字列（社員番号を変えても、ログインはそのまま使える）
+        $login = '';
+        for ($i = 0; $i < 5 && $login === ''; $i++) {
+            $try = 'ssu_' . strtolower(wp_generate_password(16, false, false));
+            if (!username_exists($try)) {
+                $login = $try;
+            }
+        }
+        $wp_user_id = $login === '' ? new WP_Error('failed', '') : wp_insert_user(array(
+            'user_login'   => $login,
+            'user_email'   => '',
+            'user_pass'    => $password,
+            'display_name' => $staff['name'],
+            'role'         => 'shift_staff',
+        ));
+        if (is_wp_error($wp_user_id)) {
+            return new WP_Error('failed', 'ログインの設定に失敗しました。', array('status' => 500));
+        }
+        $user_id = $repo->insert('users', array(
+            'wp_user_id' => $wp_user_id,
+            'email'      => null,
+            'role'       => 'staff',
+            'staff_id'   => $id,
+            'status'     => 'active',
+            'created_at' => SS_System::now(),
+        ));
+        if (!$user_id) {
+            require_once ABSPATH . 'wp-admin/includes/user.php';
+            wp_delete_user($wp_user_id);
+            return new WP_Error('failed', 'ログインの設定に失敗しました。', array('status' => 500));
+        }
+        return rest_ensure_response(array('ok' => true));
+    }
+
     /* ---------- 補助 ---------- */
+
+    /** 社員番号は、同じお客様の中で重複させない（他のお客様の同じ番号とは関係しない） */
+    private static function empno_taken(SS_Repo $repo, $empno, $except_id) {
+        foreach ($repo->all('staff', array('employee_number' => (string) $empno), 'id', 'ASC', 5) as $row) {
+            if ((int) $row['id'] !== (int) $except_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function empno_error() {
+        return new WP_Error('empno_used', 'この社員番号は、すでに別のスタッフに使われています。', array('status' => 409));
+    }
+
+    /** 社員番号の整形：全角の英数字は半角に、前後の空白は取る。使える文字は英数字とハイフン */
+    public static function normalize_empno($v) {
+        $v = trim((string) $v);
+        if (function_exists('mb_convert_kana')) {
+            $v = mb_convert_kana($v, 'as');
+        }
+        return trim($v);
+    }
 
     private static function user_of(SS_Repo $repo, $staff_id) {
         $rows = $repo->all('users', array('staff_id' => (int) $staff_id), 'id', 'DESC', 1);
@@ -212,13 +308,16 @@ final class SS_Rest {
             'id'             => (int) $s['id'],
             'name'           => $s['name'],
             'kana'           => $s['kana'],
+            'employee_number' => isset($s['employee_number']) ? (string) $s['employee_number'] : '',
+            'department'     => isset($s['department']) ? (string) $s['department'] : '',
             'employment'     => $s['employment'],
             'roles'          => self::decode($s['roles']),
             'qualifications' => self::decode($s['qualifications']),
             'night_ok'       => (int) $s['night_ok'] === 1,
             'active'         => (int) $s['active'] === 1,
             'account'        => $u ? $u['status'] : 'none', // none / invited / active / disabled
-            'email'          => $u ? $u['email'] : '',
+            'email'          => $u ? (string) $u['email'] : '',
+            'staff_login'    => $u && $u['role'] === 'staff' && in_array($u['status'], array('active', 'invited'), true) && !empty($s['employee_number']), // 社員番号でログインできる準備があるか
         );
     }
 
@@ -242,6 +341,16 @@ final class SS_Rest {
         }
         if (array_key_exists('kana', $p)) {
             $out['kana'] = mb_substr(trim(sanitize_text_field((string) $p['kana'])), 0, 100);
+        }
+        if (array_key_exists('employee_number', $p)) {
+            $no = self::normalize_empno(sanitize_text_field((string) $p['employee_number']));
+            if ($no !== '' && !preg_match('/^[A-Za-z0-9-]{1,20}$/', $no)) {
+                return new WP_Error('invalid', '社員番号は、英数字とハイフンで20文字以内にしてください。', array('status' => 400));
+            }
+            $out['employee_number'] = $no;
+        }
+        if (array_key_exists('department', $p)) {
+            $out['department'] = mb_substr(trim(sanitize_text_field((string) $p['department'])), 0, 50);
         }
         if (array_key_exists('employment', $p)) {
             if (!in_array($p['employment'], array('full', 'part', 'baito'), true)) {

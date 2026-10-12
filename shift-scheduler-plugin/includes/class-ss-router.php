@@ -118,20 +118,23 @@ final class SS_Router {
     }
 
     private static function render_app() {
+        $requested = (string) get_query_var('ss_tenant');
+        $path = trim((string) get_query_var('ss_path'), '/');
+        if ($path === 'login') {
+            self::render_staff_login($requested);
+        }
         if (!is_user_logged_in()) {
             wp_safe_redirect(SS_Router::url('login'));
             exit;
         }
         $user = SS_Context::user();
         $tenant = SS_Context::tenant();
-        $requested = (string) get_query_var('ss_tenant');
         // 自分のお客様以外のIDは、存在の有無も分からないよう同じ「見つかりません」を返す
         if (!$user || !$tenant || !hash_equals((string) $tenant['public_id'], $requested)) {
             SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、表示する権限がありません。', 404, SS_Router::url('login'), 'ログインページへ');
         }
 
         SS_Auth::touch_last_seen($user);
-        $path = trim((string) get_query_var('ss_path'), '/');
         if (!preg_match('/^[A-Za-z0-9\/_-]*$/', $path)) {
             $path = '-';
         }
@@ -189,6 +192,7 @@ final class SS_Router {
                 'today'    => wp_date('Y-m-d'),
                 'schedule_url' => SS_View::app_url($tenant['public_id'], 'schedules/__ID__'),
             );
+            $config['staff_login_url'] = SS_View::app_url($tenant['public_id'], 'login');
             if ($def['page'] === 'billing') {
                 $config['legal'] = SS_Legal::links_map(); // 特定商取引法に基づく表記・利用規約・プライバシーポリシー
             }
@@ -204,6 +208,28 @@ final class SS_Router {
             )));
         }
         SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、準備中です。', 404, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
+    }
+
+    /**
+     * お客様ごとの、スタッフ用ログインページ（社員番号＋パスワード）。
+     * 存在しないお客様IDでも、同じ画面を出す（お客様IDが正しいかどうかを、外から確かめられないようにする）。
+     */
+    private static function render_staff_login($public_id) {
+        $err = isset($_GET['ss_err']) ? SS_View::error_text(sanitize_key(wp_unslash($_GET['ss_err']))) : '';
+        $tenant = preg_match('/^[a-z0-9]{12}$/', $public_id) ? SS_System::tenant_by_public_id($public_id) : null;
+        if ($tenant && is_user_logged_in()) {
+            $me = SS_Context::user();
+            if ($me && (int) $me['tenant_id'] === (int) $tenant['id']) {
+                wp_safe_redirect(SS_View::app_url($tenant['public_id']));
+                exit;
+            }
+        }
+        SS_View::render('staff-login', array(
+            'title'       => 'スタッフのログイン',
+            'public_id'   => $public_id,
+            'tenant_name' => $tenant && in_array($tenant['status'], array('trial', 'active', 'grace', 'readonly'), true) ? $tenant['name'] : '',
+            'err'         => $err,
+        ));
     }
 
     private static function nav($tenant, $current) {

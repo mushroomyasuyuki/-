@@ -17,7 +17,7 @@ final class SS_View {
         ob_start();
         include $ss_file;
         $content = ob_get_clean();
-        $title = isset($vars['title']) ? $vars['title'] : 'シフト作成';
+        $title = isset($vars['title']) ? $vars['title'] : SS_PRODUCT_NAME;
         $scripts = isset($vars['scripts']) ? (array) $vars['scripts'] : array();
         include SS_DIR . 'templates/layout.php';
         exit;
@@ -40,6 +40,7 @@ final class SS_View {
             'failed_user'  => '処理に失敗しました（ユーザー作成：E1）。時間をおいて再度お試しください。続く場合は運営者にお知らせください。',
             'failed_db'    => '処理に失敗しました（データ保存：E2）。時間をおいて再度お試しください。続く場合は運営者にお知らせください。',
             'login'        => 'メールアドレスまたはパスワードが正しくありません。',
+            'login_staff'  => '社員番号またはパスワードが正しくありません。',
             'pending'      => 'メール認証が完了していません。届いたメールのリンクから認証してください。',
             'disabled'     => 'このアカウントは利用できません。',
             'verify_sent'  => '確認メールを送信しました。メールのリンクから登録を完了してください。',

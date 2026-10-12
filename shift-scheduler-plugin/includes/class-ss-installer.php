@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '5';
+    const DB_VERSION = '6';
 
     public static function activate() {
         self::create_tables();
@@ -28,7 +28,11 @@ final class SS_Installer {
     public static function maybe_upgrade() {
         if (get_option('ss_db_version') !== self::DB_VERSION) {
             self::create_tables();
+            $from = (string) get_option('ss_db_version');
             self::seed_plans();
+            if ($from !== '' && version_compare($from, '6', '<')) {
+                self::migrate_plans_v6();
+            }
             self::add_roles();
             update_option('ss_db_version', self::DB_VERSION);
         }
@@ -66,7 +70,7 @@ final class SS_Installer {
   id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   tenant_id bigint(20) unsigned NOT NULL,
   wp_user_id bigint(20) unsigned NOT NULL,
-  email varchar(190) NOT NULL,
+  email varchar(190) NULL,
   role varchar(20) NOT NULL DEFAULT 'staff',
   staff_id bigint(20) unsigned NULL,
   status varchar(20) NOT NULL DEFAULT 'pending',
@@ -84,6 +88,8 @@ final class SS_Installer {
   tenant_id bigint(20) unsigned NOT NULL,
   name varchar(100) NOT NULL,
   kana varchar(100) NOT NULL DEFAULT '',
+  employee_number varchar(20) NOT NULL DEFAULT '',
+  department varchar(50) NOT NULL DEFAULT '',
   employment varchar(10) NOT NULL DEFAULT 'part',
   roles longtext NULL,
   qualifications longtext NULL,
@@ -96,7 +102,8 @@ final class SS_Installer {
   sort_order int(11) NOT NULL DEFAULT 0,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
-  KEY tenant_active (tenant_id, active, sort_order)
+  KEY tenant_active (tenant_id, active, sort_order),
+  KEY tenant_empno (tenant_id, employee_number)
 ) $c;";
 
         $sql[] = "CREATE TABLE {$p}tokens (
@@ -247,8 +254,48 @@ final class SS_Installer {
         if ((int) $wpdb->get_var("SELECT COUNT(*) FROM {$t}") > 0) {
             return;
         }
-        $wpdb->insert($t, array('name' => 'ライト', 'max_staff' => 50, 'price' => 500, 'sort_order' => 1));
-        $wpdb->insert($t, array('name' => 'スタンダード', 'max_staff' => 100, 'price' => 1000, 'sort_order' => 2));
+        foreach (self::default_plans() as $plan) {
+            $wpdb->insert($t, $plan);
+        }
+    }
+
+    /** 初期の料金（月額・税抜）。日報とシフト作成のセット */
+    public static function default_plans() {
+        return array(
+            array('name' => 'ライト', 'max_staff' => 50, 'price' => 3980, 'sort_order' => 1),
+            array('name' => 'スタンダード', 'max_staff' => 100, 'price' => 5980, 'sort_order' => 2),
+            array('name' => 'プレミアム', 'max_staff' => 200, 'price' => 9800, 'sort_order' => 3),
+        );
+    }
+
+    /**
+     * 0.6.0：料金を、シフト作成だけの料金（ライト500円・スタンダード1,000円）から、セットの料金に切り替える。
+     * 管理画面で金額を変えていない場合（初期値のまま）だけ書き換える。変えていれば、何もしない。
+     * 書き換えたプランは「PAY.JPに未反映」になるので、管理画面で「プランを保存」を押すと、PAY.JPに新しい金額のプランが作られる。
+     */
+    public static function migrate_plans_v6() {
+        global $wpdb;
+        $t = SS_System::table('plans');
+        $rows = (array) $wpdb->get_results("SELECT * FROM {$t} ORDER BY sort_order ASC, id ASC", ARRAY_A);
+        $old = array('ライト' => array(50, 500), 'スタンダード' => array(100, 1000));
+        if (count($rows) !== 2) {
+            return false;
+        }
+        foreach ($rows as $r) {
+            if (!isset($old[$r['name']]) || (int) $r['max_staff'] !== $old[$r['name']][0] || (int) $r['price'] !== $old[$r['name']][1]) {
+                return false;
+            }
+        }
+        $new = self::default_plans();
+        foreach ($rows as $r) {
+            foreach ($new as $n) {
+                if ($n['name'] === $r['name']) {
+                    $wpdb->update($t, array('price' => $n['price'], 'max_staff' => $n['max_staff']), array('id' => (int) $r['id']));
+                }
+            }
+        }
+        $wpdb->insert($t, $new[2]);
+        return true;
     }
 
     public static function add_roles() {
@@ -264,8 +311,8 @@ final class SS_Installer {
         remove_role('shift_owner');
         remove_role('shift_manager');
         remove_role('shift_staff');
-        add_role('shift_owner', 'シフト：お客様の管理者', $owner_caps);
-        add_role('shift_manager', 'シフト：副管理者', $manager_caps);
-        add_role('shift_staff', 'シフト：スタッフ', $staff_caps);
+        add_role('shift_owner', 'マッシュオフィス：お客様の管理者', $owner_caps);
+        add_role('shift_manager', 'マッシュオフィス：副管理者', $manager_caps);
+        add_role('shift_staff', 'マッシュオフィス：スタッフ', $staff_caps);
     }
 }

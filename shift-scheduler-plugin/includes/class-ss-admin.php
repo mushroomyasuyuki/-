@@ -1,6 +1,6 @@
 <?php
 /**
- * WordPress管理画面（運営用）：「シフト作成」メニュー。
+ * WordPress管理画面（運営用）：「マッシュオフィス」メニュー。
  *  - 利用状況（何社が使っているか など）とお客様の一覧
  *  - お客様向けページのURLの案内
  * WordPressの管理者（manage_options）だけが見られる。
@@ -30,7 +30,7 @@ final class SS_Admin {
     }
 
     public static function menu() {
-        add_menu_page('シフト作成：利用状況', 'シフト作成', 'manage_options', self::PAGE, array(__CLASS__, 'stats_page'), 'dashicons-calendar-alt', 58);
+        add_menu_page('マッシュオフィス：利用状況', 'マッシュオフィス', 'manage_options', self::PAGE, array(__CLASS__, 'stats_page'), 'dashicons-calendar-alt', 58);
         add_submenu_page(self::PAGE, '利用状況・お客様一覧', '利用状況・お客様一覧', 'manage_options', self::PAGE, array(__CLASS__, 'stats_page'));
         add_submenu_page(self::PAGE, 'プラン・決済設定', 'プラン・決済設定', 'manage_options', self::PAGE_BILLING, array(__CLASS__, 'billing_page'));
         add_submenu_page(self::PAGE, 'ページのURL', 'ページのURL', 'manage_options', self::PAGE_URLS, array(__CLASS__, 'urls_page'));
@@ -43,7 +43,7 @@ final class SS_Admin {
             return;
         }
         printf(
-            '<div class="notice notice-info"><p><strong>シフト作成：</strong> お客様向けの登録ページは <a href="%1$s" target="_blank" rel="noopener">%1$s</a> です（<a href="%2$s">利用状況を見る</a>／<a href="%3$s">URLの一覧</a>）。</p></div>',
+            '<div class="notice notice-info"><p><strong>' . esc_html(SS_PRODUCT_NAME) . '：</strong> お客様向けの登録ページは <a href="%1$s" target="_blank" rel="noopener">%1$s</a> です（<a href="%2$s">利用状況を見る</a>／<a href="%3$s">URLの一覧</a>）。</p></div>',
             esc_url(SS_Router::url('register')),
             esc_url(admin_url('admin.php?page=' . self::PAGE)),
             esc_url(admin_url('admin.php?page=' . self::PAGE_URLS))
@@ -74,7 +74,7 @@ final class SS_Admin {
         $list = SS_Stats::tenants(array('search' => $search, 'status' => $status, 'page' => $paged, 'per_page' => 50));
         $pages = max(1, (int) ceil($list['total'] / 50));
 
-        echo '<div class="wrap"><h1>シフト作成：利用状況</h1>';
+        echo '<div class="wrap"><h1>マッシュオフィス：利用状況</h1>';
         echo '<p style="color:#50575e">お客様のシフトの中身（勤務・希望休）は集計に含まれません。登録・状態・人数・利用の有無（最終利用日）だけを集計しています。</p>';
 
         echo '<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0">';
@@ -173,7 +173,7 @@ final class SS_Admin {
             return;
         }
         $pretty = SS_Router::pretty_enabled();
-        echo '<div class="wrap"><h1>シフト作成：ページのURL</h1>';
+        echo '<div class="wrap"><h1>マッシュオフィス：ページのURL</h1>';
         echo '<p>このプラグインのページは、WordPressの「固定ページ」としては作られません。次のURLで表示されます。</p>';
         echo '<table class="widefat striped" style="max-width:760px"><tbody>';
         printf('<tr><th>無料登録ページ</th><td><a href="%1$s" target="_blank" rel="noopener">%1$s</a></td></tr>', esc_url(SS_Router::url('register')));

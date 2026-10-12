@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: シフト作成（マルチテナント）
- * Description: 飲食・介護向けのシフト作成サービス。お客様ごとにデータを分離し、無料登録→専用ページでシフト作成を行います。
- * Version: 0.5.14
+ * Plugin Name: マッシュオフィス 経理・管理・勤怠
+ * Description: シフト作成・日報・勤怠などを、お客様ごとの専用URLで提供する月額サービス（mush-office.com 用）。お客様ごとにデータを分離します。
+ * Version: 0.6.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: shift-scheduler
@@ -14,14 +14,15 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('SS_VERSION', '0.5.14');
+define('SS_VERSION', '0.6.0');
+define('SS_PRODUCT_NAME', 'マッシュオフィス 経理・管理・勤怠');
 define('SS_DIR', plugin_dir_path(__FILE__));
 define('SS_URL', plugin_dir_url(__FILE__));
 if (!defined('SS_TRIAL_MONTHS')) {
-    define('SS_TRIAL_MONTHS', 2); // 無料期間（月）
+    define('SS_TRIAL_MONTHS', 1); // 無料期間（月）
 }
 if (!defined('SS_TRIAL_STAFF_LIMIT')) {
-    define('SS_TRIAL_STAFF_LIMIT', 100); // 無料期間中のスタッフ上限
+    define('SS_TRIAL_STAFF_LIMIT', 200); // 無料期間中のスタッフ上限（いちばん上のプランと同じ）
 }
 
 require_once SS_DIR . 'includes/class-ss-system.php';

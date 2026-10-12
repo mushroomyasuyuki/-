@@ -13,7 +13,7 @@ final class SS_Auth {
     private static $portal_login = false;
 
     public static function init() {
-        foreach (array('register', 'verify', 'login', 'accept_invite') as $action) {
+        foreach (array('register', 'verify', 'login', 'staff_login', 'accept_invite') as $action) {
             add_action('admin_post_nopriv_ss_' . $action, array(__CLASS__, 'handle_' . $action));
             add_action('admin_post_ss_' . $action, array(__CLASS__, 'handle_' . $action));
         }
@@ -185,6 +185,64 @@ final class SS_Auth {
         }
         wp_safe_redirect(self::landing_url($user->ID));
         exit;
+    }
+
+    /**
+     * 社員番号＋パスワードでのログイン（お客様ごとの専用ログインページ /s/<お客様ID>/login から）。
+     * 社員番号は、そのお客様の中だけで探す。他のお客様の同じ番号には、決して当たらない。
+     * 失敗の理由（お客様が違う・番号がない・パスワード違い）は区別せず、同じメッセージにする。
+     */
+    public static function handle_staff_login() {
+        $pid = isset($_POST['tenant']) ? sanitize_key(wp_unslash($_POST['tenant'])) : '';
+        $tenant = preg_match('/^[a-z0-9]{12}$/', $pid) ? SS_System::tenant_by_public_id($pid) : null;
+        $back = $tenant ? SS_View::app_url($tenant['public_id'], 'login') : SS_Router::url('login');
+        self::verify_nonce('ss_staff_login', $back);
+        $empno = isset($_POST['employee_number']) ? SS_Rest::normalize_empno(sanitize_text_field(wp_unslash($_POST['employee_number']))) : '';
+        $password = isset($_POST['password']) ? (string) wp_unslash($_POST['password']) : '';
+        if (!self::rate_ok('login_ip', 30, 15 * MINUTE_IN_SECONDS) || !self::rate_ok('staff_login_' . $pid . '|' . strtolower($empno), 10, 15 * MINUTE_IN_SECONDS)) {
+            self::back($back, 'rate');
+        }
+        $wp_user = self::find_staff_login($tenant, $empno, $password);
+        if (is_wp_error($wp_user)) {
+            $map = array('ss_pending' => 'pending', 'ss_invited' => 'pending', 'ss_disabled' => 'disabled');
+            self::back($back, isset($map[$wp_user->get_error_code()]) ? $map[$wp_user->get_error_code()] : 'login_staff');
+        }
+        self::login_as($wp_user->ID);
+        $row = SS_System::user_by_wp_id($wp_user->ID);
+        if ($row) {
+            global $wpdb;
+            $wpdb->update(SS_System::table('users'), array('last_login_at' => SS_System::now()), array('id' => (int) $row['id']));
+        }
+        wp_safe_redirect(SS_View::app_url($tenant['public_id']));
+        exit;
+    }
+
+    /**
+     * お客様・社員番号・パスワードから、ログインするユーザーを探す（ログインはしない）。
+     * @return WP_User|WP_Error
+     */
+    public static function find_staff_login($tenant, $empno, $password) {
+        $fail = new WP_Error('ss_login', '社員番号またはパスワードが正しくありません。');
+        if (!$tenant || $empno === '' || $password === '' || !in_array($tenant['status'], array('trial', 'active', 'grace', 'readonly'), true)) {
+            return $fail;
+        }
+        $repo = SS_Repo::for_tenant((int) $tenant['id']);
+        $staff = $repo->all('staff', array('employee_number' => $empno, 'active' => 1), 'id', 'ASC', 2);
+        if (count($staff) !== 1) {
+            return $fail;
+        }
+        $users = $repo->all('users', array('staff_id' => (int) $staff[0]['id']), 'id', 'DESC', 1);
+        if (!$users) {
+            return $fail;
+        }
+        $wp_user = get_userdata((int) $users[0]['wp_user_id']);
+        if (!$wp_user || !wp_check_password($password, $wp_user->user_pass, $wp_user->ID)) {
+            return $fail;
+        }
+        self::$portal_login = true;
+        $checked = self::block_inactive($wp_user, $password); // 招待中・無効・停止中のお客様などは、ここで止める
+        self::$portal_login = false;
+        return $checked;
     }
 
     /** 最終利用日を記録する（1日に1回だけ書き込む。ログイン状態を保ったまま使い続けている場合も数えるため）。 */
