@@ -78,7 +78,7 @@ const server = http.createServer((req, res) => {
   await page.fill('input[name=employee_number]', '101');
   await page.fill('input[name=name]', '重複次郎');
   await page.click('#ss-submit');
-  await page.waitForFunction(() => !document.getElementById('ss-notice').hidden);
+  await page.waitForFunction(() => document.getElementById('ss-notice').textContent.includes('すでに別のスタッフ'), null, { timeout: 5000 }).catch(() => {});
   check('duplicate number: error is shown', (await page.textContent('#ss-notice')).includes('すでに別のスタッフ'));
 
   await page.click('#ss-rows tr button:has-text("編集")');
