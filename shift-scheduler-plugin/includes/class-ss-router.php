@@ -147,14 +147,7 @@ final class SS_Router {
         );
 
         if ($path === '') {
-            $repo = SS_Repo::current();
-            SS_View::render('app-dashboard', array_merge($common, array(
-                'title'       => 'ダッシュボード',
-                'staff_count' => $repo->count('staff', array('active' => 1)),
-                'staff_limit' => SS_Tenants::staff_limit($tenant),
-                'days_left'   => SS_Tenants::trial_days_left($tenant),
-                'plans'       => SS_Tenants::plans(),
-            )));
+            self::render_top($tenant, $user, $common);
         }
         $pages = array(
             'staff'       => array('cap' => 'shift_manage_staff', 'template' => 'app-staff', 'title' => 'スタッフ管理', 'script' => 'staff.js', 'page' => 'staff'),
@@ -185,7 +178,7 @@ final class SS_Router {
         if (isset($pages[$path])) {
             $def = $pages[$path];
             if (!current_user_can($def['cap']) || (!empty($def['needs_staff']) && empty($user['staff_id']))) {
-                SS_View::message('権限がありません', 'この画面は利用できません。', 403, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
+                SS_View::message('権限がありません', 'この画面は利用できません。', 403, SS_View::app_url($tenant['public_id']), 'トップへ');
             }
             if (!empty($def['office'])) {
                 self::render_office($tenant, $user, $path, $def, $common);
@@ -215,7 +208,7 @@ final class SS_Router {
                 'scripts' => $scripts,
             )));
         }
-        SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、準備中です。', 404, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
+        SS_View::message('ページが見つかりません', 'お探しのページは存在しないか、準備中です。', 404, SS_View::app_url($tenant['public_id']), 'トップへ');
     }
 
     /**
@@ -240,6 +233,68 @@ final class SS_Router {
         ));
     }
 
+    /**
+     * お客様のトップページ（マッシュオフィスシステムの「業務システム」トップと同じ構成）。
+     * 従業員ページ：日報・朝礼・経理・タイムカード・給与照会・シフト
+     * 管理者ページ：従業員登録・管理者集計・シフト作成・給与計算・QRコード生成・自社情報（＋契約者はご契約・設定）
+     * まだ移していない機能は url を空にして「準備中」で出す。
+     */
+    private static function render_top(array $tenant, array $user, array $common) {
+        $pid = $tenant['public_id'];
+        $u = function ($path) use ($pid) { return SS_View::app_url($pid, $path); };
+        $status = SS_Tenants::effective_status($tenant);
+        $staff = !empty($user['staff_id']) ? SS_Repo::current()->find('staff', (int) $user['staff_id']) : null;
+        $wp_user = function_exists('wp_get_current_user') ? wp_get_current_user() : null;
+        $me_name = $staff ? $staff['name'] : ($wp_user && !empty($wp_user->display_name) ? $wp_user->display_name : '');
+
+        $staff_cards = array(
+            array('color' => 'nippo', 'icon' => '📝', 'label' => '日報', 'desc' => '本日の予定・実績を入力します', 'url' => $u('nippo')),
+            array('color' => 'chorei', 'icon' => '☀️', 'label' => '朝礼', 'desc' => '本日の全体予定・未提出者を確認します', 'url' => $u('chorei')),
+            array('color' => 'keiri', 'icon' => '🧾', 'label' => '経理', 'desc' => '見積もり・請求書・顧客一覧・商品一覧', 'url' => ''),
+            array('color' => 'timecard', 'icon' => '⏱️', 'label' => 'タイムカード', 'desc' => '出勤・退勤を打刻します', 'url' => ''),
+            array('color' => 'myleave', 'icon' => '🌴', 'label' => '給与照会', 'desc' => '自分の給与明細・有給休暇の残日数を確認します', 'url' => ''),
+            array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト', 'desc' => '公開されたシフトの確認・希望休の提出', 'url' => $u(!empty($user['staff_id']) && current_user_can('shift_submit_requests') ? 'me/requests' : 'me/schedule')),
+        );
+        $admin_cards = array();
+        if (current_user_can('shift_manage_staff')) {
+            $admin_cards = array(
+                array('color' => 'touroku', 'icon' => '👤', 'label' => '従業員登録', 'desc' => '従業員の登録・社員番号とパスワード・CSVの取り込み', 'url' => $u('staff')),
+                array('color' => 'shukei', 'icon' => '📈', 'label' => '管理者集計', 'desc' => '部署別・担当者別の実績を集計します', 'url' => $u('shukei')),
+                array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト作成', 'desc' => '勤務区分・ルール・希望休の収集・シフト表の自動作成', 'url' => current_user_can('shift_manage_schedule') ? $u('schedules') : ''),
+                array('color' => 'kyuyo', 'icon' => '💰', 'label' => '給与計算', 'desc' => '給与明細・賞与・年末調整', 'url' => ''),
+                array('color' => 'qr', 'icon' => '🔳', 'label' => 'QRコード生成', 'desc' => 'タイムカード用QRコードの発行', 'url' => ''),
+                array('color' => 'jisha', 'icon' => '🏢', 'label' => '自社情報', 'desc' => '会社情報・振込先・印影・書類の保管', 'url' => ''),
+            );
+            if (current_user_can('shift_manage_billing')) {
+                $admin_cards[] = array('color' => 'billing', 'icon' => '💳', 'label' => 'ご契約・お支払い', 'desc' => 'プラン・カード・解約', 'url' => $u('billing'));
+            }
+            if (current_user_can('shift_manage_settings')) {
+                $admin_cards[] = array('color' => 'settings', 'icon' => '⚙️', 'label' => '設定', 'desc' => '会社の設定', 'url' => $u('settings'));
+            }
+        }
+
+        $notices = array();
+        if (current_user_can('shift_manage_billing')) {
+            $days = SS_Tenants::trial_days_left($tenant);
+            if ($status === 'trial' && $days !== null) {
+                $notices[] = array('error' => false, 'text' => '無料期間中です（あと' . (int) $days . '日）。すべての機能をお使いいただけます。', 'url' => $u('billing'), 'link' => 'ご契約・お支払いへ');
+            } elseif ($status === 'grace') {
+                $notices[] = array('error' => true, 'text' => 'お支払いを確認できませんでした。カードの変更をお願いします。', 'url' => $u('billing'), 'link' => 'ご契約・お支払いへ');
+            }
+        }
+        if ($status === 'readonly') {
+            $notices[] = array('error' => true, 'text' => '現在は閲覧のみの状態です。ご契約いただくと、編集を再開できます。', 'url' => current_user_can('shift_manage_billing') ? $u('billing') : '', 'link' => 'ご契約・お支払いへ');
+        }
+        if (!$staff && current_user_can('shift_manage_staff')) {
+            $notices[] = array('error' => false, 'text' => '日報を入力するには、ご自身をスタッフ名簿に登録して、アカウントと紐づけてください（従業員登録で、ご自身の行の「メールで招待」に、ご自身のメールアドレスを入れます）。', 'url' => $u('staff'), 'link' => '従業員登録へ');
+        }
+
+        SS_View::render_standalone('app-top', array(
+            'tenant' => $tenant, 'me_name' => $me_name, 'logout' => $common['logout'],
+            'staff_cards' => $staff_cards, 'admin_cards' => $admin_cards, 'notices' => $notices,
+        ));
+    }
+
     /** マッシュオフィスシステムから移した画面の一覧（パス => 定義） */
     public static function office_pages() {
         return array(
@@ -256,7 +311,7 @@ final class SS_Router {
         $pid = $tenant['public_id'];
         $links = array('トップ' => SS_View::app_url($pid));
         $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計');
-        $menu = array(array('url' => SS_View::app_url($pid), 'label' => 'ダッシュボード', 'current' => false));
+        $menu = array(array('url' => SS_View::app_url($pid), 'label' => 'トップ', 'current' => false));
         foreach (self::office_pages() as $key => $p) {
             if (current_user_can($p['cap'])) {
                 $links[$labels[$key]] = SS_View::app_url($pid, $key);
@@ -288,7 +343,7 @@ final class SS_Router {
     }
 
     private static function nav($tenant, $current) {
-        $items = array(array('', 'ダッシュボード'));
+        $items = array(array('', 'トップ'));
         if (current_user_can('shift_manage_staff')) {
             $items[] = array('staff', 'スタッフ');
         }
@@ -303,11 +358,6 @@ final class SS_Router {
             $items[] = array('me/requests', '希望休の提出');
         }
         $items[] = array('me/schedule', 'シフトを見る');
-        foreach (self::office_pages() as $key => $p) {
-            if (current_user_can($p['cap'])) {
-                $items[] = array($key, $p['label']);
-            }
-        }
         if (current_user_can('shift_manage_billing')) {
             $items[] = array('billing', 'ご契約・お支払い');
         }
