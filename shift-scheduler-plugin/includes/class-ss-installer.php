@@ -382,6 +382,131 @@ final class SS_Installer {
   KEY tenant_staff (tenant_id,staff_id)
 ) $c;";
 
+        // ---- 自社情報の書類・印影、経理（顧客・商品・見積もり・請求書・原価計算書）（マッシュオフィスシステムから移植） ----
+        // 書類・印影のファイルは、お客様ごとの非公開フォルダ（SS_Files）。kind：doc（書類）／seal（印影。1社1点）
+        $sql[] = "CREATE TABLE {$p}company_documents (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  kind varchar(10) NOT NULL DEFAULT 'doc',
+  title varchar(191) NOT NULL DEFAULT '',
+  file_name varchar(255) NOT NULL DEFAULT '',
+  file_path varchar(255) NOT NULL DEFAULT '',
+  mime varchar(100) NOT NULL DEFAULT '',
+  file_size int(11) unsigned NOT NULL DEFAULT 0,
+  uploaded_by varchar(191) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_kind (tenant_id,kind)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}clients (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  name varchar(191) NOT NULL,
+  rep1 varchar(191) NOT NULL DEFAULT '',
+  rep2 varchar(191) NOT NULL DEFAULT '',
+  postal_code varchar(10) NOT NULL DEFAULT '',
+  address varchar(255) NOT NULL DEFAULT '',
+  phone varchar(50) NOT NULL DEFAULT '',
+  projects text NULL,
+  memo text NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_id (tenant_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}products (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  name varchar(191) NOT NULL,
+  cost decimal(12,2) NOT NULL DEFAULT 0,
+  price decimal(12,2) NOT NULL DEFAULT 0,
+  maker varchar(191) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_id (tenant_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}quotes (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  quote_no varchar(30) NOT NULL,
+  client_id bigint(20) unsigned NULL,
+  client_name varchar(191) NOT NULL DEFAULT '',
+  project_name varchar(191) NOT NULL DEFAULT '',
+  staff_id bigint(20) unsigned NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  worker1_id bigint(20) unsigned NULL,
+  worker1_name varchar(191) NOT NULL DEFAULT '',
+  worker2_id bigint(20) unsigned NULL,
+  worker2_name varchar(191) NOT NULL DEFAULT '',
+  issue_date varchar(10) NOT NULL DEFAULT '',
+  valid_months int(11) NOT NULL DEFAULT 1,
+  cost_no varchar(30) NOT NULL DEFAULT '',
+  items_json longtext NULL,
+  total_amount decimal(12,0) NOT NULL DEFAULT 0,
+  memo text NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_quote_no (tenant_id,quote_no)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}invoices (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  invoice_no varchar(30) NOT NULL,
+  quote_no varchar(30) NOT NULL DEFAULT '',
+  client_id bigint(20) unsigned NULL,
+  client_name varchar(191) NOT NULL DEFAULT '',
+  project_name varchar(191) NOT NULL DEFAULT '',
+  staff_id bigint(20) unsigned NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  worker1_id bigint(20) unsigned NULL,
+  worker1_name varchar(191) NOT NULL DEFAULT '',
+  worker2_id bigint(20) unsigned NULL,
+  worker2_name varchar(191) NOT NULL DEFAULT '',
+  issue_date varchar(10) NOT NULL DEFAULT '',
+  items_json longtext NULL,
+  total_amount decimal(12,0) NOT NULL DEFAULT 0,
+  memo text NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_invoice_no (tenant_id,invoice_no),
+  KEY tenant_quote (tenant_id,quote_no)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}costs (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  report_no varchar(30) NOT NULL,
+  quote_no varchar(30) NOT NULL DEFAULT '',
+  invoice_no varchar(30) NOT NULL DEFAULT '',
+  client_id bigint(20) unsigned NULL,
+  client_name varchar(191) NOT NULL DEFAULT '',
+  project_name varchar(191) NOT NULL DEFAULT '',
+  staff_id bigint(20) unsigned NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  worker1_id bigint(20) unsigned NULL,
+  worker1_name varchar(191) NOT NULL DEFAULT '',
+  worker2_id bigint(20) unsigned NULL,
+  worker2_name varchar(191) NOT NULL DEFAULT '',
+  issue_date varchar(10) NOT NULL DEFAULT '',
+  revenue_amount decimal(12,0) NOT NULL DEFAULT 0,
+  items_json longtext NULL,
+  cost_total decimal(12,0) NOT NULL DEFAULT 0,
+  memo text NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_report_no (tenant_id,report_no),
+  KEY tenant_quote (tenant_id,quote_no),
+  KEY tenant_invoice (tenant_id,invoice_no)
+) $c;";
+
         foreach ($sql as $statement) {
             dbDelta($statement);
         }

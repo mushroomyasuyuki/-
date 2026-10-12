@@ -72,6 +72,12 @@ class FakeWpdb {
             'time_cards' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, record_date, staff_id, staff_name DEFAULT "", department DEFAULT "", clock_in DEFAULT "", clock_out DEFAULT "", clock_in_lat, clock_in_lng, clock_in_accuracy, clock_out_lat, clock_out_lng, clock_out_accuracy, created_at, updated_at, UNIQUE (tenant_id, record_date, staff_id)',
             'attendance_days' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, record_date, day_type DEFAULT "通常", clock_in DEFAULT "", clock_out DEFAULT "", early_minutes, overtime_minutes, created_at, updated_at, UNIQUE (tenant_id, staff_id, record_date)',
             'leave_grants' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, grant_date, days DEFAULT 0, note DEFAULT "", created_at',
+            'company_documents' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, kind DEFAULT "doc", title DEFAULT "", file_name DEFAULT "", file_path DEFAULT "", mime DEFAULT "", file_size DEFAULT 0, uploaded_by DEFAULT "", created_at',
+            'clients' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, rep1 DEFAULT "", rep2 DEFAULT "", postal_code DEFAULT "", address DEFAULT "", phone DEFAULT "", projects, memo, created_at, updated_at',
+            'products' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, cost DEFAULT 0, price DEFAULT 0, maker DEFAULT "", created_at, updated_at',
+            'quotes' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, quote_no, client_id, client_name DEFAULT "", project_name DEFAULT "", staff_id, staff_name DEFAULT "", worker1_id, worker1_name DEFAULT "", worker2_id, worker2_name DEFAULT "", issue_date DEFAULT "", memo, created_at, updated_at, valid_months DEFAULT 1, cost_no DEFAULT "", items_json, total_amount DEFAULT 0, UNIQUE (tenant_id, quote_no)',
+            'invoices' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, invoice_no, quote_no DEFAULT "", client_id, client_name DEFAULT "", project_name DEFAULT "", staff_id, staff_name DEFAULT "", worker1_id, worker1_name DEFAULT "", worker2_id, worker2_name DEFAULT "", issue_date DEFAULT "", memo, created_at, updated_at, items_json, total_amount DEFAULT 0, UNIQUE (tenant_id, invoice_no)',
+            'costs' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, report_no, quote_no DEFAULT "", invoice_no DEFAULT "", client_id, client_name DEFAULT "", project_name DEFAULT "", staff_id, staff_name DEFAULT "", worker1_id, worker1_name DEFAULT "", worker2_id, worker2_name DEFAULT "", issue_date DEFAULT "", memo, created_at, updated_at, revenue_amount DEFAULT 0, items_json, cost_total DEFAULT 0, UNIQUE (tenant_id, report_no)',
         );
         foreach (array('entries', 'schedules', 'request_submissions', 'requests', 'request_periods', 'rules', 'patterns', 'tokens') as $n) { $t[$n] = 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id'; }
         foreach ($t as $name => $cols) { $this->pdo->exec("CREATE TABLE wp_shift_{$name} ({$cols})"); }
@@ -89,7 +95,7 @@ class FakeWpdb {
     function delete($t, $where) { return $this->pdo->exec("DELETE FROM {$t} WHERE " . $this->cond($where)); }
 }
 $wpdb = new FakeWpdb();
-foreach (array('system', 'context', 'repo', 'tenants', 'rest', 'files', 'rest-office', 'rest-kintai', 'auth', 'view', 'router') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
+foreach (array('system', 'context', 'repo', 'tenants', 'rest', 'files', 'rest-office', 'rest-kintai', 'rest-keiri', 'auth', 'view', 'router') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
 SS_Files::$allow_local_files = true;
 
 $failed = 0;

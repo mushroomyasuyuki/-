@@ -40,7 +40,7 @@ foreach (array('shift_owner', 'shift_manager', 'shift_staff') as $role) {
     }
 }
 
-foreach (array('tenants', 'users', 'staff', 'tokens', 'plans', 'billing_events', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries', 'task_records', 'task_images', 'schedule_tasks', 'activity_log', 'time_cards', 'attendance_days', 'leave_grants') as $name) {
+foreach (array('tenants', 'users', 'staff', 'tokens', 'plans', 'billing_events', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries', 'task_records', 'task_images', 'schedule_tasks', 'activity_log', 'time_cards', 'attendance_days', 'leave_grants', 'company_documents', 'clients', 'products', 'quotes', 'invoices', 'costs') as $name) {
     $wpdb->query('DROP TABLE IF EXISTS ' . $wpdb->prefix . 'shift_' . $name); // phpcs:ignore
 }
 

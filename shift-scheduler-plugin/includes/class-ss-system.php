@@ -44,6 +44,13 @@ final class SS_System {
         return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id = %d", (int) $id), ARRAY_A);
     }
 
+    /** 署名つきURLの確認用：自社情報の書類・印影の行を、お客様を問わずIDで探す（呼び出し側で、必ず署名を確かめること） */
+    public static function company_document_by_id($id) {
+        global $wpdb;
+        $t = self::table('company_documents');
+        return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id = %d", (int) $id), ARRAY_A);
+    }
+
     public static function user_by_id($id) {
         global $wpdb;
         $t = self::table('users');

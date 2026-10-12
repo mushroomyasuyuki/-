@@ -253,7 +253,7 @@ final class SS_Router {
         $staff_cards = array(
             array('color' => 'nippo', 'icon' => '📝', 'label' => '日報', 'desc' => '本日の予定・実績を入力します', 'url' => $u('nippo')),
             array('color' => 'chorei', 'icon' => '☀️', 'label' => '朝礼', 'desc' => '本日の全体予定・未提出者を確認します', 'url' => $u('chorei')),
-            array('color' => 'keiri', 'icon' => '🧾', 'label' => '経理', 'desc' => '見積もり・請求書・顧客一覧・商品一覧', 'url' => ''),
+            array('color' => 'keiri', 'icon' => '🧾', 'label' => '経理', 'desc' => '見積もり・請求書・顧客一覧・商品一覧', 'url' => $u('keiri')),
             array('color' => 'timecard', 'icon' => '⏱️', 'label' => 'タイムカード', 'desc' => '出勤・退勤を打刻します', 'url' => $u('timecard')),
             array('color' => 'myleave', 'icon' => '🌴', 'label' => '給与照会', 'desc' => '自分の給与明細・有給休暇の残日数を確認します', 'url' => ''),
             array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト', 'desc' => '公開されたシフトの確認・希望休の提出', 'url' => $u(!empty($user['staff_id']) && current_user_can('shift_submit_requests') ? 'me/requests' : 'me/schedule')),
@@ -266,7 +266,7 @@ final class SS_Router {
                 array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト作成', 'desc' => '勤務区分・ルール・希望休の収集・シフト表の自動作成', 'url' => current_user_can('shift_manage_schedule') ? $u('schedules') : ''),
                 array('color' => 'kyuyo', 'icon' => '💰', 'label' => '給与計算', 'desc' => '給与明細・賞与・年末調整', 'url' => ''),
                 array('color' => 'qr', 'icon' => '🔳', 'label' => 'QRコード生成', 'desc' => 'タイムカード用QRコードの発行', 'url' => $u('qr')),
-                array('color' => 'jisha', 'icon' => '🏢', 'label' => '自社情報', 'desc' => '会社情報・振込先・印影・書類の保管', 'url' => ''),
+                array('color' => 'jisha', 'icon' => '🏢', 'label' => '自社情報', 'desc' => '会社情報・振込先・印影・書類の保管', 'url' => $u('jisha')),
             );
             if (current_user_can('shift_manage_billing')) {
                 $admin_cards[] = array('color' => 'billing', 'icon' => '💳', 'label' => 'ご契約・お支払い', 'desc' => 'プラン・カード・解約', 'url' => $u('billing'));
@@ -307,6 +307,8 @@ final class SS_Router {
             'shukei' => array('cap' => 'shift_manage_staff', 'office' => 'kanri-shukei.html', 'title' => '管理者集計', 'label' => '管理者集計'),
             'timecard' => array('cap' => 'shift_view', 'office' => 'timecard.html', 'title' => 'タイムカード', 'label' => 'タイムカード'),
             'qr'     => array('cap' => 'shift_manage_staff', 'office' => 'qr-generate.html', 'title' => 'タイムカード QRコード', 'label' => 'QRコード', 'menu' => false, 'scripts' => array('qrcode.js')),
+            'keiri'  => array('cap' => 'shift_view', 'office' => 'kanri-keiri.html', 'title' => '経理', 'label' => '経理', 'menu' => false),
+            'jisha'  => array('cap' => 'shift_manage_staff', 'office' => 'kanri-jisha.html', 'title' => '自社情報', 'label' => '自社情報', 'menu' => false),
         );
     }
 
@@ -316,7 +318,7 @@ final class SS_Router {
         $pid = $tenant['public_id'];
         $links = array('トップ' => SS_View::app_url($pid));
         // 画面内のリンク（「/日報/」など、マッシュオフィスシステムの固定ページ名）を、このサービスのURLへ向け直すための対応表
-        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計', 'timecard' => 'タイムカード', 'qr' => 'QRコード');
+        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計', 'timecard' => 'タイムカード', 'qr' => 'QRコード', 'keiri' => '経理', 'jisha' => '自社情報');
         $menu = array(array('url' => SS_View::app_url($pid), 'label' => 'トップ', 'current' => false));
         foreach (self::office_pages() as $key => $p) {
             if (current_user_can($p['cap'])) {
@@ -336,7 +338,7 @@ final class SS_Router {
             'menu'        => $menu,
             'logout'      => $common['logout'],
             'readonly'    => !SS_Tenants::is_writable($tenant),
-            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && !in_array($path, array('shukei', 'qr'), true),
+            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && !in_array($path, array('shukei', 'qr', 'jisha', 'keiri'), true),
             'office_html' => SS_View::office_html($def['office']),
             'scripts'     => isset($def['scripts']) ? array_map(function ($f) { return SS_URL . 'assets/' . $f . '?ver=' . SS_VERSION; }, $def['scripts']) : array(),
             'mo_config'   => array(

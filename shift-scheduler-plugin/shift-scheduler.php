@@ -46,6 +46,7 @@ require_once SS_DIR . 'includes/class-ss-rest-billing.php';
 require_once SS_DIR . 'includes/class-ss-files.php';
 require_once SS_DIR . 'includes/class-ss-rest-office.php';
 require_once SS_DIR . 'includes/class-ss-rest-kintai.php';
+require_once SS_DIR . 'includes/class-ss-rest-keiri.php';
 require_once SS_DIR . 'includes/class-ss-cron.php';
 require_once SS_DIR . 'includes/class-ss-stats.php';
 require_once SS_DIR . 'includes/class-ss-admin.php';
@@ -65,6 +66,7 @@ add_action('plugins_loaded', function () {
     SS_Files::init();
     SS_Rest_Office::init();
     SS_Rest_Kintai::init();
+    SS_Rest_Keiri::init();
     SS_Cron::init();
     SS_Admin::init();
 });

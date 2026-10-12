@@ -1,0 +1,2288 @@
+<!--
+  ※ マッシュオフィス 経理・管理・勤怠 用に、案内文の「管理者パスワード」の文言だけを外したもの（それ以外は、マッシュオフィスシステムのまま）。
+  ============================================================
+  経理画面(見積もり・顧客一覧・商品一覧)(WordPress DB版 / Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「マッシュオフィスシステム(WordPress DB版)」プラグインを
+  有効化しておく必要があります。
+
+  見積書の「PDF保存」は、ブラウザの印刷機能(印刷ダイアログの
+  「PDFに保存」)を使う方式にしています。PDF生成ライブラリ(jsPDF等)は
+  標準では日本語フォントを描画できないため、代わりにブラウザ自体の
+  印刷機能(朝礼ページのA3印刷と同じ考え方)を使うことで、追加の
+  ライブラリなしに日本語を確実に表示できるようにしています。
+  ============================================================
+-->
+<!-- ============================================================
+     経理ページ ログインゲート
+     管理者(管理者パスワード)または従業員(日報と同じ個人パスワード)のどちらでも
+     ログインできる。管理者ログインはmush_admin_auth、従業員ログインは日報ページと
+     同じmush_nippo_authに保存するので、日報でログイン済みなら再入力は不要。
+     ============================================================ -->
+<div id="mushKeiriGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">経理ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">ログインする人を選び、パスワードを入力してください。</p>
+    <select id="mushKeiriWho" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="admin">管理者</option>
+    </select>
+    <input type="password" id="mushKeiriPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushKeiriErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushKeiriSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var ADMIN_KEY = 'mush_admin_auth';
+  var EMP_KEY = 'mush_nippo_auth';
+
+  function loadAuth(key){
+    try{
+      var raw = localStorage.getItem(key);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(key, auth){
+    try{ localStorage.setItem(key, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushKeiriGate');
+  if(loadAuth(ADMIN_KEY) || loadAuth(EMP_KEY)){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var whoSel = document.getElementById('mushKeiriWho');
+  var pwInput = document.getElementById('mushKeiriPw');
+  var errEl = document.getElementById('mushKeiriErr');
+  var btn = document.getElementById('mushKeiriSubmit');
+
+  fetch(API_BASE + '/employees').then(function(res){ return res.json(); }).then(function(rows){
+    rows.forEach(function(r){
+      var o = document.createElement('option');
+      o.value = String(r.id);
+      o.textContent = r.name + (r.department ? '(' + r.department + ')' : '');
+      whoSel.appendChild(o);
+    });
+  }).catch(function(){});
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var who = whoSel.value;
+    var isAdmin = (who === 'admin');
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(API_BASE + (isAdmin ? '/admin/login' : '/auth/login'), {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(isAdmin ? { password: password } : { staffId: who, password: password }),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){ throw new Error(result.data && result.data.error ? result.data.error : 'ログインに失敗しました。'); }
+      var d = result.data;
+      var expiresAt = Date.now() + ((d.expiresIn || 43200) * 1000);
+      if(isAdmin){
+        saveAuth(ADMIN_KEY, { token: d.token, expiresAt: expiresAt });
+      }else{
+        saveAuth(EMP_KEY, { token: d.token, staffId: String(d.staffId), staffName: d.staffName, dept: d.dept, expiresAt: expiresAt });
+      }
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushKeiriAuthed')); }catch(e){}
+    }).catch(function(e){
+      errEl.textContent = e.message || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+<div id="keiri-app">読み込み中…</div>
+
+<style>
+  #keiri-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 960px; margin: 0 auto;
+  }
+  #keiri-app * { box-sizing: border-box; }
+  #keiri-app .header { background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0; }
+  #keiri-app .header .app-title { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  #keiri-app .header p { margin: 0; font-size: 13px; color: #94a3b8; }
+  #keiri-app .operator-picker { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+  #keiri-app .operator-picker label { font-size: 11.5px; color: #94a3b8; }
+
+  #keiri-app .tabs { display: flex; gap: 6px; padding: 14px 16px 0; flex-wrap: wrap; }
+  #keiri-app .tab-btn { flex: 1; min-width: 84px; text-align: center; padding: 9px; font-size: 13px; border: 1px solid var(--border); border-radius: 3px; background: #fff; color: #64748b; cursor: pointer; }
+  #keiri-app .tab-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+  #keiri-app .tab-btn.disabled { opacity: .5; cursor: default; }
+
+  #keiri-app .content { padding: 14px 16px 24px; }
+  #keiri-app .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+  #keiri-app .toolbar h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  #keiri-app .search-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }
+  #keiri-app .search-title { text-align: center; background: #1e293b; color: #fff; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 6px 6px 0 0; margin: -12px -14px 12px; }
+  #keiri-app .search-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  #keiri-app .search-row:last-of-type { margin-bottom: 0; }
+  #keiri-app .search-row > div { flex: 1; min-width: 160px; }
+  #keiri-app .search-row label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  #keiri-app .search-date-range { display: flex; align-items: center; gap: 6px; }
+  #keiri-app .search-date-range input { flex: 1; min-width: 0; }
+  #keiri-app .search-reset {
+    margin-top: 8px; background: none; border: none; color: #0369a1; font-size: 12px;
+    cursor: pointer; text-decoration: underline; padding: 0;
+  }
+  #keiri-app .btn-primary { background: #1e293b; color: #fff; border: none; border-radius: 3px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  #keiri-app .btn-secondary { background: #fff; color: #475569; border: 1px solid var(--border); border-radius: 3px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  #keiri-app .btn-danger { background: none; color: #ea580c; border: none; font-size: 12px; cursor: pointer; text-decoration: underline; }
+  #keiri-app .btn-link { background: none; color: #0369a1; border: none; font-size: 12px; cursor: pointer; text-decoration: underline; }
+
+  #keiri-app .card { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; margin-bottom: 10px; }
+  #keiri-app .list-scroll { max-height: 1440px; overflow-y: auto; }
+  #keiri-app .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  #keiri-app .card-title { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+  #keiri-app .card-sub { font-size: 12.5px; color: #475569; margin: 2px 0; }
+  #keiri-app .card-actions { display: flex; gap: 10px; margin-top: 8px; }
+  /* 各一覧(見積もり・請求書・原価計算書・顧客・商品)は、1件を横に広げた薄い行にする(名前 | 内容 | 操作ボタン)。 */
+  #keiri-app .row-card { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 14px; margin-bottom: 6px; cursor: pointer; }
+  #keiri-app .row-card:hover { background: #fafaf7; }
+  #keiri-app .row-card.open { background: #f1f5f9; border-color: #94a3b8; }
+  #keiri-app .row-card > .row-detail { flex: 1 1 100%; width: 100%; cursor: default; margin: 6px -14px -8px; padding: 10px 14px 12px; border-top: 1px solid #e2e8f0; border-bottom: none; background: #f8fafc; border-radius: 0 0 4px 4px; box-sizing: content-box; }
+  #keiri-app .rowdocs { display: grid; gap: 4px; margin-top: 8px; font-size: 12.5px; color: #334155; }
+  #keiri-app .rowdoc { display: inline-block; background: #fff; border: 1px solid #e2e8f0; border-radius: 3px; padding: 0 6px; margin: 0 4px 2px 0; font-size: 11.5px; }
+  #keiri-app .row-name { flex: 0 0 250px; font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+  #keiri-app .client-card .row-name { flex-basis: 180px; }
+  #keiri-app .row-info { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: #475569; line-height: 1.45; }
+  #keiri-app .row-actions { flex: 0 0 auto; margin-top: 0; white-space: nowrap; }
+  @media (max-width: 640px) {
+    #keiri-app .row-card { flex-wrap: wrap; gap: 4px 10px; }
+    #keiri-app .row-name { flex: 1 1 100%; }
+    #keiri-app .row-info { flex: 1 1 100%; }
+  }
+  #keiri-app .empty { background: #fff; border: 1px dashed var(--border); border-radius: 4px; padding: 26px; text-align: center; color: var(--muted); font-size: 13px; }
+  #keiri-app .amount { font-family: monospace; font-weight: 600; }
+
+  #keiri-app label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #keiri-app input[type=text], #keiri-app input[type=number], #keiri-app input[type=date],
+  #keiri-app select, #keiri-app textarea {
+    width: 100%; border: 1px solid var(--border); border-radius: 3px; padding: 7px 9px; font-size: 13.5px;
+    margin-bottom: 10px; font-family: inherit; background: #fff; color: var(--ink);
+  }
+  #keiri-app .form-panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 16px; margin-bottom: 14px; }
+  #keiri-app .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #keiri-app .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  #keiri-app .ref-price { color: #64748b; }
+  /* 見積もり・請求書・原価計算書の入力フォームの見出し帯(書類ごとに色を変え、文言は中央に置く)。
+     テーマのh2の装飾(背景・枠線・疑似要素)を打ち消すため、!importantを付けている。 */
+  #keiri-app .form-banner { display: block !important; margin: 0 0 14px !important; padding: 12px 16px !important; border: none !important; border-radius: 4px !important;
+    color: #fff !important; font-size: 16px !important; font-weight: 700 !important; letter-spacing: 0.08em; text-align: center !important; line-height: 1.4 !important; }
+  #keiri-app .form-banner::before, #keiri-app .form-banner::after { display: none !important; content: none !important; }
+  #keiri-app .form-banner.banner-quote { background: #0f766e !important; }
+  #keiri-app .form-banner.banner-invoice { background: #2563eb !important; }
+  #keiri-app .form-banner.banner-cost { background: #c2410c !important; }
+  #keiri-app .costpick-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin: 0 0 12px; }
+  #keiri-app .costpick-count { font-size: 12px; color: #475569; margin: 6px 0; }
+  #keiri-app .costpick-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; }
+  #keiri-app .costpick-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #eef0f3; font-size: 13px; }
+  #keiri-app .costpick-row:last-child { border-bottom: none; }
+  #keiri-app .costpick-row:hover { background: #f8fafc; }
+  #keiri-app .costpick-main { flex: 1; min-width: 0; }
+  #keiri-app .costpick-sub { font-size: 11.5px; color: #64748b; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #keiri-app .costpick-badge { font-size: 10.5px; background: #fef3c7; color: #92400e; border-radius: 3px; padding: 1px 6px; margin-left: 6px; }
+  #keiri-app .costpick-main { cursor: pointer; }
+  #keiri-app .costpick-row.open { background: #f1f5f9; }
+  #keiri-app .costpick-detail { background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 10px 14px 12px; font-size: 12.5px; }
+  #keiri-app .costpick-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: #334155; margin-bottom: 8px; }
+  #keiri-app .costpick-detail .items-table { margin: 0 0 6px; background: #fff; }
+  #keiri-app .costpick-detail .items-table td.num { text-align: right; white-space: nowrap; }
+  #keiri-app .costpick-totals { font-weight: 700; color: #1e293b; }
+  #keiri-app .costpick-memo { margin-top: 4px; color: #64748b; }
+  #keiri-app .costpick-btn { white-space: nowrap; padding: 6px 12px; font-size: 12.5px; }
+  #keiri-app .hint-line { font-size: 11.5px; color: #64748b; margin: 4px 0 0; line-height: 1.5; }
+  #keiri-app .msg-error { color: #ea580c; font-size: 12.5px; margin: -4px 0 10px; }
+
+  #keiri-app .items-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  #keiri-app .items-table th { font-size: 11px; color: var(--muted); text-align: left; padding: 0 4px 4px; font-weight: 600; }
+  #keiri-app .items-table td { padding: 2px 4px; vertical-align: top; }
+  #keiri-app .items-table input, #keiri-app .items-table select { margin-bottom: 0; }
+  #keiri-app .item-amount { font-family: monospace; font-size: 13px; padding: 7px 0; text-align: right; white-space: nowrap; }
+  #keiri-app .item-remove { background: none; border: none; color: #ea580c; cursor: pointer; font-size: 16px; padding: 4px; }
+  #keiri-app .add-item-row { font-size: 12px; color: #0369a1; background: none; border: 1px dashed #bae6fd; border-radius: 3px; padding: 6px 10px; cursor: pointer; margin-bottom: 12px; }
+  #keiri-app .quote-total { text-align: right; font-size: 15px; font-weight: 700; margin: 6px 0 14px; }
+  #keiri-app .quote-total .amount { font-size: 18px; }
+  #keiri-app .total-breakdown { margin: 6px 0 14px; }
+  #keiri-app .total-breakdown .row { display: flex; justify-content: flex-end; gap: 14px; font-size: 13px; color: var(--muted); padding: 2px 0; }
+  #keiri-app .total-breakdown .row span:last-child { min-width: 90px; text-align: right; }
+  #keiri-app .total-breakdown .row.grand { font-size: 15px; font-weight: 700; color: var(--ink); border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
+  #keiri-app .total-breakdown .row.grand span:last-child { font-size: 18px; }
+
+  #keiri-app .back-link { text-align: center; padding: 4px 16px 20px; }
+  #keiri-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  /* 見積書の印刷プレビュー: 画面上は非表示、印刷時だけ表示する */
+  #keiri-print-view { display: none; }
+  /* 用紙サイズをA4に固定する(プリンター/PDF出力の既定値に依存させない)。
+     @pageのmarginと position:absolute の組み合わせは余白がずれる場合があるため、
+     余白は各.p-page自身のpaddingで持たせる(1ページ=210mm×297mmの箱を並べる)。 */
+  @page { size: A4; margin: 0; }
+  @media print {
+    body * { visibility: hidden; }
+    #keiri-print-view, #keiri-print-view * { visibility: visible; }
+    #keiri-print-view, #keiri-print-view * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #keiri-print-view { display: block; position: absolute; top: 0; left: 0; width: 210mm; }
+
+    /* 品目が多く複数ページになる場合、ページごとに強制改ページする */
+    /* min-height:297mmで丸め誤差により1ページ分をわずかに超え、空白の2ページ目が
+       挟まることがあったため、高さは中身に合わせる(改ページはpage-break-afterで行う)。 */
+    #keiri-print-view .p-page { width: 210mm; padding: 15mm 18mm; box-sizing: border-box; page-break-after: always; }
+    #keiri-print-view .p-page:last-child { page-break-after: auto; }
+    #keiri-print-view .p-page-label { text-align: right; font-size: 11px; color: #666; margin: 2px 0 14px; }
+
+    #keiri-print-view .p-banner { color: #fff; text-align: center; font-size: 30px; font-weight: 700; letter-spacing: .3em; padding: 16px 0; margin-bottom: 24px; }
+
+    #keiri-print-view .p-header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 20px; }
+    #keiri-print-view .p-client-block { flex: 1; padding-top: 4px; }
+    #keiri-print-view .p-client { font-size: 17px; font-weight: 700; border-bottom: 2px solid #333; padding-bottom: 6px; display: inline-block; min-width: 220px; }
+    #keiri-print-view .p-client-contact { font-size: 11px; color: #333; line-height: 1.7; margin-top: 6px; }
+    #keiri-print-view .p-lead { margin-top: 14px; font-size: 12px; }
+    #keiri-print-view .p-project { margin-top: 8px; font-size: 13px; }
+    #keiri-print-view .p-meta-table { width: 20%; flex-shrink: 0; font-size: 12px; border-collapse: collapse; margin-left: auto; }
+    #keiri-print-view .p-meta-table td { padding: 2px 0; }
+    #keiri-print-view .p-meta-table td:first-child { color: #555; padding-right: 8px; white-space: nowrap; }
+    #keiri-print-view .p-meta-table td:last-child { font-weight: 600; text-align: right; white-space: nowrap; }
+    #keiri-print-view .p-issuer { font-size: 11px; line-height: 1.8; text-align: left; white-space: nowrap; margin-top: 14px; }
+    #keiri-print-view .p-issuer-name-row { display: flex; align-items: center; gap: 8px; }
+    #keiri-print-view .p-issuer-name { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
+    #keiri-print-view .p-issuer-seal { object-fit: contain; }
+    #keiri-print-view .p-issuer-rep { font-size: 11px; color: #333; margin-bottom: 4px; }
+    #keiri-print-view .p-issuer-label { display: inline-block; min-width: 32px; color: #555; font-weight: 600; }
+
+    #keiri-print-view .p-total-issuer-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 18px; }
+    #keiri-print-view .p-total-issuer-row .p-issuer { margin-top: 0; }
+    #keiri-print-view .p-total-box { width: 33%; flex-shrink: 0; border-radius: 2px; overflow: hidden; border: 1px solid #ccc; }
+    #keiri-print-view .p-total-label { color: #fff; padding: 7px 16px; font-size: 13px; font-weight: 700; }
+    #keiri-print-view .p-total-value { padding: 14px 16px; text-align: right; font-size: 24px; font-weight: 700; }
+
+    #keiri-print-view table.p-bank { border-collapse: collapse; margin-bottom: 16px; font-size: 12px; }
+    #keiri-print-view table.p-bank td { border: 1px solid #ccc; }
+    #keiri-print-view .p-bank-label { color: #fff; padding: 8px 14px; font-weight: 700; white-space: nowrap; vertical-align: middle; }
+    #keiri-print-view .p-bank-value { padding: 8px 14px; line-height: 1.7; }
+
+    /* table-layout:fixedと各列幅の指定により、10行すべての高さを揃える */
+    #keiri-print-view table.p-items { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 16px; }
+    /* テーマ側の table th 背景色指定が優先されてしまうため、行の背景色を強制的に継承させる */
+    #keiri-print-view table.p-items th { background-color: inherit !important; color: #fff; padding: 7px 8px; font-size: 12.5px; text-align: left; }
+    #keiri-print-view table.p-items th:nth-child(1), #keiri-print-view table.p-items td:nth-child(1) { width: 46%; }
+    #keiri-print-view table.p-items th:nth-child(2), #keiri-print-view table.p-items td:nth-child(2) { width: 14%; }
+    #keiri-print-view table.p-items th:nth-child(3), #keiri-print-view table.p-items td:nth-child(3) { width: 20%; }
+    #keiri-print-view table.p-items th:nth-child(4), #keiri-print-view table.p-items td:nth-child(4) { width: 20%; }
+    #keiri-print-view table.p-items-cost th:nth-child(1), #keiri-print-view table.p-items-cost td:nth-child(1) { width: 26%; }
+    #keiri-print-view table.p-items-cost th:nth-child(2), #keiri-print-view table.p-items-cost td:nth-child(2) { width: 8%; }
+    #keiri-print-view table.p-items-cost th:nth-child(3), #keiri-print-view table.p-items-cost td:nth-child(3) { width: 15%; }
+    #keiri-print-view table.p-items-cost th:nth-child(4), #keiri-print-view table.p-items-cost td:nth-child(4) { width: 16%; }
+    #keiri-print-view table.p-items-cost th:nth-child(5), #keiri-print-view table.p-items-cost td:nth-child(5) { width: 17%; }
+    #keiri-print-view table.p-items-cost th:nth-child(6), #keiri-print-view table.p-items-cost td:nth-child(6) { width: 18%; }
+    #keiri-print-view table.p-items-cost th, #keiri-print-view table.p-items-cost td { font-size: 11.5px; padding-left: 5px; padding-right: 5px; }
+    #keiri-print-view table.p-items td { border: 1px solid #ccc; padding: 5px 8px; font-size: 13px; }
+    #keiri-print-view table.p-items td .p-cell-clip { display: block; height: 16px; line-height: 16px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    #keiri-print-view td.p-num { text-align: right; font-family: monospace; }
+
+    #keiri-print-view .p-summary { border-collapse: collapse; width: 260px; margin-left: auto; margin-bottom: 16px; font-size: 13px; }
+    #keiri-print-view .p-summary td { padding: 5px 10px; border: 1px solid #ccc; }
+    #keiri-print-view .p-summary td:first-child { color: #fff; font-weight: 600; }
+    #keiri-print-view .p-summary td:last-child { text-align: right; font-family: monospace; }
+    #keiri-print-view .p-summary tr.p-total-row td { font-weight: 700; font-size: 15px; }
+
+    #keiri-print-view .p-memo-box { border: 1px solid #ccc; border-radius: 2px; overflow: hidden; }
+    #keiri-print-view .p-memo-title { color: #fff; padding: 5px 12px; font-weight: 700; font-size: 13px; }
+    #keiri-print-view .p-memo-body { padding: 10px 12px; font-size: 12px; white-space: pre-wrap; min-height: 18px; }
+  }
+</style>
+
+<div id="keiri-print-view"></div>
+
+<script>
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+  // 管理者または従業員のログイントークンを付けてAPIを呼ぶ(ログイン必須のAPI用)。
+  function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = JSON.parse(localStorage.getItem("mush_nippo_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    return fetch(url, o);
+  }
+
+
+  function escapeHtml(s) {
+    return (s == null ? "" : String(s)).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function yen(n) { return "¥" + Number(n || 0).toLocaleString("ja-JP"); }
+  // 商品の単価・品目の単価は小数第2位まで入力できる。小数が無ければ小数点以下は表示しない(1500 → ¥1,500、12.5 → ¥12.50)。
+  function yenUnit(n) {
+    const v = Number(n || 0);
+    if (Math.abs(v - Math.round(v)) < 0.005) { return "¥" + Math.round(v).toLocaleString("ja-JP"); }
+    return "¥" + v.toLocaleString("ja-JP", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  // 入力欄に入れる単価の文字列(整数なら小数点なし、小数があれば2桁)。
+  function unitInputValue(n) {
+    const v = Number(n || 0);
+    if (Math.abs(v - Math.round(v)) < 0.005) { return String(Math.round(v)); }
+    return v.toFixed(2);
+  }
+  // 単価の入力を整える: 全角→半角、数字と小数点以外を除き、小数点は1つ、小数部は2桁まで。
+  function cleanUnitPrice(val) {
+    let t = String(val == null ? "" : val).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[．。]/g, ".");
+    t = t.replace(/[^0-9.]/g, "");
+    const i = t.indexOf(".");
+    if (i === -1) { return t; }
+    return t.slice(0, i + 1) + t.slice(i + 1).replace(/\./g, "").slice(0, 2);
+  }
+  // 明細の金額 = 数量 × 単価(円未満は四捨五入)。
+  function lineAmount(q, p) { return Math.round((Number(q) || 0) * (Number(p) || 0)); }
+  // 原価計算書の「参考売値」: 原価品目の品名が商品マスタの商品名と同じとき、その商品の売値を参考として出す(違う品名は「-」)。
+  // 品目に手入力した参考売値(refPrice)があればそれを優先し、無ければ商品マスタの売値を使う。
+  function refPriceOf(name) {
+    const n = String(name || "").trim();
+    if (n === "") { return null; }
+    const p = state.products.find(x => String(x.name || "").trim() === n);
+    return p ? Number(p.price) : null;
+  }
+  function itemRefPrice(it) {
+    const m = it && it.refPrice;
+    if (m !== undefined && m !== null && String(m).trim() !== "") { return Number(m) || 0; }
+    return refPriceOf(it && it.name);
+  }
+  // 参考売値の合計(参考売値がある品目の「数量 × 参考売値」の合計)と、参考売値がある品目の件数。
+  function refTotal(items) {
+    let sum = 0, n = 0;
+    (items || []).forEach(it => {
+      const rp = itemRefPrice(it);
+      if (rp !== null) { sum += lineAmount(it.quantity, rp); n++; }
+    });
+    return { sum, n };
+  }
+  // 消費税率(10%)。端数は切り捨て。見積もり・請求書の税込合計はサーバー側でも
+  // 同じ計算をして保存しているため、ここでの計算はあくまで画面表示用。
+  const TAX_RATE = 0.1;
+  function calcTax(subtotal) { return Math.floor(subtotal * TAX_RATE); }
+  function calcGrandTotal(subtotal) { return subtotal + calcTax(subtotal); }
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  // 見積書の有効期限(発行日 + 指定ヶ月数)。印刷時にだけ表示する。
+  function quoteValidUntil(issueDate, months) {
+    if (!issueDate || !months) return "";
+    const parts = issueDate.split("-").map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) return "";
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    d.setMonth(d.getMonth() + Number(months));
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  // 経理ページのログイン状態(ゲートが保存した管理者/従業員トークン)。
+  function loadSession(key) {
+    try {
+      const a = JSON.parse(localStorage.getItem(key) || "null");
+      if (a && a.token && a.expiresAt > Date.now()) return a;
+    } catch (e) {}
+    return null;
+  }
+  function isAdminSession() { return !!loadSession("mush_admin_auth"); }
+  // 従業員としてログイン中ならそのセッション(管理者ログインを優先)。
+  function employeeSession() { return isAdminSession() ? null : loadSession("mush_nippo_auth"); }
+  // ログインしている人の名前(印刷などの操作記録と、画面上部の表示に使う)。
+  function operatorName() {
+    const e = employeeSession();
+    if (e) return e.staffName || "";
+    return isAdminSession() ? "管理者" : "";
+  }
+
+  const state = {
+    tab: "quotes",
+    clients: [], clientsLoading: true,
+    products: [], productsLoading: true,
+    quotes: [], quotesLoading: true,
+    invoices: [], invoicesLoading: true,
+    costs: [], costsLoading: true,
+    staff: [],
+    clientForm: null,
+    productForm: null,
+    quoteForm: null,
+    invoiceForm: null,
+    costForm: null,
+    error: "",
+    // 会社情報(発行元)・振込先情報。編集は「自社情報」ページで行い、ここでは
+    // 見積もり・請求書・原価計算書の印刷用に読み込むだけ(読み取り専用)。
+    companyInfo: {
+      name: "", repName: "", postalCode: "", address: "", phone: "", fax: "", website: "", invoiceRegNumber: "",
+      bankName: "", bankBranch: "", bankAccountType: "", bankAccountNumber: "", bankAccountHolder: "",
+      bankName2: "", bankBranch2: "", bankAccountType2: "", bankAccountNumber2: "", bankAccountHolder2: "",
+      sealImageUrl: "",
+      sealSize: 44,
+    },
+    // それぞれのタブの検索条件(担当者・NO・作成日時・顧客・案件)。
+    // 空文字のままの項目は絞り込みなし。
+    quoteSearch: emptySearch(),
+    invoiceSearch: emptySearch(),
+    costSearch: emptySearch(),
+    // 新規の見積もり・請求書・原価計算書で「元になる書類を探して引き継ぐ」ときの検索条件(件数が増えても探しやすいように)。
+    // kindは何を探しているか(PICK_KINDSのキー)。空文字なら検索欄は閉じている。
+    pick: emptyPick(),
+    // 一覧で、クリックして詳細を開いている行(tabはどの一覧か、idはその行)。
+    rowOpen: { tab: "", id: 0 },
+    // 顧客一覧の検索条件(顧客名・案件名・担当者名・商品名)。
+    clientSearch: emptyClientSearch(),
+    // 商品一覧の検索条件(商品名・メーカー)。
+    productSearch: { name: "", maker: "" },
+  };
+  function emptyPick() { return { kind: "", q: "", staffId: "", from: "", to: "", openId: 0 }; }
+  // 引き継ぎ元として探せる書類の種類。docsは探す対象、applyは「引き継ぐ」を押したときの処理、
+  // linkedは「すでにこの書類から次の書類を作成済み」のバッジ表示。
+  const PICK_KINDS = {
+    quoteCost: {
+      label: "原価計算書", docs: () => state.costs, no: d => d.reportNo,
+      amount: d => "原価合計 " + yen(d.costTotal),
+      linked: d => d.quoteNo ? "見積もり作成済 " + d.quoteNo : "",
+      apply: id => window.__keiri.pickQuoteFromCost(id),
+    },
+    invoiceQuote: {
+      label: "見積もり", docs: () => state.quotes, no: d => d.quoteNo,
+      amount: d => "見積金額 " + yen(d.totalAmount),
+      linked: d => { const i = state.invoices.find(x => x.quoteNo === d.quoteNo); return i ? "請求書作成済 " + i.invoiceNo : ""; },
+      apply: id => window.__keiri.pickInvoiceFromQuote(id),
+    },
+    costQuote: {
+      label: "見積もり", docs: () => state.quotes, no: d => d.quoteNo,
+      amount: d => "見積金額 " + yen(d.totalAmount),
+      linked: d => { const c = state.costs.find(x => x.quoteNo === d.quoteNo); return c ? "原価計算書あり " + c.reportNo : ""; },
+      apply: id => window.__keiri.pickCostFromQuote(id),
+    },
+    costInvoice: {
+      label: "請求書", docs: () => state.invoices, no: d => d.invoiceNo,
+      amount: d => "請求金額 " + yen(d.totalAmount),
+      linked: d => { const c = state.costs.find(x => x.invoiceNo === d.invoiceNo); return c ? "原価計算書あり " + c.reportNo : ""; },
+      apply: id => window.__keiri.pickCostFromInvoice(id),
+    },
+  };
+  // 書類の絞り込み。キーワードは空白区切りで、すべての語が(NO・顧客・案件・担当者・作業担当者・品目名・発行日)
+  // のどこかに含まれていれば該当。担当者は記入担当者・作業担当者1/2のどれか。発行日は期間。
+  function pickResults() {
+    const pk = state.pick;
+    const cfg = PICK_KINDS[pk.kind];
+    if (!cfg) { return []; }
+    const words = String(pk.q || "").toLowerCase().split(/[\s\u3000]+/).filter(Boolean);
+    return cfg.docs().filter(c => {
+      // ※ここでは「&&」を使わない(WordPressの表示処理が「<」と「>」の間にある「&」を壊すため)。
+      if (pk.staffId) { if (![c.staffId, c.worker1Id, c.worker2Id].some(id => String(id || "") === String(pk.staffId))) return false; }
+      const d = String(c.issueDate || "").slice(0, 10);
+      if (pk.from) { if (!d || d < pk.from) return false; }
+      if (pk.to) { if (!d || d > pk.to) return false; }
+      if (words.length === 0) return true;
+      const hay = [cfg.no(c), c.clientName, c.projectName, c.staffName, c.worker1Name, c.worker2Name, d, ...(c.items || []).map(it => it.name)]
+        .map(v => String(v || "").toLowerCase()).join("\n");
+      return words.every(w => hay.includes(w));
+    }).sort((a, b) => String(b.issueDate || "").localeCompare(String(a.issueDate || "")) || (b.id - a.id));
+  }
+  // 引き継ぎ元の候補をクリックしたときに開く詳細(顧客・案件・担当者・品目の一覧と合計)。引き継ぐ前に中身を確かめられる。
+  function pickDetailHtml(kind, c, ownNo) {
+    const isCost = kind === "quoteCost";
+    // 自分自身の番号(見積もりなら見積もりNO)は、行の見出しに出ているので詳細には出さない。
+    const own = ownNo || ({ quoteCost: "reportNo", invoiceQuote: "quoteNo", costQuote: "quoteNo", costInvoice: "invoiceNo" })[kind] || "";
+    const itemRows = (c.items || []).map(it => {
+      const rp = isCost ? itemRefPrice(it) : null;
+      return `<tr>
+        <td>${escapeHtml(it.name || "")}</td>
+        <td class="num">${escapeHtml(String(it.quantity === undefined ? "" : it.quantity))}</td>
+        <td class="num">${yenUnit(it.unitPrice)}</td>
+        <td class="num">${yen(lineAmount(it.quantity, it.unitPrice))}</td>
+        ${isCost ? `<td class="num ref-price">${rp === null ? "-" : yenUnit(rp)}</td><td class="num ref-price">${rp === null ? "-" : yen(lineAmount(it.quantity, rp))}</td>` : ""}
+      </tr>`;
+    }).join("");
+    const head = isCost
+      ? `<th>原価品目</th><th>数量</th><th>単価</th><th>金額</th><th>参考売値単価</th><th>参考売値金額</th>`
+      : `<th>品目</th><th>数量</th><th>単価</th><th>金額</th>`;
+    const workers = [c.worker1Name, c.worker2Name].filter(Boolean).join("、");
+    let totals = "";
+    if (isCost) {
+      const ref = refTotal(c.items);
+      totals = `原価合計 ${yen(c.costTotal)}${ref.n > 0 ? ` ／ 参考売値合計 ${yen(ref.sum)}` : ""}${c.revenueAmount ? ` ／ 売上金額 ${yen(c.revenueAmount)}` : ""}`;
+    } else {
+      const sub = (c.items || []).reduce((sum, it) => sum + lineAmount(it.quantity, it.unitPrice), 0);
+      totals = `小計 ${yen(sub)} ／ 消費税 ${yen(calcTax(sub))} ／ 税込合計 ${yen(c.totalAmount)}`;
+    }
+    return `
+      <div class="costpick-detail">
+        <div class="costpick-meta">
+          <span>顧客: ${escapeHtml(c.clientName || "-")}</span>
+          <span>案件: ${escapeHtml(c.projectName || "-")}</span>
+          <span>発行日: ${escapeHtml(String(c.issueDate || "").slice(0, 10))}</span>
+          <span>記入担当者: ${escapeHtml(c.staffName || "-")}</span>
+          <span>作業担当者: ${escapeHtml(workers || "-")}</span>
+          ${c.validMonths ? `<span>有効期限: ${escapeHtml(String(c.validMonths))}ヶ月</span>` : ""}
+          ${c.costNo ? `<span>原価計算書: ${escapeHtml(c.costNo)}</span>` : ""}
+          ${own === "quoteNo" ? "" : (c.quoteNo ? `<span>見積もりNO: ${escapeHtml(c.quoteNo)}</span>` : "")}
+          ${own === "invoiceNo" ? "" : (c.invoiceNo ? `<span>請求書NO: ${escapeHtml(c.invoiceNo)}</span>` : "")}
+        </div>
+        <table class="items-table"><thead><tr>${head}</tr></thead><tbody>${itemRows || `<tr><td colspan="6">品目がありません</td></tr>`}</tbody></table>
+        <div class="costpick-totals">${totals}</div>
+        ${c.memo ? `<div class="costpick-memo">メモ: ${escapeHtml(c.memo)}</div>` : ""}
+      </div>`;
+  }
+  // 顧客の詳細: 連絡先・担当・案件と、その顧客の見積もり・請求書・原価計算書の一覧。
+  function clientDetailHtml(c) {
+    const mine = list => list.filter(d => String(d.clientId) === String(c.id));
+    const docs = (label, arr, no, amount) => `<div><b>${label}(${arr.length}件)</b> ${arr.length ? arr.slice(0, 12).map(d => `<span class="rowdoc">${escapeHtml(no(d))} ${amount(d)}</span>`).join("") + (arr.length > 12 ? " ほか" : "") : "なし"}</div>`;
+    const projects = String(c.projects || "").split("\n").map(x => x.trim()).filter(Boolean);
+    return `
+      <div class="costpick-detail row-detail" onclick="event.stopPropagation()">
+        <div class="costpick-meta">
+          <span>〒: ${escapeHtml(c.postalCode || "-")}</span>
+          <span>住所: ${escapeHtml(c.address || "-")}</span>
+          <span>電話: ${escapeHtml(c.phone || "-")}</span>
+          <span>当社担当者: ${escapeHtml([c.rep1, c.rep2].filter(Boolean).join("、") || "-")}</span>
+        </div>
+        <div class="costpick-meta"><span>案件: ${escapeHtml(projects.join("、") || "-")}</span></div>
+        ${c.memo ? `<div class="costpick-memo">メモ: ${escapeHtml(c.memo)}</div>` : ""}
+        <div class="rowdocs">
+          ${docs("見積もり", mine(state.quotes), d => d.quoteNo, d => yen(d.totalAmount))}
+          ${docs("請求書", mine(state.invoices), d => d.invoiceNo, d => yen(d.totalAmount))}
+          ${docs("原価計算書", mine(state.costs), d => d.reportNo, d => yen(d.costTotal))}
+        </div>
+      </div>`;
+  }
+  // 商品の詳細: 原価・売値・粗利と、見積もり・請求書・原価計算書で使われている件数。
+  function productDetailHtml(p) {
+    const cost = Number(p.cost) || 0, price = Number(p.price) || 0;
+    const profit = price - cost;
+    const rate = price === 0 ? "-" : (profit / price * 100).toFixed(1) + "%";
+    const used = list => list.filter(d => (d.items || []).some(it => String(it.name || "").trim() === String(p.name || "").trim())).length;
+    return `
+      <div class="costpick-detail row-detail" onclick="event.stopPropagation()">
+        <div class="costpick-meta">
+          <span>原価: ${yenUnit(cost)}</span>
+          <span>売値: ${yenUnit(price)}</span>
+          <span>1個あたりの粗利: ${yenUnit(profit)}(粗利率 ${rate})</span>
+          <span>メーカー: ${escapeHtml(p.maker || "-")}</span>
+        </div>
+        <div class="costpick-meta">
+          <span>使用中の書類: 見積もり ${used(state.quotes)}件 ／ 請求書 ${used(state.invoices)}件 ／ 原価計算書 ${used(state.costs)}件</span>
+          ${p.updatedAt ? `<span>更新: ${escapeHtml(String(p.updatedAt).slice(0, 10))}</span>` : ""}
+        </div>
+      </div>`;
+  }
+  function isRowOpen(tab, id) { return state.rowOpen.tab === tab && state.rowOpen.id === id; }
+  // 一覧の行の詳細(見積もり・請求書・原価計算書)。引き継ぎ検索の詳細と同じ表示で、行の中のクリックでは閉じない。
+  function docRowDetailHtml(kind, d, ownNo) {
+    return pickDetailHtml(kind, d, ownNo).replace('class="costpick-detail"', 'class="costpick-detail row-detail" onclick="event.stopPropagation()"');
+  }
+  function pickButtonHtml(kind) {
+    const cfg = PICK_KINDS[kind];
+    return `<button type="button" class="btn-secondary" onclick="__keiri.togglePick('${kind}')">${state.pick.kind === kind ? "▲ 検索を閉じる" : "🔍 " + cfg.label + "を検索して引き継ぐ"}</button>`;
+  }
+  // 検索欄と、該当した書類の一覧(30件まで)。引き継ぎ元の候補が100件を超えても探せるようにしている。
+  function pickPanelHtml(kinds) {
+    const pk = state.pick;
+    if (!kinds.includes(pk.kind)) { return ""; }
+    const cfg = PICK_KINDS[pk.kind];
+    const results = pickResults();
+    const MAX = 30;
+    const rows = results.slice(0, MAX).map(c => {
+      const badge = cfg.linked(c);
+      const names = (c.items || []).map(it => it.name).filter(Boolean);
+      return `
+        <div class="costpick-row ${pk.openId === c.id ? "open" : ""}">
+          <div class="costpick-main" onclick="__keiri.togglePickDetail(${c.id})" title="クリックすると詳細を見られます">
+            <b>${escapeHtml(cfg.no(c))}</b> ${escapeHtml(c.clientName || "(顧客なし)")} ${c.projectName ? "／ " + escapeHtml(c.projectName) : ""}
+            ${badge ? `<span class="costpick-badge">${escapeHtml(badge)}</span>` : ""}
+            <div class="costpick-sub">発行日 ${escapeHtml(String(c.issueDate || "").slice(0, 10))} ／ 担当 ${escapeHtml(c.staffName || "-")} ／ ${escapeHtml(cfg.amount(c))} ／ ${escapeHtml(names.slice(0, 3).join("、"))}${names.length > 3 ? " ほか" : ""}</div>
+          </div>
+          <button type="button" class="btn-primary costpick-btn" onclick="__keiri.doPick(${c.id})">引き継ぐ</button>
+        </div>
+        ${pk.openId === c.id ? pickDetailHtml(pk.kind, c) : ""}`;
+    }).join("");
+    const active = pk.q || pk.staffId || pk.from || pk.to;
+    return `
+      <div class="costpick-panel">
+        <div class="search-row">
+          <div style="flex:2;">
+            <label>${escapeHtml(cfg.label)}を探す キーワード(NO・顧客・案件・商品・担当者。空白で区切ると、すべてを含むものに絞れます)</label>
+            <input type="text" id="docpick-q" placeholder="例: 山本 サイン" value="${escapeHtml(pk.q)}"
+              oninput="__keiri.setPick('q', this.value, event)" oncompositionend="__keiri.setPick('q', this.value)">
+          </div>
+          <div>
+            <label>担当者(記入・作業)</label>
+            <select onchange="__keiri.setPick('staffId', this.value)">${staffFilterOptionsHtml(pk.staffId)}</select>
+          </div>
+        </div>
+        <div class="search-row">
+          <div>
+            <label>発行日(期間)</label>
+            <div class="search-date-range">
+              <input type="date" value="${pk.from}" onchange="__keiri.setPick('from', this.value)">
+              <span>〜</span>
+              <input type="date" value="${pk.to}" onchange="__keiri.setPick('to', this.value)">
+            </div>
+          </div>
+        </div>
+        <div class="costpick-count">${results.length}件が該当${results.length > MAX ? `(新しい順に${MAX}件を表示しています。さらに絞り込んでください)` : ""}
+          ${active ? `<button type="button" class="btn-link" onclick="__keiri.resetPick()">条件をクリア</button>` : ""}</div>
+        <div class="costpick-list">${rows || `<div class="empty">該当する${escapeHtml(cfg.label)}がありません。</div>`}</div>
+      </div>`;
+  }
+  function emptyClientSearch() {
+    return { name: "", project: "", worker: "", product: "" };
+  }
+  function emptySearch() {
+    return { staffId: "", no: "", dateFrom: "", dateTo: "", issueFrom: "", issueTo: "", client: "", project: "", product: "" };
+  }
+  const SEARCH_STATE_KEY = { quote: "quoteSearch", invoice: "invoiceSearch", cost: "costSearch" };
+
+  // NOはnoField(quoteNo/invoiceNo/reportNo)、作成日時はcreatedAt(YYYY-MM-DD HH:MM:SS)の
+  // 日付部分で比較する。顧客・案件・商品は部分一致(大文字小文字を区別しない)。商品は品目名を対象にする。
+  // 担当者は、記入担当者・作業担当者1・作業担当者2のどれかが一致すればよい。発行日(書類に印字する日付)は期間で絞り込める。
+  function matchesSearch(doc, search, noField) {
+    if (search.staffId && ![doc.staffId, doc.worker1Id, doc.worker2Id].some(id => id && String(id) === String(search.staffId))) return false;
+    const issueDate = String(doc.issueDate || "").slice(0, 10);
+    if (search.issueFrom && (!issueDate || search.issueFrom > issueDate)) return false;
+    if (search.issueTo && (!issueDate || issueDate > search.issueTo)) return false;
+    if (search.no && !String(doc[noField] || "").toLowerCase().includes(search.no.toLowerCase())) return false;
+    const createdDate = String(doc.createdAt || "").slice(0, 10);
+    if (search.dateFrom && search.dateFrom > createdDate) return false;
+    if (search.dateTo && createdDate > search.dateTo) return false;
+    if (search.client && !String(doc.clientName || "").toLowerCase().includes(search.client.toLowerCase())) return false;
+    if (search.project && !String(doc.projectName || "").toLowerCase().includes(search.project.toLowerCase())) return false;
+    if (search.product && !(doc.items || []).some(it => String(it.name || "").toLowerCase().includes(search.product.toLowerCase()))) return false;
+    return true;
+  }
+  function hasActiveSearch(search) {
+    return !!(search.staffId || search.no || search.dateFrom || search.dateTo || search.issueFrom || search.issueTo || search.client || search.project || search.product);
+  }
+  // 検索欄の「顧客」「案件」をプルダウンにするための選択肢。
+  // 顧客は顧客マスタの名前、案件は顧客マスタの案件欄(改行区切り)と見積もり・請求書・
+  // 原価計算書に登録済みの案件名をまとめてユニーク化したもの。
+  function allClientNameOptions() {
+    return [...new Set(state.clients.map(c => c.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+  }
+  function allProjectNameOptions() {
+    const names = new Set();
+    state.clients.forEach(c => {
+      String(c.projects || "").split("\n").map(s => s.trim()).filter(Boolean).forEach(p => names.add(p));
+    });
+    [...state.quotes, ...state.invoices, ...state.costs].forEach(d => { if (d.projectName) names.add(d.projectName); });
+    return [...names].sort((a, b) => a.localeCompare(b, "ja"));
+  }
+  function clientNameOptionsHtml(selected) {
+    return `<option value="">すべての顧客</option>` +
+      allClientNameOptions().map(name => `<option value="${escapeHtml(name)}" ${selected===name?"selected":""}>${escapeHtml(name)}</option>`).join("");
+  }
+  function projectNameOptionsHtml(selected) {
+    return `<option value="">すべての案件</option>` +
+      allProjectNameOptions().map(name => `<option value="${escapeHtml(name)}" ${selected===name?"selected":""}>${escapeHtml(name)}</option>`).join("");
+  }
+  function allProductNameOptions() {
+    return [...new Set(state.products.map(p => p.name).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+  }
+  function productNameOptionsHtml(selected) {
+    return `<option value="">すべての商品</option>` +
+      allProductNameOptions().map(name => `<option value="${escapeHtml(name)}" ${selected===name?"selected":""}>${escapeHtml(name)}</option>`).join("");
+  }
+  function allMakerOptions() {
+    return [...new Set(state.products.map(p => p.maker).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ja"));
+  }
+  function makerOptionsHtml(selected) {
+    return `<option value="">すべてのメーカー</option>` +
+      allMakerOptions().map(name => `<option value="${escapeHtml(name)}" ${selected===name?"selected":""}>${escapeHtml(name)}</option>`).join("");
+  }
+  function renderSearchPanel(scope, search, noLabel) {
+    return `
+      <div class="search-panel">
+        <div class="search-title">検索</div>
+        <div class="search-row">
+          <div>
+            <label>担当者(記入・作業)</label>
+            <select onchange="__keiri.setSearchField('${scope}','staffId', this.value)">${staffFilterOptionsHtml(search.staffId)}</select>
+          </div>
+          <div>
+            <label>${escapeHtml(noLabel)}</label>
+            <input type="text" id="${scope}-search-no" placeholder="例: Q202609-001" value="${escapeHtml(search.no)}"
+              oninput="__keiri.setSearchField('${scope}','no', this.value, event)">
+          </div>
+        </div>
+        <div class="search-row">
+          <div>
+            <label>発行日(期間・1日だけ調べるときは同じ日を入れてください)</label>
+            <div class="search-date-range">
+              <input type="date" value="${search.issueFrom}" onchange="__keiri.setSearchField('${scope}','issueFrom', this.value)">
+              <span>〜</span>
+              <input type="date" value="${search.issueTo}" onchange="__keiri.setSearchField('${scope}','issueTo', this.value)">
+            </div>
+          </div>
+        </div>
+        <div class="search-row">
+          <div>
+            <label>作成日</label>
+            <div class="search-date-range">
+              <input type="date" value="${search.dateFrom}" onchange="__keiri.setSearchField('${scope}','dateFrom', this.value)">
+              <span>〜</span>
+              <input type="date" value="${search.dateTo}" onchange="__keiri.setSearchField('${scope}','dateTo', this.value)">
+            </div>
+          </div>
+        </div>
+        <div class="search-row">
+          <div>
+            <label>顧客</label>
+            <select onchange="__keiri.setSearchField('${scope}','client', this.value)">${clientNameOptionsHtml(search.client)}</select>
+          </div>
+          <div>
+            <label>案件</label>
+            <select onchange="__keiri.setSearchField('${scope}','project', this.value)">${projectNameOptionsHtml(search.project)}</select>
+          </div>
+        </div>
+        <div class="search-row">
+          <div>
+            <label>商品(品目名・一部でも可)</label>
+            <input type="text" id="${scope}-search-product" list="${scope}-search-product-list" placeholder="商品名を入力、または候補から選択" value="${escapeHtml(search.product)}"
+              oninput="__keiri.setSearchField('${scope}','product', this.value, event)" oncompositionend="__keiri.setSearchField('${scope}','product', this.value)">
+            <datalist id="${scope}-search-product-list">${allProductNameOptions().map(n => `<option value="${escapeHtml(n)}"></option>`).join("")}</datalist>
+          </div>
+        </div>
+        ${hasActiveSearch(search) ? `<button type="button" class="search-reset" onclick="__keiri.resetSearch('${scope}')">検索条件をクリア</button>` : ""}
+      </div>`;
+  }
+
+  function hasActiveClientSearch(s) {
+    return !!(s.name || s.project || s.worker || s.product);
+  }
+  // 案件名は顧客マスタの登録内容に加えて、作業者・商品名はその顧客に紐づく見積もり・請求書・
+  // 原価計算書の内容(案件名・作業担当者1/2・品目名)を検索対象にする。
+  function matchesClientSearch(c, s) {
+    const has = (arr, kw) => arr.some(v => String(v || "").toLowerCase().includes(kw.toLowerCase()));
+    if (s.name && !has([c.name], s.name)) return false;
+    if (!s.project && !s.worker && !s.product) return true;
+    const docs = [...state.quotes, ...state.invoices, ...state.costs].filter(d => String(d.clientId) === String(c.id));
+    if (s.project && !has([c.projects, ...docs.map(d => d.projectName)], s.project)) return false;
+    if (s.worker && !docs.some(d => String(d.worker1Id) === String(s.worker) || String(d.worker2Id) === String(s.worker))) return false;
+    if (s.product && !has(docs.flatMap(d => (d.items || []).map(it => it.name)), s.product)) return false;
+    return true;
+  }
+  function renderClientSearchPanel(s) {
+    return `
+      <div class="search-panel">
+        <div class="search-title">検索</div>
+        <div class="search-row">
+          <div>
+            <label>顧客名</label>
+            <select onchange="__keiri.setClientSearch('name', this.value)">${clientNameOptionsHtml(s.name)}</select>
+          </div>
+          <div>
+            <label>案件名</label>
+            <select onchange="__keiri.setClientSearch('project', this.value)">${projectNameOptionsHtml(s.project)}</select>
+          </div>
+        </div>
+        <div class="search-row">
+          <div>
+            <label>作業者</label>
+            <select onchange="__keiri.setClientSearch('worker', this.value)">
+              <option value="">すべての作業者</option>
+              ${state.staff.map(st => `<option value="${st.id}" ${String(st.id)===String(s.worker)?"selected":""}>${escapeHtml(st.name)}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label>商品名</label>
+            <select onchange="__keiri.setClientSearch('product', this.value)">${productNameOptionsHtml(s.product)}</select>
+          </div>
+        </div>
+        ${hasActiveClientSearch(s) ? `<button type="button" class="search-reset" onclick="__keiri.resetClientSearch()">検索条件をクリア</button>` : ""}
+      </div>`;
+  }
+
+  function hasActiveProductSearch(s) {
+    return !!(s.name || s.maker);
+  }
+  function matchesProductSearch(p, s) {
+    const has = (v, kw) => String(v || "").toLowerCase().includes(kw.toLowerCase());
+    if (s.name && !has(p.name, s.name)) return false;
+    if (s.maker && !has(p.maker, s.maker)) return false;
+    return true;
+  }
+  function renderProductSearchPanel(s) {
+    return `
+      <div class="search-panel">
+        <div class="search-title">検索</div>
+        <div class="search-row">
+          <div>
+            <label>商品名</label>
+            <select onchange="__keiri.setProductSearch('name', this.value)">${productNameOptionsHtml(s.name)}</select>
+          </div>
+          <div>
+            <label>メーカー</label>
+            <select onchange="__keiri.setProductSearch('maker', this.value)">${makerOptionsHtml(s.maker)}</select>
+          </div>
+        </div>
+        ${hasActiveProductSearch(s) ? `<button type="button" class="search-reset" onclick="__keiri.resetProductSearch()">検索条件をクリア</button>` : ""}
+      </div>`;
+  }
+
+  async function loadStaff() {
+    try {
+      const res = await fetch(`${API_BASE}/employees`);
+      const rows = res.ok ? await res.json() : [];
+      state.staff = rows.map(r => ({ id: String(r.id), name: r.name }));
+    } catch (e) { state.staff = []; }
+    render();
+  }
+  function staffOptionsHtml(selectedId) {
+    return `<option value="">-- 選択してください --</option>` +
+      state.staff.map(s => `<option value="${s.id}" ${String(s.id)===String(selectedId)?"selected":""}>${escapeHtml(s.name)}</option>`).join("");
+  }
+  function staffFilterOptionsHtml(selectedId) {
+    return `<option value="">すべての担当者</option>` +
+      state.staff.map(s => `<option value="${s.id}" ${String(s.id)===String(selectedId)?"selected":""}>${escapeHtml(s.name)}</option>`).join("");
+  }
+  function staffNameById(id) {
+    const s = state.staff.find(x => String(x.id) === String(id));
+    return s ? s.name : "";
+  }
+  function focusField(id) {
+    const el = document.getElementById(id);
+    if (el) { el.focus(); el.select && el.select(); }
+  }
+  function workersLabel(doc) {
+    const names = [doc.worker1Name, doc.worker2Name].filter(Boolean);
+    return names.length ? `作業: ${names.map(escapeHtml).join(" / ")}` : "";
+  }
+  // 印刷帳票のメタ情報テーブルに差し込む「記入担当者」「作業担当者」の行(未設定の欄は表示しない)。
+  function staffMetaRowsHtml(doc) {
+    let rows = "";
+    if (doc.staffName) rows += `<tr><td>担当者</td><td>${escapeHtml(doc.staffName)}</td></tr>`;
+    const workers = [doc.worker1Name, doc.worker2Name].filter(Boolean);
+    if (workers.length) rows += `<tr><td>作業担当者</td><td>${workers.map(escapeHtml).join(" / ")}</td></tr>`;
+    return rows;
+  }
+
+  async function loadCompanyInfo() {
+    try {
+      const res = await apiFetch(`${API_BASE}/company-info`);
+      state.companyInfo = res.ok ? await res.json() : state.companyInfo;
+    } catch (e) { /* 取得できなくても他の機能は使えるようにする */ }
+    render();
+  }
+
+  async function loadClients() {
+    state.clientsLoading = true; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/clients`);
+      state.clients = res.ok ? await res.json() : [];
+    } catch (e) { state.clients = []; }
+    state.clientsLoading = false; render();
+  }
+  async function loadProducts() {
+    state.productsLoading = true; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/products`);
+      state.products = res.ok ? await res.json() : [];
+    } catch (e) { state.products = []; }
+    state.productsLoading = false; render();
+  }
+  async function loadQuotes() {
+    state.quotesLoading = true; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/quotes`);
+      state.quotes = res.ok ? await res.json() : [];
+    } catch (e) { state.quotes = []; }
+    state.quotesLoading = false; render();
+  }
+  async function loadInvoices() {
+    state.invoicesLoading = true; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/invoices`);
+      state.invoices = res.ok ? await res.json() : [];
+    } catch (e) { state.invoices = []; }
+    state.invoicesLoading = false; render();
+  }
+  async function loadCosts() {
+    state.costsLoading = true; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/costs`);
+      state.costs = res.ok ? await res.json() : [];
+    } catch (e) { state.costs = []; }
+    state.costsLoading = false; render();
+  }
+
+  // ============================================================
+  // 顧客マスタ
+  // ============================================================
+  function newClientForm() { return { id: 0, name: "", rep1: "", rep2: "", postalCode: "", address: "", phone: "", projects: "", memo: "" }; }
+
+  async function saveClient() {
+    const f = state.clientForm;
+    if (!f.name.trim()) { state.error = "顧客名を入力してください。"; render(); return; }
+    state.error = "";
+    try {
+      const res = await apiFetch(`${API_BASE}/clients/upsert`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f),
+      });
+      if (!res.ok) throw new Error();
+      state.clientForm = null;
+      await loadClients();
+    } catch (e) { state.error = "保存に失敗しました。"; render(); }
+  }
+  async function deleteClientRow(id) {
+    if (!confirm("この顧客を削除しますか?")) return;
+    await apiFetch(`${API_BASE}/clients/${id}`, { method: "DELETE" });
+    loadClients();
+  }
+
+  // ============================================================
+  // 商品マスタ
+  // ============================================================
+  function newProductForm() { return { id: 0, name: "", cost: "", price: "", maker: "" }; }
+
+  async function saveProduct() {
+    const f = state.productForm;
+    if (!f.name.trim()) { state.error = "商品名を入力してください。"; render(); return; }
+    state.error = "";
+    try {
+      const res = await apiFetch(`${API_BASE}/products/upsert`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f),
+      });
+      if (!res.ok) throw new Error();
+      state.productForm = null;
+      await loadProducts();
+    } catch (e) { state.error = "保存に失敗しました。"; render(); }
+  }
+  async function deleteProductRow(id) {
+    if (!confirm("この商品を削除しますか?")) return;
+    await apiFetch(`${API_BASE}/products/${id}`, { method: "DELETE" });
+    loadProducts();
+  }
+
+  // ============================================================
+  // 見積もり
+  // ============================================================
+  function newQuoteForm() {
+    return { id: 0, costNo: "", clientId: "", clientName: "", projectName: "", staffId: "", staffName: "", worker1Id: "", worker1Name: "", worker2Id: "", worker2Name: "", issueDate: todayStr(), validMonths: 1, items: emptyItems(DEFAULT_ITEM_ROWS), memo: "" };
+  }
+  function emptyItem() { return { name: "", quantity: "", unitPrice: "" }; }
+  // 新規作成時は品目欄を20行分あらかじめ用意しておく(未入力の行は保存時に自動で除外される)。
+  const DEFAULT_ITEM_ROWS = 8;
+  function emptyItems(n) { return Array.from({ length: n }, () => emptyItem()); }
+  // 数量・単価などの数値欄はtype=textにしているため、IME入力で全角数字が
+  // 混ざることがある。計算に使う前に半角へ揃えておく。
+  function toHalfWidthDigits(s) {
+    return String(s == null ? "" : s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  }
+  // 郵便番号(ハイフン無し半角7桁)から住所を自動入力する。取得できなくても
+  // 入力自体は継続できるよう、失敗時は何もしない。
+  async function lookupAddressByZip(zip, applyAddress) {
+    const digits = toHalfWidthDigits(zip).replace(/[^0-9]/g, "");
+    if (digits.length !== 7) return;
+    try {
+      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
+      const data = await res.json();
+      const r = data && data.results && data.results[0];
+      if (r) applyAddress(`${r.address1 || ""}${r.address2 || ""}${r.address3 || ""}`);
+    } catch (e) { /* 通信エラー時は何もしない */ }
+  }
+  // 郵便番号を「123-4567」の表示形式にする。7桁でなければ空文字を返す。
+  function formatZip(pc) {
+    const digits = toHalfWidthDigits(pc || "").replace(/[^0-9]/g, "");
+    return digits.length === 7 ? `${digits.slice(0, 3)}-${digits.slice(3)}` : "";
+  }
+
+  function quoteTotal(f) {
+    return f.items.reduce((sum, it) => sum + lineAmount(it.quantity, it.unitPrice), 0);
+  }
+
+  async function saveQuote() {
+    const f = state.quoteForm;
+    const validItems = f.items.filter(it => it.name.trim());
+    if (validItems.length === 0) { state.error = "品目を1件以上入力してください。"; render(); return; }
+    state.error = "";
+    try {
+      const res = await apiFetch(`${API_BASE}/quotes/upsert`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...f, items: validItems }),
+      });
+      if (!res.ok) throw new Error();
+      state.quoteForm = null;
+      await loadQuotes();
+    } catch (e) { state.error = "保存に失敗しました。"; render(); }
+  }
+  async function deleteQuoteRow(id) {
+    if (!confirm("この見積もりを削除しますか?")) return;
+    await apiFetch(`${API_BASE}/quotes/${id}`, { method: "DELETE" });
+    loadQuotes();
+  }
+
+  // 印刷画面の宛先(顧客)ブロック。顧客名の下に住所・電話番号を表示する。
+  // 見積もり・請求書・原価計算書はclientIdで顧客マスタと紐づいているため、
+  // 保存済みのclientNameではなく最新の顧客マスタの住所・電話番号を参照する。
+  function renderClientContact(doc) {
+    const client = state.clients.find(x => String(x.id) === String(doc.clientId));
+    if (!client) return "";
+    const lines = [];
+    const zip = formatZip(client.postalCode);
+    if (client.address) lines.push(`<div>${zip ? `〒${zip} ` : ""}${escapeHtml(client.address)}</div>`);
+    if (client.phone) lines.push(`<div>TEL: ${escapeHtml(client.phone)}</div>`);
+    if (lines.length === 0) return "";
+    return `<div class="p-client-contact">${lines.join("")}</div>`;
+  }
+
+  // 見積書・請求書は同じ様式で印刷する(タイトルとNOのラベルだけ差し替える)
+  // 印刷画面の発行元(自社情報)ブロック。見積もり・請求書・原価計算書で共通。
+  function renderIssuerBlock(showSeal) {
+    const c = state.companyInfo;
+    if (!c.name && !c.repName && !c.address && !c.phone && !c.fax && !c.website) return "";
+    const rows = [];
+    const zip = formatZip(c.postalCode);
+    if (c.address) rows.push(["住所", zip ? `〒${zip} ${c.address}` : c.address]);
+    if (c.phone) rows.push(["TEL", c.phone]);
+    if (c.fax) rows.push(["FAX", c.fax]);
+    if (c.website) rows.push(["URL", c.website]);
+    return `
+      <div class="p-issuer">
+        ${c.name ? `
+          <div class="p-issuer-name-row">
+            <div class="p-issuer-name">${escapeHtml(c.name)}</div>
+            ${(showSeal && c.sealImageUrl) ? `<img class="p-issuer-seal" src="${c.sealImageUrl}" alt="印" style="width:${c.sealSize || 44}px;height:${c.sealSize || 44}px;">` : ""}
+          </div>` : ""}
+        ${c.repName ? `<div class="p-issuer-rep">${escapeHtml(c.repName)}</div>` : ""}
+        ${rows.map(([label, val]) => `<div><span class="p-issuer-label">${label}:</span>${escapeHtml(val)}</div>`).join("")}
+      </div>`;
+  }
+
+  // 振込先情報。請求書の印刷時のみ使う。accentは見積書/請求書で色分けした帯の色。
+  // 発行元情報などと見た目を揃えるため、ラベル部分を色付きセルにした表形式にする。
+  function renderBankBlock(accent) {
+    const c = state.companyInfo;
+    const accounts = [
+      { bankName: c.bankName, bankBranch: c.bankBranch, bankAccountType: c.bankAccountType, bankAccountNumber: c.bankAccountNumber, bankAccountHolder: c.bankAccountHolder },
+      { bankName: c.bankName2, bankBranch: c.bankBranch2, bankAccountType: c.bankAccountType2, bankAccountNumber: c.bankAccountNumber2, bankAccountHolder: c.bankAccountHolder2 },
+    ].filter(a => a.bankName || a.bankAccountNumber || a.bankAccountHolder);
+    if (accounts.length === 0) return "";
+    const rows = accounts.map((a, i) => {
+      const line = [a.bankName, a.bankBranch, a.bankAccountType, a.bankAccountNumber].filter(Boolean).join(" ");
+      const label = accounts.length > 1 ? `振込先${i + 1}` : "振込先";
+      return `
+        <tr>
+          <td class="p-bank-label" style="background:${accent};">${label}</td>
+          <td class="p-bank-value">
+            ${line ? `<div>${escapeHtml(line)}</div>` : ""}
+            ${a.bankAccountHolder ? `<div>${escapeHtml(a.bankAccountHolder)}</div>` : ""}
+          </td>
+        </tr>`;
+    }).join("");
+    return `<table class="p-bank">${rows}</table>`;
+  }
+
+  // 見積書は緑系、請求書は青系で色分けする。
+  // 印刷の帯・表見出しの色。入力フォームの見出し帯(.banner-quote / .banner-invoice / .banner-cost)と同じ色にそろえている。
+  function accentColorFor(title) {
+    return title === "請求書" ? "#2563eb" : (title === "原価計算書" ? "#c2410c" : "#0f766e");
+  }
+
+  // 品目数が1ページの行数を超える場合はページを分ける(1ページあたりの品目数)。
+  const ITEMS_PER_PAGE = 8;
+  function paginateItems(items) {
+    if (items.length === 0) return [[]];
+    const pages = [];
+    for (let i = 0; i < items.length; i += ITEMS_PER_PAGE) pages.push(items.slice(i, i + ITEMS_PER_PAGE));
+    return pages;
+  }
+
+  // 印刷時は品目が少なくても常に20行分の枠を表示する(未入力行は空欄のまま)。
+  const PRINT_MIN_ITEM_ROWS = 8;
+  function padItemsForPrint(items) {
+    const padded = items.slice();
+    while (PRINT_MIN_ITEM_ROWS > padded.length) padded.push({ name: "", quantity: "", unitPrice: "", amount: "" });
+    return padded;
+  }
+  // 原価計算書の印刷用の品目行(原価品目・数量・単価・金額・参考売値)。
+  function printCostItemRow(it) {
+    const isBlank = !it.name && !it.quantity && !it.unitPrice;
+    const cell = (text) => `<div class="p-cell-clip">${text}</div>`;
+    const rp = isBlank ? null : itemRefPrice(it);
+    return `
+      <tr>
+        <td>${cell(escapeHtml(it.name))}</td>
+        <td class="p-num">${cell(isBlank ? "" : Number(it.quantity).toLocaleString("ja-JP"))}</td>
+        <td class="p-num">${cell(isBlank ? "" : yenUnit(it.unitPrice))}</td>
+        <td class="p-num">${cell(isBlank ? "" : yen(it.amount))}</td>
+        <td class="p-num">${cell(isBlank ? "" : (rp === null ? "-" : yenUnit(rp)))}</td>
+        <td class="p-num">${cell(isBlank ? "" : (rp === null ? "-" : yen(lineAmount(it.quantity, rp))))}</td>
+      </tr>`;
+  }
+  function printItemRow(it) {
+    const isBlank = !it.name && !it.quantity && !it.unitPrice;
+    // tdのheightは最小値としてしか働かず、長い文字列があると行の高さが揃わないため、
+    // 中身をp-cell-clipで包んで高さを固定し(はみ出しは...で省略)、全行の高さを統一する。
+    const cell = (text) => `<div class="p-cell-clip">${text}</div>`;
+    return `
+      <tr>
+        <td>${cell(escapeHtml(it.name))}</td>
+        <td class="p-num">${cell(isBlank ? "" : Number(it.quantity).toLocaleString("ja-JP"))}</td>
+        <td class="p-num">${cell(isBlank ? "" : yenUnit(it.unitPrice))}</td>
+        <td class="p-num">${cell(isBlank ? "" : yen(it.amount))}</td>
+      </tr>`;
+  }
+
+  function printDocument(title, noLabel, noValue, doc) {
+    const accent = accentColorFor(title);
+    const isInvoice = title === "請求書";
+    const c = state.companyInfo;
+    const pages = paginateItems(doc.items);
+    const totalPages = pages.length;
+
+    const pagesHtml = pages.map((pageItems, idx) => {
+      const isLastPage = idx === totalPages - 1;
+      // 左上の合計金額欄は、ページに関わらず常に正式な最終合計金額(税込)を表示する。
+      const boxTotal = Number(doc.totalAmount) || 0;
+      // 右下の小計欄は、そのページの品目だけの金額を表示する(消費税は最終ページでまとめて計算する)。
+      const pageSubtotal = pageItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+      // 最終ページでは、前ページまでの小計・全ページ合算した小計・消費税・合計金額をまとめて表示する。
+      const prevPagesSubtotal = pages.slice(0, idx).reduce((sum, pg) => sum + pg.reduce((s, it) => s + (Number(it.amount) || 0), 0), 0);
+      const combinedSubtotal = prevPagesSubtotal + pageSubtotal;
+      const combinedTax = calcTax(combinedSubtotal);
+      const rows = (isLastPage ? padItemsForPrint(pageItems) : pageItems).map(printItemRow).join("");
+      return `
+        <div class="p-page">
+          <div class="p-banner" style="background:${accent};">${escapeHtml(title)}</div>
+          ${totalPages > 1 ? `<div class="p-page-label">ページ ${idx + 1} / ${totalPages}</div>` : ""}
+          <div class="p-header-row">
+            <div class="p-client-block">
+              <div class="p-client">${escapeHtml(doc.clientName || "(顧客名未設定)")} 様</div>
+              ${renderClientContact(doc)}
+              <div class="p-lead">下記の通り、${isInvoice ? "ご請求" : "お見積り"}申し上げます。</div>
+              ${doc.projectName ? `<div class="p-project">件名: ${escapeHtml(doc.projectName)}</div>` : ""}
+            </div>
+            <table class="p-meta-table">
+              <tr><td>発行日</td><td>${escapeHtml(doc.issueDate)}</td></tr>
+              ${(!isInvoice && doc.validMonths) ? `<tr><td>有効期限</td><td>${escapeHtml(quoteValidUntil(doc.issueDate, doc.validMonths))}</td></tr>` : ""}
+              <tr><td>${escapeHtml(noLabel)}</td><td>${escapeHtml(noValue)}</td></tr>
+              ${(isInvoice && c.invoiceRegNumber) ? `<tr><td>登録番号</td><td>${escapeHtml(c.invoiceRegNumber)}</td></tr>` : ""}
+              ${isInvoice ? "" : staffMetaRowsHtml(doc)}
+            </table>
+          </div>
+
+          <div class="p-total-issuer-row">
+            <div class="p-total-box" style="border-color:${accent};">
+              <div class="p-total-label" style="background:${accent};">${isInvoice ? "ご請求金額(税込)" : "お見積金額(税込)"}</div>
+              <div class="p-total-value">${yen(boxTotal)}</div>
+            </div>
+            ${renderIssuerBlock(true)}
+          </div>
+
+          ${(isLastPage && isInvoice) ? renderBankBlock(accent) : ""}
+
+          <table class="p-items">
+            <thead><tr style="background:${accent};"><th>品目</th><th>数量</th><th>単価</th><th>金額</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+
+          <table class="p-summary">
+            <tr><td style="background:${accent};">小計</td><td>${yen(pageSubtotal)}</td></tr>
+            ${isLastPage ? `
+              ${totalPages > 1 ? `<tr><td style="background:${accent};">前ページの合計</td><td>${yen(prevPagesSubtotal)}</td></tr>
+              <tr><td style="background:${accent};">合算小計</td><td>${yen(combinedSubtotal)}</td></tr>` : ""}
+              <tr><td style="background:${accent};">消費税(10%)</td><td>${yen(combinedTax)}</td></tr>
+              <tr class="p-total-row"><td style="background:${accent};">合計金額</td><td>${yen(boxTotal)}</td></tr>` : ""}
+          </table>
+
+          ${(isLastPage && doc.memo) ? `
+            <div class="p-memo-box">
+              <div class="p-memo-title" style="background:${accent};">備考</div>
+              <div class="p-memo-body">${escapeHtml(doc.memo)}</div>
+            </div>` : ""}
+        </div>`;
+    }).join("");
+
+    document.getElementById("keiri-print-view").innerHTML = pagesHtml;
+    window.print();
+  }
+  // 印刷はブラウザの機能だけで完結しサーバーを経由しないため、操作ログには
+  // フロント側から明示的に記録する(失敗しても印刷自体は継続する)。
+  function logActivity(action, targetLabel, actorName) {
+    apiFetch(`${API_BASE}/activity-log`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, targetLabel: targetLabel || "", actorName: actorName || "" }),
+    }).catch(() => {});
+  }
+  // 印刷ログの担当者は、書類に設定された担当者(未設定のことが多い)ではなく、
+  // 実際に印刷ボタンを押した人(ログイン中の人)を記録する。
+  function printQuote(q) { logActivity("見積もり印刷", q.quoteNo, operatorName()); printDocument("見積書", "見積もりNO", q.quoteNo, q); }
+  function printInvoice(inv) { logActivity("請求書印刷", inv.invoiceNo, operatorName()); printDocument("請求書", "請求書NO", inv.invoiceNo, inv); }
+
+  // ============================================================
+  // 請求書(見積もりから内容を引き継いで作成できる)
+  // ============================================================
+  function newInvoiceForm() {
+    return { id: 0, quoteNo: "", clientId: "", clientName: "", projectName: "", staffId: "", staffName: "", worker1Id: "", worker1Name: "", worker2Id: "", worker2Name: "", issueDate: todayStr(), items: emptyItems(DEFAULT_ITEM_ROWS), memo: "" };
+  }
+  function invoiceTotal(f) {
+    return f.items.reduce((sum, it) => sum + lineAmount(it.quantity, it.unitPrice), 0);
+  }
+  async function saveInvoice() {
+    const f = state.invoiceForm;
+    const validItems = f.items.filter(it => it.name.trim());
+    if (validItems.length === 0) { state.error = "品目を1件以上入力してください。"; render(); return; }
+    state.error = "";
+    try {
+      const res = await apiFetch(`${API_BASE}/invoices/upsert`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...f, items: validItems }),
+      });
+      if (!res.ok) throw new Error();
+      state.invoiceForm = null;
+      await loadInvoices();
+    } catch (e) { state.error = "保存に失敗しました。"; render(); }
+  }
+  async function deleteInvoiceRow(id) {
+    if (!confirm("この請求書を削除しますか?")) return;
+    await apiFetch(`${API_BASE}/invoices/${id}`, { method: "DELETE" });
+    loadInvoices();
+  }
+
+  // ============================================================
+  // 原価計算書(見積もり・請求書と連携して粗利を自動計算する)
+  // ============================================================
+  function newCostForm() {
+    return { id: 0, quoteNo: "", invoiceNo: "", clientId: "", clientName: "", projectName: "", staffId: "", staffName: "", worker1Id: "", worker1Name: "", worker2Id: "", worker2Name: "", issueDate: todayStr(), revenueAmount: 0, items: emptyItems(DEFAULT_ITEM_ROWS), memo: "" };
+  }
+  function costTotal(f) {
+    return f.items.reduce((sum, it) => sum + lineAmount(it.quantity, it.unitPrice), 0);
+  }
+  function grossProfit(f) { return (Number(f.revenueAmount)||0) - costTotal(f); }
+  function grossProfitRate(f) {
+    const revenue = Number(f.revenueAmount)||0;
+    if (revenue === 0) return null;
+    return grossProfit(f) / revenue * 100;
+  }
+  async function saveCost() {
+    const f = state.costForm;
+    const validItems = f.items.filter(it => it.name.trim());
+    if (validItems.length === 0) { state.error = "原価品目を1件以上入力してください。"; render(); return; }
+    state.error = "";
+    try {
+      const res = await apiFetch(`${API_BASE}/costs/upsert`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...f, items: validItems }),
+      });
+      if (!res.ok) throw new Error();
+      state.costForm = null;
+      await loadCosts();
+    } catch (e) { state.error = "保存に失敗しました。"; render(); }
+  }
+  async function deleteCostRow(id) {
+    if (!confirm("この原価計算書を削除しますか?")) return;
+    await apiFetch(`${API_BASE}/costs/${id}`, { method: "DELETE" });
+    loadCosts();
+  }
+
+  function printCost(c) {
+    const accent = accentColorFor("原価計算書");
+    const profit = c.revenueAmount - c.costTotal;
+    const rateText = c.revenueAmount ? (profit / c.revenueAmount * 100).toFixed(1) + "%" : "-";
+    const pages = paginateItems(c.items);
+    const totalPages = pages.length;
+
+    const pagesHtml = pages.map((pageItems, idx) => {
+      const isLastPage = idx === totalPages - 1;
+      const rows = (isLastPage ? padItemsForPrint(pageItems) : pageItems).map(printCostItemRow).join("");
+      return `
+        <div class="p-page">
+          <div class="p-banner" style="background:${accent};">原価計算書</div>
+          ${totalPages > 1 ? `<div class="p-page-label">ページ ${idx + 1} / ${totalPages}</div>` : ""}
+          <div class="p-header-row">
+            <div class="p-client-block">
+              <div class="p-client">${escapeHtml(c.clientName || "(顧客名未設定)")} 様</div>
+              ${renderClientContact(c)}
+              ${c.projectName ? `<div class="p-project">件名: ${escapeHtml(c.projectName)}</div>` : ""}
+            </div>
+            <div>
+              <table class="p-meta-table">
+                <tr><td>発行日</td><td>${escapeHtml(c.issueDate)}</td></tr>
+                <tr><td>原価計算書NO</td><td>${escapeHtml(c.reportNo)}</td></tr>
+                ${staffMetaRowsHtml(c)}
+              </table>
+              ${renderIssuerBlock(true)}
+            </div>
+          </div>
+
+          <table class="p-items p-items-cost">
+            <thead><tr style="background:${accent};"><th>原価品目</th><th>数量</th><th>単価</th><th>金額</th><th>参考売値単価</th><th>参考売値金額</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+
+          ${isLastPage ? `
+            <table class="p-summary">
+              <tr><td style="background:${accent};">売上金額</td><td>${yen(c.revenueAmount)}</td></tr>
+              <tr><td style="background:${accent};">原価合計</td><td>${yen(c.costTotal)}</td></tr>
+              <tr class="p-total-row"><td style="background:${accent};">粗利(${rateText})</td><td>${yen(profit)}</td></tr>
+              ${refTotal(c.items).n > 0 ? `<tr><td style="background:${accent};">参考売値合計</td><td>${yen(refTotal(c.items).sum)}</td></tr>` : ""}
+            </table>` : ""}
+
+          ${(isLastPage && c.memo) ? `
+            <div class="p-memo-box">
+              <div class="p-memo-title" style="background:${accent};">備考</div>
+              <div class="p-memo-body">${escapeHtml(c.memo)}</div>
+            </div>` : ""}
+        </div>`;
+    }).join("");
+
+    document.getElementById("keiri-print-view").innerHTML = pagesHtml;
+    window.print();
+  }
+
+  window.__keiri = {
+    setTab(tab) { state.tab = tab; state.rowOpen = { tab: "", id: 0 }; render(); },
+    // 一覧の行をクリックすると、その行の下に詳細を開く(もう一度クリックすると閉じる)。
+    toggleRow(tab, id) {
+      const o = state.rowOpen;
+      state.rowOpen = (o.tab === tab && o.id === id) ? { tab: "", id: 0 } : { tab, id };
+      render();
+    },
+
+    openClientForm(id) {
+      state.clientForm = id ? { ...state.clients.find(c => c.id === id) } : newClientForm();
+      state.error = ""; render();
+    },
+    closeClientForm() { state.clientForm = null; render(); },
+    setClientField(key, val) {
+      state.clientForm[key] = key === "postalCode" ? toHalfWidthDigits(val).replace(/[^0-9]/g, "").slice(0, 7) : val;
+      if (key === "postalCode") {
+        lookupAddressByZip(val, (addr) => { state.clientForm.address = addr; render(); });
+      }
+    },
+    saveClient() { saveClient(); },
+    deleteClient(id) { deleteClientRow(id); },
+
+    openProductForm(id) {
+      state.productForm = id ? { ...state.products.find(p => p.id === id) } : newProductForm();
+      state.error = ""; render();
+    },
+    closeProductForm() { state.productForm = null; render(); },
+    setProductField(key, val) {
+      state.productForm[key] = (key === "cost" || key === "price") ? cleanUnitPrice(val) : val;
+    },
+    saveProduct() { saveProduct(); },
+    deleteProduct(id) { deleteProductRow(id); },
+
+    openQuoteForm(id) {
+      if (id) {
+        const q = state.quotes.find(x => x.id === id);
+        state.quoteForm = { id: q.id, costNo: q.costNo || "", clientId: q.clientId, clientName: q.clientName, projectName: q.projectName, staffId: q.staffId, staffName: q.staffName, worker1Id: q.worker1Id || "", worker1Name: q.worker1Name || "", worker2Id: q.worker2Id || "", worker2Name: q.worker2Name || "", issueDate: q.issueDate, validMonths: q.validMonths || 1, items: q.items.length ? q.items.map(it => ({...it})) : [emptyItem()], memo: q.memo };
+      } else {
+        state.quoteForm = newQuoteForm();
+      }
+      state.pick = emptyPick();
+      state.error = ""; render();
+    },
+    closeQuoteForm() { state.quoteForm = null; state.pick = emptyPick(); render(); },
+    // 引き継ぎ元を探す検索欄(見積もり・請求書・原価計算書の新規作成フォーム共通)。
+    togglePick(kind) { state.pick = state.pick.kind === kind ? emptyPick() : Object.assign(emptyPick(), { kind }); render(); },
+    setPick(key, val, evt) {
+      state.pick[key] = val;
+      if (evt && evt.isComposing) return; // IME変換中は再描画しない(compositionendで反映)
+      render();
+    },
+    resetPick() { state.pick = Object.assign(emptyPick(), { kind: state.pick.kind }); render(); },
+    togglePickDetail(id) { state.pick.openId = state.pick.openId === id ? 0 : id; render(); },
+    doPick(id) { const kind = state.pick.kind; state.pick = emptyPick(); PICK_KINDS[kind].apply(String(id)); },
+    setQuoteField(key, val) { state.quoteForm[key] = val; },
+    pickQuoteClient(clientId) {
+      const c = state.clients.find(x => String(x.id) === String(clientId));
+      state.quoteForm.clientId = clientId;
+      state.quoteForm.clientName = c ? c.name : "";
+      render();
+    },
+    pickQuoteStaff(staffId) {
+      state.quoteForm.staffId = staffId;
+      state.quoteForm.staffName = staffNameById(staffId);
+      render();
+    },
+    setSearchField(scope, key, val, evt) {
+      state[SEARCH_STATE_KEY[scope]][key] = val;
+      // 顧客・案件はIME変換中に再描画するとブラウザの変換状態が壊れてしまうため、
+      // 変換確定前(isComposing)は再描画しない。compositionendで改めて反映する。
+      if (evt && evt.isComposing) return;
+      render();
+    },
+    setClientSearch(key, val, evt) {
+      state.clientSearch[key] = val;
+      if (evt && evt.isComposing) return;
+      render();
+    },
+    setProductSearch(key, val, evt) {
+      state.productSearch[key] = val;
+      if (evt && evt.isComposing) return;
+      render();
+    },
+    resetProductSearch() { state.productSearch = { name: "", maker: "" }; render(); },
+    resetClientSearch() { state.clientSearch = emptyClientSearch(); render(); },
+    resetSearch(scope) { state[SEARCH_STATE_KEY[scope]] = emptySearch(); render(); },
+    addItem() { state.quoteForm.items.push(emptyItem()); render(); },
+    // 見積もりの品目欄でEnterキーを押した時、品目名→数量→単価→次の行の品目名、の順にカーソルを進める。
+    // IME変換確定のEnter(isComposing)では移動しない。
+    handleItemKeydown(evt, idx, field) {
+      if (evt.key !== "Enter" || evt.isComposing) return;
+      evt.preventDefault();
+      if (field === "name") {
+        focusField(`item-qty-${idx}`);
+      } else if (field === "quantity") {
+        focusField(`item-price-${idx}`);
+      } else if (field === "unitPrice") {
+        const nextIdx = idx + 1;
+        if (nextIdx >= state.quoteForm.items.length) this.addItem();
+        focusField(`item-name-${nextIdx}`);
+      }
+    },
+    removeItem(idx) {
+      state.quoteForm.items.splice(idx, 1);
+      if (state.quoteForm.items.length === 0) state.quoteForm.items.push(emptyItem());
+      render();
+    },
+    setItemField(idx, key, val) {
+      state.quoteForm.items[idx][key] = key === "unitPrice" ? cleanUnitPrice(val) : (key === "quantity" ? toHalfWidthDigits(val) : val);
+      // 品目名(全角文字を含む)はIME変換中に再描画するとフォーカスを
+      // 作り直してしまい、変換中の文字が入力できなくなる。金額の再計算に
+      // 関係ない項目名では再描画しないことで、変換を邪魔しないようにする。
+      if (key !== "name") render();
+    },
+    pickItemProduct(idx, productId) {
+      const p = state.products.find(x => String(x.id) === String(productId));
+      if (p) {
+        state.quoteForm.items[idx].name = p.name;
+        state.quoteForm.items[idx].unitPrice = unitInputValue(p.price);
+      }
+      render();
+    },
+    saveQuote() { saveQuote(); },
+    deleteQuote(id) { deleteQuoteRow(id); },
+    printQuote(id) { printQuote(state.quotes.find(x => x.id === id)); },
+
+    openInvoiceForm(id) {
+      if (id) {
+        const inv = state.invoices.find(x => x.id === id);
+        state.invoiceForm = { id: inv.id, quoteNo: inv.quoteNo, clientId: inv.clientId, clientName: inv.clientName, projectName: inv.projectName, staffId: inv.staffId, staffName: inv.staffName, worker1Id: inv.worker1Id || "", worker1Name: inv.worker1Name || "", worker2Id: inv.worker2Id || "", worker2Name: inv.worker2Name || "", issueDate: inv.issueDate, items: inv.items.length ? inv.items.map(it => ({...it})) : [emptyItem()], memo: inv.memo };
+      } else {
+        state.invoiceForm = newInvoiceForm();
+      }
+      state.pick = emptyPick();
+      state.error = ""; render();
+    },
+    closeInvoiceForm() { state.invoiceForm = null; state.pick = emptyPick(); render(); },
+    setInvoiceField(key, val) { state.invoiceForm[key] = val; },
+    // 原価計算書→見積もり→請求書の順に入力する運用のため、見積もりは原価計算書から内容を引き継げる。
+    // 顧客・案件名・担当者・品目(品名と数量)を引き継ぐ。品目の単価は原価なので引き継がず、商品マスタに同じ品名があれば
+    // その売値を入れ、無ければ空欄(見積もりの単価を入力する)。原価計算書の備考(社内メモ)は引き継がない。
+    pickQuoteFromCost(costId) {
+      if (!costId) { return; }
+      const c = state.costs.find(x => String(x.id) === String(costId));
+      if (!c) { return; }
+      const f = state.quoteForm;
+      f.costNo = c.reportNo;
+      f.clientId = c.clientId;
+      f.clientName = c.clientName;
+      f.projectName = c.projectName;
+      f.staffId = c.staffId;
+      f.staffName = c.staffName;
+      f.worker1Id = c.worker1Id || "";
+      f.worker1Name = c.worker1Name || "";
+      f.worker2Id = c.worker2Id || "";
+      f.worker2Name = c.worker2Name || "";
+      const items = (c.items || []).filter(it => it.name).map(it => {
+        const rp = itemRefPrice(it); // 手入力の参考売値を優先、無ければ商品マスタの売値
+        return { name: it.name, quantity: it.quantity, unitPrice: rp !== null ? unitInputValue(rp) : "" };
+      });
+      f.items = items.length ? items.concat([emptyItem(), emptyItem()]) : f.items;
+      render();
+    },
+    clearQuoteCost() { state.quoteForm.costNo = ""; render(); },
+    pickInvoiceFromQuote(quoteId) {
+      if (!quoteId) { return; }
+      const q = state.quotes.find(x => String(x.id) === String(quoteId));
+      if (!q) return;
+      state.invoiceForm.quoteNo = q.quoteNo;
+      state.invoiceForm.clientId = q.clientId;
+      state.invoiceForm.clientName = q.clientName;
+      state.invoiceForm.projectName = q.projectName;
+      state.invoiceForm.staffId = q.staffId;
+      state.invoiceForm.staffName = q.staffName;
+      state.invoiceForm.worker1Id = q.worker1Id || "";
+      state.invoiceForm.worker1Name = q.worker1Name || "";
+      state.invoiceForm.worker2Id = q.worker2Id || "";
+      state.invoiceForm.worker2Name = q.worker2Name || "";
+      state.invoiceForm.items = q.items.length ? q.items.map(it => ({...it})) : [emptyItem()];
+      render();
+    },
+    pickInvoiceClient(clientId) {
+      const c = state.clients.find(x => String(x.id) === String(clientId));
+      state.invoiceForm.clientId = clientId;
+      state.invoiceForm.clientName = c ? c.name : "";
+      render();
+    },
+    pickInvoiceStaff(staffId) {
+      state.invoiceForm.staffId = staffId;
+      state.invoiceForm.staffName = staffNameById(staffId);
+      render();
+    },
+    addInvoiceItem() { state.invoiceForm.items.push(emptyItem()); render(); },
+    removeInvoiceItem(idx) {
+      state.invoiceForm.items.splice(idx, 1);
+      if (state.invoiceForm.items.length === 0) state.invoiceForm.items.push(emptyItem());
+      render();
+    },
+    setInvoiceItemField(idx, key, val) {
+      state.invoiceForm.items[idx][key] = key === "unitPrice" ? cleanUnitPrice(val) : (key === "quantity" ? toHalfWidthDigits(val) : val);
+      if (key !== "name") render();
+    },
+    pickInvoiceItemProduct(idx, productId) {
+      const p = state.products.find(x => String(x.id) === String(productId));
+      if (p) {
+        state.invoiceForm.items[idx].name = p.name;
+        state.invoiceForm.items[idx].unitPrice = unitInputValue(p.price);
+      }
+      render();
+    },
+    saveInvoice() { saveInvoice(); },
+    deleteInvoice(id) { deleteInvoiceRow(id); },
+    printInvoice(id) { printInvoice(state.invoices.find(x => x.id === id)); },
+
+    openCostForm(id) {
+      if (id) {
+        const c = state.costs.find(x => x.id === id);
+        state.costForm = { id: c.id, quoteNo: c.quoteNo, invoiceNo: c.invoiceNo, clientId: c.clientId, clientName: c.clientName, projectName: c.projectName, staffId: c.staffId, staffName: c.staffName, worker1Id: c.worker1Id || "", worker1Name: c.worker1Name || "", worker2Id: c.worker2Id || "", worker2Name: c.worker2Name || "", issueDate: c.issueDate, revenueAmount: c.revenueAmount, items: c.items.length ? c.items.map(it => ({...it})) : [emptyItem()], memo: c.memo };
+      } else {
+        state.costForm = newCostForm();
+      }
+      state.pick = emptyPick();
+      state.error = ""; render();
+    },
+    closeCostForm() { state.costForm = null; state.pick = emptyPick(); render(); },
+    setCostField(key, val) {
+      state.costForm[key] = key === "revenueAmount" ? toHalfWidthDigits(val) : val;
+    },
+    pickCostFromQuote(quoteId) {
+      if (!quoteId) return;
+      const q = state.quotes.find(x => String(x.id) === String(quoteId));
+      if (!q) return;
+      state.costForm.quoteNo = q.quoteNo;
+      state.costForm.clientId = q.clientId;
+      state.costForm.clientName = q.clientName;
+      state.costForm.projectName = q.projectName;
+      state.costForm.staffId = q.staffId;
+      state.costForm.staffName = q.staffName;
+      state.costForm.worker1Id = q.worker1Id || "";
+      state.costForm.worker1Name = q.worker1Name || "";
+      state.costForm.worker2Id = q.worker2Id || "";
+      state.costForm.worker2Name = q.worker2Name || "";
+      state.costForm.revenueAmount = q.totalAmount;
+      render();
+    },
+    pickCostFromInvoice(invoiceId) {
+      if (!invoiceId) return;
+      const inv = state.invoices.find(x => String(x.id) === String(invoiceId));
+      if (!inv) return;
+      state.costForm.invoiceNo = inv.invoiceNo;
+      state.costForm.clientId = inv.clientId;
+      state.costForm.clientName = inv.clientName;
+      state.costForm.projectName = inv.projectName;
+      state.costForm.staffId = inv.staffId;
+      state.costForm.staffName = inv.staffName;
+      state.costForm.worker1Id = inv.worker1Id || "";
+      state.costForm.worker1Name = inv.worker1Name || "";
+      state.costForm.worker2Id = inv.worker2Id || "";
+      state.costForm.worker2Name = inv.worker2Name || "";
+      state.costForm.revenueAmount = inv.totalAmount;
+      render();
+    },
+    pickCostClient(clientId) {
+      const c = state.clients.find(x => String(x.id) === String(clientId));
+      state.costForm.clientId = clientId;
+      state.costForm.clientName = c ? c.name : "";
+      render();
+    },
+    pickCostStaff(staffId) {
+      state.costForm.staffId = staffId;
+      state.costForm.staffName = staffNameById(staffId);
+      render();
+    },
+    pickCostWorker1(staffId) {
+      state.costForm.worker1Id = staffId;
+      state.costForm.worker1Name = staffNameById(staffId);
+      render();
+    },
+    pickCostWorker2(staffId) {
+      state.costForm.worker2Id = staffId;
+      state.costForm.worker2Name = staffNameById(staffId);
+      render();
+    },
+    addCostItem() { state.costForm.items.push(emptyItem()); render(); },
+    removeCostItem(idx) {
+      state.costForm.items.splice(idx, 1);
+      if (state.costForm.items.length === 0) state.costForm.items.push(emptyItem());
+      render();
+    },
+    setCostItemField(idx, key, val) {
+      state.costForm.items[idx][key] = (key === "unitPrice" || key === "refPrice") ? cleanUnitPrice(val) : (key === "quantity" ? toHalfWidthDigits(val) : val);
+      if (key !== "name") render();
+    },
+    pickCostItemProduct(idx, productId) {
+      const p = state.products.find(x => String(x.id) === String(productId));
+      if (p) {
+        state.costForm.items[idx].name = p.name;
+        state.costForm.items[idx].unitPrice = unitInputValue(p.cost);
+        state.costForm.items[idx].refPrice = ""; // 商品マスタの売値を使う
+      }
+      render();
+    },
+    saveCost() { saveCost(); },
+    deleteCost(id) { deleteCostRow(id); },
+    printCost(id) { printCost(state.costs.find(x => x.id === id)); },
+  };
+
+  function renderClientsTab() {
+    if (state.clientForm) {
+      const f = state.clientForm;
+      return `
+        <div class="form-panel">
+          <h2 style="font-size:14px;margin:0 0 12px;">${f.id ? "顧客情報を編集" : "新規顧客登録"}</h2>
+          ${state.error ? `<p class="msg-error">${escapeHtml(state.error)}</p>` : ""}
+          <label>顧客名 <span style="color:#ea580c;">必須</span></label>
+          <input type="text" value="${escapeHtml(f.name)}" oninput="__keiri.setClientField('name', this.value)">
+          <label>〒(ハイフン無し半角7桁で住所を自動入力)</label>
+          <input type="text" inputmode="numeric" maxlength="7" style="max-width:140px;" value="${escapeHtml(f.postalCode)}" oninput="__keiri.setClientField('postalCode', this.value)">
+          <label>住所</label>
+          <input type="text" value="${escapeHtml(f.address)}" oninput="__keiri.setClientField('address', this.value)">
+          <label>電話番号</label>
+          <input type="text" value="${escapeHtml(f.phone)}" oninput="__keiri.setClientField('phone', this.value)">
+          <div class="row2">
+            <div><label>当社担当者1</label><input type="text" value="${escapeHtml(f.rep1)}" oninput="__keiri.setClientField('rep1', this.value)"></div>
+            <div><label>当社担当者2</label><input type="text" value="${escapeHtml(f.rep2)}" oninput="__keiri.setClientField('rep2', this.value)"></div>
+          </div>
+          <label>案件名(1行に1件)</label>
+          <textarea rows="3" oninput="__keiri.setClientField('projects', this.value)">${escapeHtml(f.projects)}</textarea>
+          <label>メモ</label>
+          <textarea rows="2" oninput="__keiri.setClientField('memo', this.value)">${escapeHtml(f.memo)}</textarea>
+          <div class="form-actions">
+            <button class="btn-secondary" onclick="__keiri.closeClientForm()">キャンセル</button>
+            <button class="btn-primary" onclick="__keiri.saveClient()">保存する</button>
+          </div>
+        </div>
+      `;
+    }
+    const filteredClients = state.clients.filter(c => matchesClientSearch(c, state.clientSearch));
+    const list = state.clientsLoading ? `<p style="font-size:13px;color:var(--muted);">読み込み中…</p>`
+      : state.clients.length === 0 ? `<div class="empty">まだ顧客が登録されていません。</div>`
+      : filteredClients.length === 0 ? `<div class="empty">該当する顧客がありません。</div>`
+      : filteredClients.map(c => `
+        <div class="card row-card client-card ${isRowOpen("clients", c.id) ? "open" : ""}" onclick="__keiri.toggleRow('clients', ${c.id})" title="クリックすると詳細を見られます">
+          <div class="row-name">${escapeHtml(c.name)}</div>
+          <div class="row-info">
+            ${c.address ? `<span>${escapeHtml(c.address)}</span>` : ""}
+            ${c.phone ? `<span>TEL: ${escapeHtml(c.phone)}</span>` : ""}
+            ${(c.rep1 || c.rep2) ? `<span>担当: ${[c.rep1, c.rep2].filter(Boolean).map(escapeHtml).join(" / ")}</span>` : ""}
+            ${c.projects ? `<span>案件: ${escapeHtml(c.projects).replace(/\n/g,"、")}</span>` : ""}
+            ${c.memo ? `<span>${escapeHtml(c.memo)}</span>` : ""}
+          </div>
+          <div class="card-actions row-actions" onclick="event.stopPropagation()">
+            <button class="btn-link" onclick="__keiri.openClientForm(${c.id})">編集</button>
+            <button class="btn-danger" onclick="__keiri.deleteClient(${c.id})">削除</button>
+          </div>
+          ${isRowOpen("clients", c.id) ? clientDetailHtml(c) : ""}
+        </div>
+      `).join("");
+    return `
+      ${renderClientSearchPanel(state.clientSearch)}
+      <div class="toolbar"><h2>顧客一覧(${hasActiveClientSearch(state.clientSearch) ? `${filteredClients.length}/` : ""}${state.clients.length}件)</h2><button class="btn-primary" onclick="__keiri.openClientForm(0)">+ 新規顧客登録</button></div>
+      <div class="list-scroll">${list}</div>
+    `;
+  }
+
+  function renderProductsTab() {
+    if (state.productForm) {
+      const f = state.productForm;
+      return `
+        <div class="form-panel">
+          <h2 style="font-size:14px;margin:0 0 12px;">${f.id ? "商品情報を編集" : "新規商品登録"}</h2>
+          ${state.error ? `<p class="msg-error">${escapeHtml(state.error)}</p>` : ""}
+          <label>商品名 <span style="color:#ea580c;">必須</span></label>
+          <input type="text" value="${escapeHtml(f.name)}" oninput="__keiri.setProductField('name', this.value)">
+          <div class="row2">
+            <div><label>原価(円・小数第2位まで)</label><input type="text" inputmode="decimal" placeholder="例: 1500 または 12.50" value="${f.cost}" oninput="__keiri.setProductField('cost', this.value)"></div>
+            <div><label>売値(円・小数第2位まで)</label><input type="text" inputmode="decimal" placeholder="例: 1500 または 12.50" value="${f.price}" oninput="__keiri.setProductField('price', this.value)"></div>
+          </div>
+          <label>メーカー</label>
+          <input type="text" value="${escapeHtml(f.maker)}" oninput="__keiri.setProductField('maker', this.value)">
+          <div class="form-actions">
+            <button class="btn-secondary" onclick="__keiri.closeProductForm()">キャンセル</button>
+            <button class="btn-primary" onclick="__keiri.saveProduct()">保存する</button>
+          </div>
+        </div>
+      `;
+    }
+    const filteredProducts = state.products.filter(p => matchesProductSearch(p, state.productSearch));
+    const list = state.productsLoading ? `<p style="font-size:13px;color:var(--muted);">読み込み中…</p>`
+      : state.products.length === 0 ? `<div class="empty">まだ商品が登録されていません。</div>`
+      : filteredProducts.length === 0 ? `<div class="empty">該当する商品がありません。</div>`
+      : filteredProducts.map(p => `
+        <div class="card row-card ${isRowOpen("products", p.id) ? "open" : ""}" onclick="__keiri.toggleRow('products', ${p.id})" title="クリックすると詳細を見られます">
+          <div class="row-name">${escapeHtml(p.name)}</div>
+          <div class="row-info">
+            <span>原価 <span class="amount">${yenUnit(p.cost)}</span></span>
+            <span>売値 <span class="amount">${yenUnit(p.price)}</span></span>
+            ${p.maker ? `<span>${escapeHtml(p.maker)}</span>` : ""}
+          </div>
+          <div class="card-actions row-actions" onclick="event.stopPropagation()">
+            <button class="btn-link" onclick="__keiri.openProductForm(${p.id})">編集</button>
+            <button class="btn-danger" onclick="__keiri.deleteProduct(${p.id})">削除</button>
+          </div>
+          ${isRowOpen("products", p.id) ? productDetailHtml(p) : ""}
+        </div>
+      `).join("");
+    return `
+      ${renderProductSearchPanel(state.productSearch)}
+      <div class="toolbar"><h2>商品一覧(${hasActiveProductSearch(state.productSearch) ? `${filteredProducts.length}/` : ""}${state.products.length}件)</h2><button class="btn-primary" onclick="__keiri.openProductForm(0)">+ 新規商品登録</button></div>
+      <div class="list-scroll">${list}</div>
+    `;
+  }
+
+  function renderQuotesTab() {
+    if (state.quoteForm) {
+      const f = state.quoteForm;
+      const clientOptions = state.clients.map(c => `<option value="${c.id}" ${String(c.id)===String(f.clientId)?"selected":""}>${escapeHtml(c.name)}</option>`).join("");
+      const productOptions = `<option value="">-- 商品マスタから選ぶ(任意) --</option>` +
+        state.products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}(${yenUnit(p.price)})</option>`).join("");
+      // 原価計算書から引き継ぐための選択肢(新しい順)。引き継ぎ済みの場合は、元の原価計算書NOと売上金額の目安を出す。
+      const linkedCost = f.costNo ? state.costs.find(cst => cst.reportNo === f.costNo) : null;
+      const costLinkHint = f.costNo
+        ? `<p class="hint-line">引き継ぎ元: 原価計算書 ${escapeHtml(f.costNo)}${linkedCost ? `(原価合計 ${yen(linkedCost.costTotal)}${linkedCost.revenueAmount ? ` ／ 売上金額の目安 ${yen(linkedCost.revenueAmount)}` : ""})` : ""} <button type="button" class="btn-link" onclick="__keiri.clearQuoteCost()">引き継ぎを解除</button></p>`
+        : `<p class="hint-line">品目の品名・数量と、顧客・案件名・担当者を引き継ぎます。単価には、原価計算書に入力した参考売値(無ければ商品マスタの売値)を入れます。</p>`;
+      const itemRows = f.items.map((it, idx) => `
+        <tr>
+          <td style="min-width:140px;">
+            <select onchange="__keiri.pickItemProduct(${idx}, this.value)">${productOptions}</select>
+            <input type="text" id="item-name-${idx}" placeholder="品目名" value="${escapeHtml(it.name)}" oninput="__keiri.setItemField(${idx}, 'name', this.value)" onkeydown="__keiri.handleItemKeydown(event, ${idx}, 'name')">
+          </td>
+          <td style="width:70px;"><input type="text" inputmode="decimal" id="item-qty-${idx}" value="${it.quantity}" oninput="__keiri.setItemField(${idx}, 'quantity', this.value)" onkeydown="__keiri.handleItemKeydown(event, ${idx}, 'quantity')"></td>
+          <td style="width:100px;"><input type="text" inputmode="decimal" id="item-price-${idx}" value="${it.unitPrice}" oninput="__keiri.setItemField(${idx}, 'unitPrice', this.value)" onkeydown="__keiri.handleItemKeydown(event, ${idx}, 'unitPrice')"></td>
+          <td class="item-amount">${yen(lineAmount(it.quantity, it.unitPrice))}</td>
+          <td><button class="item-remove" onclick="__keiri.removeItem(${idx})" title="削除">×</button></td>
+        </tr>
+      `).join("");
+
+      return `
+        <div class="form-panel">
+          <h2 class="form-banner banner-quote">${f.id ? "見積もりを編集" : "新規見積もり"}</h2>
+          ${state.error ? `<p class="msg-error">${escapeHtml(state.error)}</p>` : ""}
+          <div class="row2">
+            <div>
+              <label>原価計算書から内容を引き継ぐ(任意)</label>
+              ${pickButtonHtml("quoteCost")}
+              ${costLinkHint}
+            </div>
+            <div></div>
+          </div>
+          ${pickPanelHtml(["quoteCost"])}
+          <div class="row2">
+            <div>
+              <label>顧客</label>
+              <select onchange="__keiri.pickQuoteClient(this.value)">
+                <option value="">-- 選択してください --</option>
+                ${clientOptions}
+              </select>
+            </div>
+            <div><label>発行日</label><input type="date" value="${f.issueDate}" oninput="__keiri.setQuoteField('issueDate', this.value)"></div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>有効期限</label>
+              <select onchange="__keiri.setQuoteField('validMonths', this.value)">
+                <option value="1" ${Number(f.validMonths)===1?"selected":""}>1ヶ月</option>
+                <option value="3" ${Number(f.validMonths)===3?"selected":""}>3ヶ月</option>
+                <option value="6" ${Number(f.validMonths)===6?"selected":""}>6ヶ月</option>
+              </select>
+            </div>
+            <div></div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>案件名(任意)</label>
+              <input type="text" value="${escapeHtml(f.projectName)}" oninput="__keiri.setQuoteField('projectName', this.value)">
+            </div>
+            <div>
+              <label>担当者</label>
+              <select onchange="__keiri.pickQuoteStaff(this.value)">${staffOptionsHtml(f.staffId)}</select>
+            </div>
+          </div>
+
+          <table class="items-table">
+            <thead><tr><th>品目</th><th>数量</th><th>単価</th><th>金額</th><th></th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          <button type="button" class="add-item-row" onclick="__keiri.addItem()">+ 品目を追加</button>
+          <div class="total-breakdown">
+            <div class="row"><span>小計</span><span>${yen(quoteTotal(f))}</span></div>
+            <div class="row"><span>消費税(10%)</span><span>${yen(calcTax(quoteTotal(f)))}</span></div>
+            <div class="row grand"><span>合計金額</span><span>${yen(calcGrandTotal(quoteTotal(f)))}</span></div>
+          </div>
+
+          <label>メモ</label>
+          <textarea rows="2" oninput="__keiri.setQuoteField('memo', this.value)">${escapeHtml(f.memo)}</textarea>
+          <div class="form-actions">
+            <button class="btn-secondary" onclick="__keiri.closeQuoteForm()">キャンセル</button>
+            <button class="btn-primary" onclick="__keiri.saveQuote()">保存する</button>
+          </div>
+        </div>
+      `;
+    }
+    const qSearch = state.quoteSearch;
+    const filtered = state.quotes.filter(q => matchesSearch(q, qSearch, "quoteNo"));
+    const list = state.quotesLoading ? `<p style="font-size:13px;color:var(--muted);">読み込み中…</p>`
+      : filtered.length === 0 ? `<div class="empty">${hasActiveSearch(qSearch) ? "該当する見積もりがありません。" : "まだ見積もりが作成されていません。"}</div>`
+      : filtered.map(q => `
+        <div class="card row-card ${isRowOpen("quotes", q.id) ? "open" : ""}" onclick="__keiri.toggleRow('quotes', ${q.id})" title="クリックすると詳細を見られます">
+          <div class="row-name">${escapeHtml(q.quoteNo)} - ${escapeHtml(q.clientName || "(顧客未設定)")}</div>
+          <div class="row-info">
+            ${q.projectName ? `<span>${escapeHtml(q.projectName)}</span>` : ""}
+            ${q.issueDate ? `<span>発行日: ${escapeHtml(q.issueDate)}</span>` : ""}
+            <span>合計(税込) <span class="amount">${yen(q.totalAmount)}</span>(${q.items.length}品目)</span>
+            ${q.costNo ? `<span>原価計算書: ${escapeHtml(q.costNo)}</span>` : ""}
+            ${q.staffName ? `<span>担当: ${escapeHtml(q.staffName)}</span>` : ""}
+          </div>
+          <div class="card-actions row-actions" onclick="event.stopPropagation()">
+            <button class="btn-link" onclick="__keiri.openQuoteForm(${q.id})">編集</button>
+            <button class="btn-link" onclick="__keiri.printQuote(${q.id})">印刷 / PDF保存</button>
+            <button class="btn-danger" onclick="__keiri.deleteQuote(${q.id})">削除</button>
+          </div>
+          ${isRowOpen("quotes", q.id) ? docRowDetailHtml("doc", q, "quoteNo") : ""}
+        </div>
+      `).join("");
+    return `
+      ${renderSearchPanel("quote", qSearch, "見積もりNO")}
+      <div class="toolbar">
+        <h2>見積もり一覧(${filtered.length}件)</h2>
+        <button class="btn-primary" onclick="__keiri.openQuoteForm(0)">+ 新規見積もり</button>
+      </div>
+      <div class="list-scroll">${list}</div>
+    `;
+  }
+
+  function renderInvoicesTab() {
+    if (state.invoiceForm) {
+      const f = state.invoiceForm;
+      const clientOptions = state.clients.map(c => `<option value="${c.id}" ${String(c.id)===String(f.clientId)?"selected":""}>${escapeHtml(c.name)}</option>`).join("");
+      const productOptions = `<option value="">-- 商品マスタから選ぶ(任意) --</option>` +
+        state.products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}(${yenUnit(p.price)})</option>`).join("");
+      const itemRows = f.items.map((it, idx) => `
+        <tr>
+          <td style="min-width:140px;">
+            <select onchange="__keiri.pickInvoiceItemProduct(${idx}, this.value)">${productOptions}</select>
+            <input type="text" id="inv-item-name-${idx}" placeholder="品目名" value="${escapeHtml(it.name)}" oninput="__keiri.setInvoiceItemField(${idx}, 'name', this.value)">
+          </td>
+          <td style="width:70px;"><input type="text" inputmode="decimal" id="inv-item-qty-${idx}" value="${it.quantity}" oninput="__keiri.setInvoiceItemField(${idx}, 'quantity', this.value)"></td>
+          <td style="width:100px;"><input type="text" inputmode="decimal" id="inv-item-price-${idx}" value="${it.unitPrice}" oninput="__keiri.setInvoiceItemField(${idx}, 'unitPrice', this.value)"></td>
+          <td class="item-amount">${yen(lineAmount(it.quantity, it.unitPrice))}</td>
+          <td><button class="item-remove" onclick="__keiri.removeInvoiceItem(${idx})" title="削除">×</button></td>
+        </tr>
+      `).join("");
+
+      return `
+        <div class="form-panel">
+          <h2 class="form-banner banner-invoice">${f.id ? "請求書を編集" : "新規請求書"}</h2>
+          ${state.error ? `<p class="msg-error">${escapeHtml(state.error)}</p>` : ""}
+          ${!f.id ? `
+            <label>元になる見積もり(任意)</label>
+            ${pickButtonHtml("invoiceQuote")}
+            ${pickPanelHtml(["invoiceQuote"])}
+          ` : `<p class="card-sub">元になった見積もりNO: ${escapeHtml(f.quoteNo || "(なし)")}</p>`}
+          <div class="row2">
+            <div>
+              <label>顧客</label>
+              <select onchange="__keiri.pickInvoiceClient(this.value)">
+                <option value="">-- 選択してください --</option>
+                ${clientOptions}
+              </select>
+            </div>
+            <div><label>発行日</label><input type="date" value="${f.issueDate}" oninput="__keiri.setInvoiceField('issueDate', this.value)"></div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>案件名(任意)</label>
+              <input type="text" value="${escapeHtml(f.projectName)}" oninput="__keiri.setInvoiceField('projectName', this.value)">
+            </div>
+            <div>
+              <label>担当者</label>
+              <select onchange="__keiri.pickInvoiceStaff(this.value)">${staffOptionsHtml(f.staffId)}</select>
+            </div>
+          </div>
+
+          <table class="items-table">
+            <thead><tr><th>品目</th><th>数量</th><th>単価</th><th>金額</th><th></th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          <button type="button" class="add-item-row" onclick="__keiri.addInvoiceItem()">+ 品目を追加</button>
+          <div class="total-breakdown">
+            <div class="row"><span>小計</span><span>${yen(invoiceTotal(f))}</span></div>
+            <div class="row"><span>消費税(10%)</span><span>${yen(calcTax(invoiceTotal(f)))}</span></div>
+            <div class="row grand"><span>合計金額</span><span>${yen(calcGrandTotal(invoiceTotal(f)))}</span></div>
+          </div>
+
+          <label>メモ</label>
+          <textarea rows="2" oninput="__keiri.setInvoiceField('memo', this.value)">${escapeHtml(f.memo)}</textarea>
+          <div class="form-actions">
+            <button class="btn-secondary" onclick="__keiri.closeInvoiceForm()">キャンセル</button>
+            <button class="btn-primary" onclick="__keiri.saveInvoice()">保存する</button>
+          </div>
+        </div>
+      `;
+    }
+    const invSearch = state.invoiceSearch;
+    const filteredInv = state.invoices.filter(inv => matchesSearch(inv, invSearch, "invoiceNo"));
+    const list = state.invoicesLoading ? `<p style="font-size:13px;color:var(--muted);">読み込み中…</p>`
+      : filteredInv.length === 0 ? `<div class="empty">${hasActiveSearch(invSearch) ? "該当する請求書がありません。" : "まだ請求書が作成されていません。"}</div>`
+      : filteredInv.map(inv => `
+        <div class="card row-card ${isRowOpen("invoices", inv.id) ? "open" : ""}" onclick="__keiri.toggleRow('invoices', ${inv.id})" title="クリックすると詳細を見られます">
+          <div class="row-name">${escapeHtml(inv.invoiceNo)} - ${escapeHtml(inv.clientName || "(顧客未設定)")}</div>
+          <div class="row-info">
+            ${inv.projectName ? `<span>${escapeHtml(inv.projectName)}</span>` : ""}
+            ${inv.issueDate ? `<span>発行日: ${escapeHtml(inv.issueDate)}</span>` : ""}
+            <span>合計(税込) <span class="amount">${yen(inv.totalAmount)}</span>(${inv.items.length}品目)</span>
+            ${inv.quoteNo ? `<span>元見積もり: ${escapeHtml(inv.quoteNo)}</span>` : ""}
+            ${inv.staffName ? `<span>担当: ${escapeHtml(inv.staffName)}</span>` : ""}
+          </div>
+          <div class="card-actions row-actions" onclick="event.stopPropagation()">
+            <button class="btn-link" onclick="__keiri.openInvoiceForm(${inv.id})">編集</button>
+            <button class="btn-link" onclick="__keiri.printInvoice(${inv.id})">印刷 / PDF保存</button>
+            <button class="btn-danger" onclick="__keiri.deleteInvoice(${inv.id})">削除</button>
+          </div>
+          ${isRowOpen("invoices", inv.id) ? docRowDetailHtml("doc", inv, "invoiceNo") : ""}
+        </div>
+      `).join("");
+    return `
+      ${renderSearchPanel("invoice", invSearch, "請求書NO")}
+      <div class="toolbar">
+        <h2>請求書一覧(${filteredInv.length}件)</h2>
+        <button class="btn-primary" onclick="__keiri.openInvoiceForm(0)">+ 新規請求書</button>
+      </div>
+      <div class="list-scroll">${list}</div>
+    `;
+  }
+
+  function renderCostsTab() {
+    if (state.costForm) {
+      const f = state.costForm;
+      const clientOptions = state.clients.map(c => `<option value="${c.id}" ${String(c.id)===String(f.clientId)?"selected":""}>${escapeHtml(c.name)}</option>`).join("");
+      const productOptions = `<option value="">-- 商品マスタの原価から選ぶ(任意) --</option>` +
+        state.products.map(p => `<option value="${p.id}">${escapeHtml(p.name)}(原価${yenUnit(p.cost)})</option>`).join("");
+      const itemRows = f.items.map((it, idx) => `
+        <tr>
+          <td style="min-width:140px;">
+            <select onchange="__keiri.pickCostItemProduct(${idx}, this.value)">${productOptions}</select>
+            <input type="text" id="cost-item-name-${idx}" placeholder="原価品目名(仕入・外注・人件費など)" value="${escapeHtml(it.name)}" oninput="__keiri.setCostItemField(${idx}, 'name', this.value)">
+          </td>
+          <td style="width:70px;"><input type="text" inputmode="decimal" id="cost-item-qty-${idx}" value="${it.quantity}" oninput="__keiri.setCostItemField(${idx}, 'quantity', this.value)"></td>
+          <td style="width:100px;"><input type="text" inputmode="decimal" id="cost-item-price-${idx}" value="${it.unitPrice}" oninput="__keiri.setCostItemField(${idx}, 'unitPrice', this.value)"></td>
+          <td class="item-amount">${yen(lineAmount(it.quantity, it.unitPrice))}</td>
+          <td style="width:100px;"><input type="text" inputmode="decimal" id="cost-item-ref-${idx}" value="${it.refPrice === undefined || it.refPrice === null ? "" : it.refPrice}" placeholder="${refPriceOf(it.name) === null ? "売値" : unitInputValue(refPriceOf(it.name))}" oninput="__keiri.setCostItemField(${idx}, 'refPrice', this.value)"></td>
+          <td class="item-amount ref-price">${itemRefPrice(it) === null ? "-" : yen(lineAmount(it.quantity, itemRefPrice(it)))}</td>
+          <td><button class="item-remove" onclick="__keiri.removeCostItem(${idx})" title="削除">×</button></td>
+        </tr>
+      `).join("");
+
+      const revenue = Number(f.revenueAmount) || 0;
+      const cost = costTotal(f);
+      const profit = revenue - cost;
+      const rate = grossProfitRate(f);
+      const profitColor = profit < 0 ? "#ea580c" : "#1e293b";
+      const ref = refTotal(f.items);
+
+      return `
+        <div class="form-panel">
+          <h2 class="form-banner banner-cost">${f.id ? "原価計算書を編集" : "新規原価計算書"}</h2>
+          ${state.error ? `<p class="msg-error">${escapeHtml(state.error)}</p>` : ""}
+          ${!f.id ? `
+            <div class="row2">
+              <div><label>元になる見積もり(任意)</label>${pickButtonHtml("costQuote")}</div>
+              <div><label>元になる請求書(任意)</label>${pickButtonHtml("costInvoice")}</div>
+            </div>
+            ${pickPanelHtml(["costQuote", "costInvoice"])}
+          ` : `<p class="card-sub">見積もりNO: ${escapeHtml(f.quoteNo || "(なし)")} ／ 請求書NO: ${escapeHtml(f.invoiceNo || "(なし)")}</p>`}
+          <div class="row2">
+            <div>
+              <label>顧客</label>
+              <select onchange="__keiri.pickCostClient(this.value)">
+                <option value="">-- 選択してください --</option>
+                ${clientOptions}
+              </select>
+            </div>
+            <div><label>発行日</label><input type="date" value="${f.issueDate}" oninput="__keiri.setCostField('issueDate', this.value)"></div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>案件名(任意)</label>
+              <input type="text" value="${escapeHtml(f.projectName)}" oninput="__keiri.setCostField('projectName', this.value)">
+            </div>
+            <div>
+              <label>記入担当者</label>
+              <select onchange="__keiri.pickCostStaff(this.value)">${staffOptionsHtml(f.staffId)}</select>
+            </div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>作業担当者1</label>
+              <select onchange="__keiri.pickCostWorker1(this.value)">${staffOptionsHtml(f.worker1Id)}</select>
+            </div>
+            <div>
+              <label>作業担当者2</label>
+              <select onchange="__keiri.pickCostWorker2(this.value)">${staffOptionsHtml(f.worker2Id)}</select>
+            </div>
+          </div>
+          <label>売上金額</label>
+          <input type="text" inputmode="numeric" value="${f.revenueAmount}" oninput="__keiri.setCostField('revenueAmount', this.value)">
+
+          <table class="items-table">
+            <thead><tr><th>原価品目</th><th>数量</th><th>単価</th><th>金額</th><th>参考売値単価</th><th>参考売値金額</th><th></th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          <button type="button" class="add-item-row" onclick="__keiri.addCostItem()">+ 原価品目を追加</button>
+          <p class="hint-line">参考売値単価は、商品マスタの商品を選ぶとその売値(1個あたり)が薄く表示されます。任意の品目は自分で入力でき、入力した値が優先されます。参考売値金額は「数量×参考売値単価」で自動計算し、下に売値合計を表示します(売値が無い品目は「-」)。</p>
+
+          <table class="items-table" style="margin-top:6px;">
+            <tbody>
+              <tr><td>売上金額</td><td class="item-amount">${yen(revenue)}</td></tr>
+              <tr><td>原価合計</td><td class="item-amount">${yen(cost)}</td></tr>
+              ${ref.n > 0 ? `<tr><td>売値合計(参考売値×数量・${ref.n}品目)</td><td class="item-amount">${yen(ref.sum)}</td></tr>` : ""}
+              <tr><td style="font-weight:700;">粗利</td><td class="item-amount" style="color:${profitColor};font-weight:700;">${yen(profit)}${rate !== null ? `(${rate.toFixed(1)}%)` : ""}</td></tr>
+            </tbody>
+          </table>
+
+          <label style="margin-top:10px;">メモ</label>
+          <textarea rows="2" oninput="__keiri.setCostField('memo', this.value)">${escapeHtml(f.memo)}</textarea>
+          <div class="form-actions">
+            <button class="btn-secondary" onclick="__keiri.closeCostForm()">キャンセル</button>
+            <button class="btn-primary" onclick="__keiri.saveCost()">保存する</button>
+          </div>
+        </div>
+      `;
+    }
+    const costSearch = state.costSearch;
+    const filteredCosts = state.costs.filter(c => matchesSearch(c, costSearch, "reportNo"));
+    const list = state.costsLoading ? `<p style="font-size:13px;color:var(--muted);">読み込み中…</p>`
+      : filteredCosts.length === 0 ? `<div class="empty">${hasActiveSearch(costSearch) ? "該当する原価計算書がありません。" : "まだ原価計算書が作成されていません。"}</div>`
+      : filteredCosts.map(c => {
+        const profit = (Number(c.revenueAmount)||0) - (Number(c.costTotal)||0);
+        return `
+        <div class="card row-card ${isRowOpen("costs", c.id) ? "open" : ""}" onclick="__keiri.toggleRow('costs', ${c.id})" title="クリックすると詳細を見られます">
+          <div class="row-name">${escapeHtml(c.reportNo)} - ${escapeHtml(c.clientName || "(顧客未設定)")}</div>
+          <div class="row-info">
+            ${c.projectName ? `<span>${escapeHtml(c.projectName)}</span>` : ""}
+            ${c.issueDate ? `<span>発行日: ${escapeHtml(c.issueDate)}</span>` : ""}
+            <span>売上 <span class="amount">${yen(c.revenueAmount)}</span></span>
+            <span>原価 <span class="amount">${yen(c.costTotal)}</span></span>
+            <span>粗利 <span class="amount" style="color:${profit<0?'#ea580c':'inherit'}">${yen(profit)}</span></span>
+            ${c.staffName ? `<span>記入: ${escapeHtml(c.staffName)}</span>` : ""}
+            ${workersLabel(c) ? `<span>${workersLabel(c)}</span>` : ""}
+          </div>
+          <div class="card-actions row-actions" onclick="event.stopPropagation()">
+            <button class="btn-link" onclick="__keiri.openCostForm(${c.id})">編集</button>
+            <button class="btn-link" onclick="__keiri.printCost(${c.id})">印刷 / PDF保存</button>
+            <button class="btn-danger" onclick="__keiri.deleteCost(${c.id})">削除</button>
+          </div>
+          ${isRowOpen("costs", c.id) ? docRowDetailHtml("quoteCost", c, "reportNo") : ""}
+        </div>
+      `;}).join("");
+    return `
+      ${renderSearchPanel("cost", costSearch, "原価計算書NO")}
+      <div class="toolbar">
+        <h2>原価計算書一覧(${filteredCosts.length}件)</h2>
+        <button class="btn-primary" onclick="__keiri.openCostForm(0)">+ 新規原価計算書</button>
+      </div>
+      <div class="list-scroll">${list}</div>
+    `;
+  }
+
+  const LIST_VISIBLE_COUNT = 10; // 各一覧で一度に見える件数(これを超えると一覧の中でスクロール)
+  let renderedTab = "";
+  function render() {
+    // 品目名・数量・単価などは1文字入力するたびに再描画が走るため、
+    // 何も対策しないと入力欄がDOMごと作り直されてフォーカスが外れ、
+    // 1文字打つたびにクリックし直さないと入力できなくなってしまう。
+    // フォーカス中の要素をidで覚えておき、再描画後に同じidの要素へ
+    // フォーカスとカーソル位置を戻すことでこれを防いでいる。
+    const activeEl = document.activeElement;
+    const activeId = (activeEl && activeEl.id && activeEl.closest("#keiri-app")) ? activeEl.id : null;
+    const selStart = activeEl ? activeEl.selectionStart : null;
+    const selEnd = activeEl ? activeEl.selectionEnd : null;
+    const prevList = document.querySelector("#keiri-app .list-scroll");
+    const prevListScroll = (prevList && renderedTab === state.tab) ? prevList.scrollTop : 0; // 同じタブの再表示のときだけ、スクロール位置を保つ
+
+    const tabHtml = state.tab === "quotes" ? renderQuotesTab()
+      : state.tab === "invoices" ? renderInvoicesTab()
+      : state.tab === "costs" ? renderCostsTab()
+      : state.tab === "clients" ? renderClientsTab()
+      : renderProductsTab();
+
+    document.getElementById("keiri-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a></div>
+      <div class="header">
+        <div class="app-title">経理</div>
+        <p>見積もり・請求書・原価計算書・顧客一覧・商品一覧をまとめて管理します</p>
+        <div class="operator-picker">
+          <label>ログイン中: ${escapeHtml(operatorName())}(印刷などの操作記録にこの名前を使用します)</label>
+        </div>
+      </div>
+      <div class="tabs">
+        <div class="tab-btn ${state.tab==="quotes"?"active":""}" onclick="__keiri.setTab('quotes')">見積もり</div>
+        <div class="tab-btn ${state.tab==="invoices"?"active":""}" onclick="__keiri.setTab('invoices')">請求書</div>
+        <div class="tab-btn ${state.tab==="costs"?"active":""}" onclick="__keiri.setTab('costs')">原価計算書</div>
+        <div class="tab-btn ${state.tab==="clients"?"active":""}" onclick="__keiri.setTab('clients')">顧客一覧</div>
+        <div class="tab-btn ${state.tab==="products"?"active":""}" onclick="__keiri.setTab('products')">商品一覧</div>
+      </div>
+      <div class="content">${tabHtml}</div>
+      <p style="text-align:center;font-size:11.5px;color:var(--muted);margin:10px 0 0;">自社情報(会社情報・振込先)は「自社情報」ページで編集できます。</p>
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/">← トップに戻る</a>
+      </div>
+    `;
+
+    // 一覧(見積もり・請求書・原価計算書・顧客・商品)は10件分の高さまでを表示し、それより多いときは一覧の中でスクロールできる
+    // ようにする(件数が増えてもページが長くならない)。
+    const listEl = document.querySelector("#keiri-app .list-scroll");
+    if (listEl) {
+      const cards = listEl.querySelectorAll(":scope > .card");
+      if (cards.length > LIST_VISIBLE_COUNT) {
+        const base = listEl.getBoundingClientRect().top;
+        const last = cards[LIST_VISIBLE_COUNT - 1].getBoundingClientRect();
+        listEl.style.maxHeight = Math.ceil(last.bottom - base + 8) + "px";
+      } else {
+        listEl.style.maxHeight = "none";
+      }
+      listEl.scrollTop = prevListScroll;
+    }
+    renderedTab = state.tab;
+
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el) {
+        el.focus();
+        if (typeof selStart === "number" && typeof el.setSelectionRange === "function") {
+          try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
+        }
+      }
+    }
+  }
+
+  window.addEventListener("mushKeiriAuthed", render);
+
+  async function init() {
+    await Promise.all([loadStaff(), loadCompanyInfo(), loadClients(), loadProducts(), loadQuotes(), loadInvoices(), loadCosts()]);
+  }
+  init();
+</script>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

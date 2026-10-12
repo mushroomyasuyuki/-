@@ -29,11 +29,15 @@ function api(method, p, body, res, json) {
   if (method === 'GET' && p === 'activity-log') return json([]);
   if (method === 'POST' && p === 'activity-log') return json({ logged: true });
   if (method === 'GET' && ['dm/threads', 'dm/messages', 'chat-messages/unread-staff-ids', 'time-cards'].includes(p)) return json([]);
+  if (method === 'GET' && ['clients', 'products', 'quotes', 'invoices', 'costs'].includes(p)) return json(p === 'clients' ? [{ id: 1, name: '顧客X', rep1: '', rep2: '', postalCode: '', address: '', phone: '', projects: '案件1', memo: '' }] : []);
+  if (method === 'GET' && p === 'company-documents') return json([{ id: 5, title: '契約書', fileName: '契約書.pdf', fileUrl: '/?ss_file=company_doc&id=5&exp=1&sig=x', uploadedBy: '山田', createdAt: '2026-10-01 10:00:00' }]);
+  if (method === 'POST' && p === 'company-info') return json(Object.assign({ name: 'テスト株式会社', weeklyHolidays: [0], holidayDates: [] }, body));
   if (method === 'GET' && p === 'backup/status') return json({ lastDownloadAt: '2026-10-12 09:00:00', managed: true });
   missing.push(method + ' ' + p);
   return json({ error: 'not found' }, 404);
 }
-const PAGES = { nippo: 'nippo1-fixed.html', yotei: 'yotei-jisseki-input.html', chorei: 'chorei-fixed.html', shukei: 'kanri-shukei.html' };
+const PAGES = { nippo: 'nippo1-fixed.html', yotei: 'yotei-jisseki-input.html', chorei: 'chorei-fixed.html', shukei: 'kanri-shukei.html', keiri: 'kanri-keiri.html', jisha: 'kanri-jisha.html' };
+const ADMIN_PAGES = ['shukei', 'jisha'];
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname.startsWith('/assets/')) {
@@ -56,7 +60,7 @@ const server = http.createServer((req, res) => {
   const m = url.pathname.match(/^\/s\/abcdefghjkmn\/(\w+)\/?$/);
   const key = m ? m[1] : '';
   if (PAGES[key]) {
-    const html = execFileSync('php', [path.join(__dirname, 'render-office.php'), PAGES[key], key === 'shukei' ? '1' : '', url.searchParams.get('ro') ? '1' : '']).toString();
+    const html = execFileSync('php', [path.join(__dirname, 'render-office.php'), PAGES[key], ADMIN_PAGES.includes(key) ? '1' : '', url.searchParams.get('ro') ? '1' : '']).toString();
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(html);
   }
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end('<!doctype html><title>dashboard</title><p>DASHBOARD ' + url.pathname + '</p>');
@@ -87,6 +91,14 @@ const server = http.createServer((req, res) => {
     const ls = await page.evaluate(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage[k]; } return o; });
     check(key + ': saved login info is kept per company; the old system\'s entry is left untouched', ls['mo:abcdefghjkmn:mush_nippo_auth'] && JSON.parse(ls['mo:abcdefghjkmn:mush_nippo_auth']).staffId === '2' && JSON.parse(ls['mush_nippo_auth']).token === 'OLD-SYSTEM');
     if (key === 'shukei') { check('shukei: admin login info is prepared for managers', !!ls['mo:abcdefghjkmn:mush_admin_auth']); }
+    if (key === 'jisha') {
+      const t = await page.innerText('body');
+      check('jisha: company info form and documents are shown; the shared admin password panel is not', t.includes('契約書') && !t.includes('管理者共通パスワード'));
+      check('jisha: no call for the shared admin password', !calls.some(c => c.p.startsWith('admin/password') || c.p.startsWith('admin/set-password')));
+    }
+    if (key === 'keiri') {
+      check('keiri: accounting data is loaded (clients, quotes, …)', ['clients', 'products', 'quotes', 'invoices', 'costs'].every(n => calls.some(c => c.p === n)), calls.map(c => c.p).join(','));
+    }
     check(key + ': top bar with the company name is shown', (await page.textContent('#mo-bar')).includes('テスト株式会社'));
     if (process.env.SS_SHOT_DIR) { await page.screenshot({ path: path.join(process.env.SS_SHOT_DIR, 'office-' + key + '.png'), fullPage: false }); }
     const visibleOld = await page.evaluate(() => {

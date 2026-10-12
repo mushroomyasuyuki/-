@@ -270,8 +270,9 @@ final class SS_Rest_Office {
         );
         $settings = $tenant ? SS_Tenants::settings($tenant) : array();
         $saved = isset($settings['company_info']) && is_array($settings['company_info']) ? $settings['company_info'] : array();
-        unset($saved['sealImageUrl']); // 印影は、経理の移植（P5）で、非公開ファイルとして扱う
-        return array_merge($defaults, $saved);
+        $info = array_merge($defaults, $saved);
+        $info['sealImageUrl'] = SS_Rest_Keiri::seal_url(); // 印影は非公開フォルダにあり、署名つきの、有効期限のあるURLで渡す
+        return $info;
     }
 
     public static function company_name(WP_REST_Request $req) {
