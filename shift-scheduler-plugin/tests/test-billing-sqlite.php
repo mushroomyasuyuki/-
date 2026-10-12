@@ -48,6 +48,7 @@ class FakeWpdb {
             'schedules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, status',
             'entries' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'request_submissions' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'requests' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id',
             'request_periods' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'rules' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'patterns' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'tokens' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id',
+            'task_records' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'task_images' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'schedule_tasks' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id', 'activity_log' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id',
         );
         foreach ($t as $n => $c) { $this->pdo->exec("CREATE TABLE wp_shift_{$n} ({$c})"); }
     }

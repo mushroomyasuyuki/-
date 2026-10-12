@@ -37,6 +37,13 @@ final class SS_System {
         return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE wp_user_id = %d", (int) $wp_user_id), ARRAY_A);
     }
 
+    /** 署名つきURLの確認用：画像の行を、お客様を問わずIDで探す（呼び出し側で、必ず署名を確かめること） */
+    public static function task_image_by_id($id) {
+        global $wpdb;
+        $t = self::table('task_images');
+        return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id = %d", (int) $id), ARRAY_A);
+    }
+
     public static function user_by_id($id) {
         global $wpdb;
         $t = self::table('users');
@@ -119,7 +126,7 @@ final class SS_System {
         }
         $users = self::table('users');
         $wp_ids = $wpdb->get_col($wpdb->prepare("SELECT wp_user_id FROM {$users} WHERE tenant_id = %d", $tenant_id));
-        foreach (array('entries', 'schedules', 'request_submissions', 'requests', 'request_periods', 'rules', 'patterns', 'staff', 'users', 'tokens') as $name) {
+        foreach (array('entries', 'schedules', 'request_submissions', 'requests', 'request_periods', 'rules', 'patterns', 'task_images', 'task_records', 'schedule_tasks', 'activity_log', 'staff', 'users', 'tokens') as $name) {
             $t = self::table($name);
             $wpdb->query($wpdb->prepare("DELETE FROM {$t} WHERE tenant_id = %d", $tenant_id));
         }
@@ -132,6 +139,9 @@ final class SS_System {
                     wp_delete_user($wp_id);
                 }
             }
+        }
+        if (class_exists('SS_Files')) {
+            SS_Files::delete_tenant_files($tenant_id); // 日報の写真など
         }
         $wpdb->update(self::table('tenants'), array(
             'name' => '（削除済み）', 'status' => 'suspended', 'settings' => '{}', 'payjp_subscription_id' => '', 'next_billing_at' => null, 'deleted_at' => self::now(),

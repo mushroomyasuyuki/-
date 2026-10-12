@@ -1,0 +1,1085 @@
+<!--
+  ============================================================
+  朝礼用「本日の全体予定」画面(WordPress DB版 / Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「マッシュオフィスシステム(WordPress DB版)」プラグインを有効化しておく必要があります。
+  ============================================================
+-->
+<!-- ============================================================
+     ログインゲート(管理者・従業員どちらでも入れる)
+     管理者(管理者パスワード)または従業員(日報と同じ個人パスワード)のどちらでも
+     ログインできる。管理者ログインはmush_admin_auth、従業員ログインは日報ページと
+     同じmush_nippo_authに保存するので、日報でログイン済みなら再入力は不要。
+     ============================================================ -->
+<div id="mushLoginGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">ログインする人を選び、パスワードを入力してください。</p>
+    <select id="mushLoginWho" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="admin">管理者</option>
+    </select>
+    <input type="password" id="mushLoginPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushLoginErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushLoginSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var ADMIN_KEY = 'mush_admin_auth';
+  var EMP_KEY = 'mush_nippo_auth';
+
+  function loadAuth(key){
+    try{
+      var raw = localStorage.getItem(key);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(key, auth){
+    try{ localStorage.setItem(key, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushLoginGate');
+  if(loadAuth(ADMIN_KEY) || loadAuth(EMP_KEY)){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var whoSel = document.getElementById('mushLoginWho');
+  var pwInput = document.getElementById('mushLoginPw');
+  var errEl = document.getElementById('mushLoginErr');
+  var btn = document.getElementById('mushLoginSubmit');
+
+  fetch(API_BASE + '/employees').then(function(res){ return res.json(); }).then(function(rows){
+    rows.forEach(function(r){
+      var o = document.createElement('option');
+      o.value = String(r.id);
+      o.textContent = r.name + (r.department ? '(' + r.department + ')' : '');
+      whoSel.appendChild(o);
+    });
+  }).catch(function(){});
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var who = whoSel.value;
+    var isAdmin = (who === 'admin');
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(API_BASE + (isAdmin ? '/admin/login' : '/auth/login'), {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(isAdmin ? { password: password } : { staffId: who, password: password }),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){ throw new Error(result.data && result.data.error ? result.data.error : 'ログインに失敗しました。'); }
+      var d = result.data;
+      var expiresAt = Date.now() + ((d.expiresIn || 43200) * 1000);
+      if(isAdmin){
+        saveAuth(ADMIN_KEY, { token: d.token, expiresAt: expiresAt });
+      }else{
+        saveAuth(EMP_KEY, { token: d.token, staffId: String(d.staffId), staffName: d.staffName, dept: d.dept, expiresAt: expiresAt });
+      }
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushLoginAuthed')); }catch(e){}
+    }).catch(function(e){
+      errEl.textContent = e.message || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+<div id="chorei-app">読み込み中…</div>
+
+<style>
+  #chorei-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    --plan: #38bdf8; --plan-bg: #f0f9ff;
+    --progress: #f59e0b; --progress-bg: #fffbeb;
+    --done: #10b981; --done-bg: #ecfdf5;
+    --carry: #f97316; --carry-bg: #fff7ed;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 1200px; margin: 0 auto;
+  }
+  #chorei-app * { box-sizing: border-box; }
+  #chorei-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+  }
+  #chorei-app .header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  #chorei-app .title-print { display: none; }
+  #chorei-app .header-date { font-size: 13px; font-weight: 500; color: #B7C0D8; margin-left: 6px; }
+  #chorei-app .header input[type=date] {
+    background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 3px; padding: 6px 8px; font-size: 13px;
+  }
+  /* 暗い帯の上でもカレンダーのマークが見えるように、白く反転して少し大きくする */
+  #chorei-app .header input[type=date]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(2); opacity: 1; cursor: pointer; width: 18px; height: 18px; padding: 2px; border-radius: 3px;
+  }
+  #chorei-app .header input[type=date]::-webkit-calendar-picker-indicator:hover { background: #475569; }
+  #chorei-app .header-actions { display: flex; align-items: center; gap: 8px; }
+  #chorei-app .print-btn {
+    background: #f8fafc; color: #1e293b; border: none; border-radius: 3px; padding: 6px 12px; font-size: 12.5px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  #chorei-app .print-btn:hover { background: #e2e8f0; }
+
+  #chorei-app .summary { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 14px 16px 0; }
+  @media (min-width: 700px) { #chorei-app .summary { grid-template-columns: 1fr; } }
+  #chorei-app .summary-card { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; }
+  #chorei-app .summary-card h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+  #chorei-app .summary-card .ok { color: var(--done); font-size: 13px; }
+  #chorei-app .summary-tag {
+    display: inline-block; font-size: 12px; padding: 2px 7px; border-radius: 3px; margin: 2px 3px 0 0; border: 1px solid;
+  }
+  #chorei-app .summary-case { font-size: 12px; color: #334155; padding: 4px 0 4px 7px; margin-bottom: 3px; border-left: 3px solid var(--carry); line-height: 1.45; }
+  #chorei-app .summary-case.out { border-left-color: #94a3b8; }
+  #chorei-app .summary-case .sc-sub { display: block; font-size: 11px; color: var(--muted); }
+  #chorei-app .summary-tag.miss { color: #ea580c; background: #fff7ed; border-color: #fed7aa; }
+  #chorei-app .summary-tag.carry { color: var(--carry); background: var(--carry-bg); border-color: #fed7aa; }
+  #chorei-app .summary-tag.out { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
+
+  #chorei-app .tabs { display: flex; gap: 6px; padding: 14px 16px 0; }
+  #chorei-app .tab-btn {
+    flex: 1; text-align: center; padding: 8px; font-size: 13px; border: 1px solid var(--border); border-radius: 3px;
+    background: #fff; color: #64748b; cursor: pointer;
+  }
+  #chorei-app .tab-btn.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+
+  #chorei-app .layout { padding: 14px 16px 20px; display: block; }
+  @media (min-width: 900px) {
+    /* 部署の列は、幅が足りなければ折り返して並べる(はみ出して横スクロールにならないようにする)。 */
+    #chorei-app .layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    #chorei-app .tabs { display: none; }
+  }
+  #chorei-app .dept-panel { display: none; min-width: 0; }
+  #chorei-app .dept-col { min-width: 0; }
+  #chorei-app .dept-panel.active { display: block; }
+  @media (min-width: 900px) { #chorei-app .dept-panel { display: block !important; } }
+
+  #chorei-app .dept-col { background: #fff; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  #chorei-app .dept-head {
+    padding: 10px 12px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #chorei-app .dept-head.営業 { background: #e0f2fe; color: #0369a1; }
+  #chorei-app .dept-head.デザイン { background: #ede9fe; color: #6d28d9; }
+  #chorei-app .dept-head.製作 { background: #d1fae5; color: #047857; }
+  #chorei-app .dept-head.事務 { background: #fef3c7; color: #b45309; }
+  #chorei-app .staff-block { border-bottom: 1px solid #f1f0eb; padding: 8px 12px; }
+  #chorei-app .staff-block:last-child { border-bottom: none; }
+  #chorei-app .staff-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  #chorei-app .staff-name.unregistered { color: #ea580c; }
+  #chorei-app .chat-mark { color: #f59e0b; }
+  #chorei-app .rec-row { font-size: 12.5px; color: #475569; padding: 3px 0; border-left: 3px solid var(--plan); padding-left: 8px; margin-bottom: 3px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+  #chorei-app .rec-row.status-進行中 { border-left-color: var(--progress); }
+  #chorei-app .rec-row.status-完了 { border-left-color: var(--done); }
+  #chorei-app .rec-row.status-繰越 { border-left-color: var(--carry); }
+  #chorei-app .rec-row.status-継続 { border-left-color: var(--progress); }
+  #chorei-app .rec-row.status-保留 { border-left-color: #94a3b8; }
+  #chorei-app .rec-row.status-キャンセル { border-left-color: #ef4444; }
+  #chorei-app .rec-row, #chorei-app .summary-case, #chorei-app .unfinished-item { cursor: pointer; }
+  #chorei-app .rec-row:hover, #chorei-app .summary-case:hover, #chorei-app .unfinished-item:hover { filter: brightness(0.97); box-shadow: 0 1px 3px rgba(15,23,42,.15); }
+  /* 案件の詳細ウィンドウ */
+  #chorei-app .detail-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  #chorei-app .detail-modal { background: #fff; border-radius: 10px; width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; padding: 16px 18px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+  #chorei-app .detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e7e4db; }
+  #chorei-app .detail-title { font-size: 17px; font-weight: 700; color: #1e293b; }
+  #chorei-app .detail-close-x { margin-left: auto; background: none; border: none; font-size: 20px; line-height: 1; color: #64748b; cursor: pointer; padding: 2px 6px; }
+  #chorei-app .detail-row { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px dashed #eee9dd; font-size: 13.5px; }
+  #chorei-app .detail-k { flex: 0 0 5.5em; color: #64748b; font-size: 12.5px; }
+  #chorei-app .detail-v { flex: 1; min-width: 0; color: #1e293b; word-break: break-word; }
+  #chorei-app .detail-note { white-space: pre-wrap; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; font-size: 13.5px; min-height: 2.5em; }
+  #chorei-app .detail-section { margin-top: 12px; }
+  #chorei-app .detail-section-title { font-size: 12.5px; color: #64748b; margin-bottom: 4px; font-weight: 600; }
+  #chorei-app .detail-imgs { display: flex; flex-wrap: wrap; gap: 8px; }
+  #chorei-app .detail-img { width: 110px; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); cursor: zoom-in; }
+  #chorei-app .detail-empty { font-size: 13px; color: #94a3b8; }
+  #chorei-app .detail-foot { margin-top: 14px; display: flex; justify-content: flex-end; }
+  #chorei-app .detail-foot button { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 6px; padding: 9px 18px; font-size: 14px; cursor: pointer; }
+  #chorei-app .detail-meta { margin-top: 10px; font-size: 11px; color: #94a3b8; }
+  #chorei-app .lightbox-overlay { position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,.8); display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
+  #chorei-app .lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 4px; }
+  #chorei-app .lightbox-close { position: fixed; top: 16px; right: 20px; width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.9); color: #1f2937; border: none; font-size: 18px; cursor: pointer; }
+  #chorei-app .rec-days { display: inline-block; margin: 0 4px 0 6px; padding: 0 5px; font-size: 11px; font-weight: 700; color: #334155; background: #eef2f7; border-radius: 3px; white-space: nowrap; }
+  #chorei-app .print-only { display: none; }
+  #chorei-app .print-more { font-size: 11px; color: var(--muted); padding: 1px 0 1px 8px; }
+  #chorei-app .rec-copy-head { font-size: 11px; color: var(--muted); font-weight: 600; margin: 6px 0 3px; border-top: 1px dashed var(--border); padding-top: 4px; }
+  #chorei-app .rec-row.rec-copy { background: #fafaf7; }
+  #chorei-app .rec-time { font-family: monospace; color: var(--muted); margin-right: 4px; }
+  #chorei-app .rec-tag {
+    font-size: 10.5px; padding: 1px 5px; border-radius: 3px; border: 1px solid; margin-left: 4px; white-space: nowrap;
+  }
+  #chorei-app .rec-tag.status-予定 { color: var(--plan); background: var(--plan-bg); border-color: #bae6fd; }
+  #chorei-app .rec-tag.status-進行中 { color: var(--progress); background: var(--progress-bg); border-color: #fde68a; }
+  #chorei-app .rec-tag.status-完了 { color: var(--done); background: var(--done-bg); border-color: #a7f3d0; }
+  #chorei-app .rec-tag.status-繰越 { color: var(--carry); background: var(--carry-bg); border-color: #fed7aa; }
+  #chorei-app .rec-tag.status-継続 { color: var(--progress); background: var(--progress-bg); border-color: #fde68a; }
+  #chorei-app .rec-tag.status-保留 { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
+  #chorei-app .rec-tag.status-キャンセル { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
+  #chorei-app .rec-tag.out { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
+  #chorei-app .rec-tag.flag-holidayWork { color: #dc2626; background: #fee2e2; border-color: #fecaca; }
+  #chorei-app .rec-tag.flag-earlyWork { color: #0891b2; background: #ecfeff; border-color: #a5f3fc; }
+  #chorei-app .rec-tag.flag-nightWork { color: #7c3aed; background: #f3e8ff; border-color: #e9d5ff; }
+  #chorei-app .no-entry { font-size: 12px; color: #b0aca0; padding: 2px 0; }
+  #chorei-app .empty-dept { padding: 16px 12px; font-size: 12px; color: #b0aca0; }
+  #chorei-app .back-link { text-align: center; padding: 4px 16px 20px; }
+  #chorei-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  #chorei-app .unfinished-section { padding: 0 16px 16px; }
+  #chorei-app .unfinished-panel { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; }
+  #chorei-app .unfinished-panel h3 { font-size: 13px; margin: 0 0 12px; color: var(--ink); font-weight: 600; }
+  /* 1件1行・部署ごとに左のバーと背景色で色分けする */
+  #chorei-app .unfinished-item {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    border-bottom: 1px solid #f1f0eb; border-left: 4px solid var(--border); font-size: 12px;
+  }
+  #chorei-app .unfinished-item:last-child { border-bottom: none; }
+  #chorei-app .unfinished-item.dept-営業 { border-left-color: #0369a1; background: #f0f9ff; }
+  #chorei-app .unfinished-item.dept-デザイン { border-left-color: #6d28d9; background: #f5f3ff; }
+  #chorei-app .unfinished-item.dept-製作 { border-left-color: #047857; background: #ecfdf5; }
+  #chorei-app .unfinished-item.dept-事務 { border-left-color: #b45309; background: #fffbeb; }
+  #chorei-app .unfinished-item .who { flex: none; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  #chorei-app .unfinished-item .unfinished-label {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #chorei-app .due-label { flex: none; color: var(--muted); font-size: 11px; white-space: nowrap; }
+  #chorei-app .no-unfinished { font-size: 12.5px; color: var(--muted); padding: 6px 0; }
+  /* 終了していない業務は5件分の高さまでを表示し、それより多いときは枠の中でスクロールする(画面のみ。印刷は別の規則) */
+  @media screen {
+    #chorei-app .unfinished-grid { max-height: 164px; overflow-y: auto; }
+  }
+  /* 月間カレンダー(ページの一番下)。従業員ごとの帯を部門の色でまとめて出す。日付や帯をクリックすると、その日の全体スケジュールを表示する */
+  #chorei-app .cal-section { padding: 14px 16px 0; }
+  #chorei-app .cal-panel { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; }
+  #chorei-app .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  #chorei-app .cal-head h3 { margin: 0; font-size: 14px; font-weight: 700; }
+  #chorei-app .cal-nav { background: #fff; border: 1px solid var(--border); border-radius: 3px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  #chorei-app .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+  #chorei-app .cal-dow { text-align: center; font-size: 12px; font-weight: 600; color: #fff; background: #475569; border-radius: 3px; padding: 4px 0; }
+  #chorei-app .cal-dow.sun { background: #dc2626; }
+  #chorei-app .cal-dow.sat { background: #2563eb; }
+  #chorei-app .cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+  #chorei-app .cal-day { border: 1px solid var(--border); border-radius: 4px; background: #fff; padding: 2px 4px; cursor: pointer; font-size: 11px; color: #475569; min-height: 20px; }
+  #chorei-app .cal-day:hover { background: #f0f9ff; }
+  #chorei-app .cal-day.blank { border: none; background: transparent; cursor: default; }
+  #chorei-app .cal-day.holiday { background: #fee2e2; border-color: #fecaca; color: #dc2626; font-weight: 600; }
+  #chorei-app .cal-hname { margin-left: 4px; font-size: 9.5px; font-weight: 400; }
+  #chorei-app .cal-bar.holiday-dim { opacity: .3 !important; }
+  #chorei-app .cal-day.sat { background: #dbeafe; border-color: #bfdbfe; color: #1d4ed8; font-weight: 600; }
+  #chorei-app .cal-day.today { border: 2px solid #1e293b; }
+  #chorei-app .cal-day.selected { background: #1e293b; color: #fff; }
+  #chorei-app .cal-bar { border-radius: 4px; padding: 2px 6px; margin-top: 1px; font-size: 10px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; line-height: 1.5; background: #64748b; }
+  #chorei-app .cal-bar.status-完了 { opacity: .55; }
+  #chorei-app .cal-bar.status-保留 { opacity: .75; outline: 1px dashed rgba(255,255,255,.9); outline-offset: -2px; }
+  #chorei-app .cal-bar.status-キャンセル { opacity: .4; text-decoration: line-through; }
+  #chorei-app .cal-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: #64748b; margin-top: 8px; }
+  #chorei-app .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+  /* A3一覧印刷用: 画面幅にかかわらず4部署を横並びにし、操作用UIは印刷対象から外す */
+  @media print {
+    @page { size: A3 landscape; margin: 8mm; }
+    /* 既定では印刷時に背景色が省略されてしまう(インク節約のためのブラウザ標準動作)ため、
+       カレンダーのバーや部署見出しなどの色付き要素を明示的に印刷対象にする */
+    #chorei-app, #chorei-app * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #chorei-app { max-width: none; background: #fff; font-size: 11px; }
+    #chorei-app .header input[type=date],
+    #chorei-app .print-btn,
+    #chorei-app .tabs,
+    #chorei-app .back-link,
+    #chorei-app .summary,
+    #chorei-app .unfinished-section,
+    #chorei-app .cal-section { display: none !important; } /* 印刷は各部門の枠だけにする(外出・終了していない業務・カレンダーは印刷しない) */
+    /* 印刷の見出しは、日付を大きく中央に出す(上の「トップに戻る」と、右側のボタン欄は出さない) */
+    #chorei-app .top-link, #chorei-app .header-actions { display: none !important; }
+    #chorei-app .header { padding: 8px 10px; justify-content: center; text-align: center; border-radius: 0; }
+    #chorei-app .header h1 { font-size: 20px; display: flex; align-items: baseline; justify-content: center; gap: 16px; }
+    #chorei-app .header-date { font-size: 34px; font-weight: 700; color: #fff; margin-left: 0; order: -1; }
+    #chorei-app .title-screen { display: none; }
+    #chorei-app .title-print { display: inline; font-size: 26px; font-weight: 700; color: #fff !important; }
+    #chorei-app .layout { display: grid !important; grid-template-columns: repeat(var(--dept-count, 4), minmax(0, 1fr)) !important; gap: 4px; padding: 4px 10px 6px; }
+    #chorei-app .dept-panel { display: block !important; }
+    #chorei-app .dept-col, #chorei-app .summary-card, #chorei-app .unfinished-panel { break-inside: avoid; }
+
+    /* お知らせバナーを追加した際に全体の高さがA3縦281mm分の予算を超えていたため、
+       ここから下のセクションを圧縮している */
+    #chorei-app .summary { padding: 4px 10px 0; gap: 4px; }
+    #chorei-app .summary-card { padding: 4px 6px; }
+    #chorei-app .summary-card h3 { font-size: 9px; margin-bottom: 2px; }
+    #chorei-app .unfinished-section { padding: 0 10px 4px; }
+    #chorei-app .unfinished-panel { padding: 4px 8px; }
+    #chorei-app .unfinished-panel h3 { font-size: 9px; margin: 0 0 2px; }
+    /* 印刷では最大18件(1列8行×最大3列)までにする。19件目以降は表示しない。 */
+    #chorei-app .unfinished-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(8, auto);
+      grid-auto-flow: column; column-gap: 10px;
+    }
+    #chorei-app .unfinished-item { padding: 1px 4px; font-size: 8.5px; }
+    #chorei-app .unfinished-item .who { font-size: 8px; }
+    #chorei-app .unfinished-item:nth-child(n+19) { display: none; }
+    #chorei-app .due-label { font-size: 8px; }
+    #chorei-app .dept-head { padding: 3px 6px; font-size: 10px; }
+    #chorei-app .staff-block { padding: 2px 6px; }
+    #chorei-app .rec-row { font-size: 9px; padding: 0.5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #chorei-app .detail-overlay, #chorei-app .lightbox-overlay { display: none !important; }
+    #chorei-app .rec-days { font-size: 8px; padding: 0 3px; margin: 0 3px; }
+    #chorei-app .print-hide { display: none !important; }
+    #chorei-app .print-only { display: block !important; }
+    #chorei-app .print-more { font-size: 8px; padding: 0 0 0 6px; }
+    #chorei-app .summary-case { font-size: 9px; padding: 1px 0 1px 5px; margin-bottom: 1px; line-height: 1.25; }
+    #chorei-app .summary-case .sc-sub { font-size: 8px; display: inline; margin-left: 4px; }
+    #chorei-app .rec-copy-head { font-size: 8.5px; margin: 2px 0 1px; padding-top: 1px; }
+  }
+</style>
+
+<script>
+  // ============================================================
+  // データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+  // 「マッシュオフィスシステム(WordPress DB版)」プラグインが提供するREST APIを呼び出します。
+  // ============================================================
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+  // 管理者または従業員のログイントークンを付けてAPIを呼ぶ。有効期限切れなどで401が返ったら、
+  // ログイン情報を消してページを読み込み直し、ログイン画面に戻す(表示しっぱなしの画面用)。
+  // 未ログインのときは何もしない(読み込み直しを繰り返さないため)。
+  async function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = JSON.parse(localStorage.getItem("mush_nippo_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    const res = await fetch(url, o);
+    if (res.status === 401 && a) {
+      try { localStorage.removeItem("mush_admin_auth"); localStorage.removeItem("mush_nippo_auth"); } catch (e) {}
+      location.reload();
+    }
+    return res;
+  }
+
+
+  const DEPTS = ["営業", "デザイン", "製作", "事務"];
+  let STAFF = [];
+  async function loadStaffList() {
+    try {
+      const res = await fetch(`${API_BASE}/employees`);
+      const rows = await res.json();
+      STAFF = rows.map(r => ({ id: String(r.id), name: r.name, dept: r.department }));
+    } catch (e) {
+      STAFF = [];
+    }
+  }
+
+  // 「従業員登録」で追加した新しい部署を、標準の4部署の後ろに加え、その色(CSS)も用意する。
+  async function loadDepartments() {
+    let list = [];
+    try {
+      const res = await fetch(`${API_BASE}/departments`);
+      const j = res.ok ? await res.json() : [];
+      if (Array.isArray(j)) { list = j; }
+    } catch (e) { list = []; }
+    list.forEach(d => { if (DEPTS.indexOf(d.name) === -1) { DEPTS.push(d.name); } });
+    list.forEach(d => { CAL_DEPT_COLOR[d.name] = d.fg; }); // 追加した部署(管理部門など)の色をカレンダーの帯にも使う
+    STAFF.forEach(s => { if (s.dept) { if (DEPTS.indexOf(s.dept) === -1) { DEPTS.push(s.dept); } } });
+    const css = list.filter(d => !d.builtin).map(d => {
+      const c = CSS.escape(d.name);
+      return `#chorei-app .dept-head.${c} { background: ${d.bg}; color: ${d.fg}; } #chorei-app .unfinished-item.dept-${c} { border-left-color: ${d.fg}; background: ${d.bg}; }`;
+    }).join("\n");
+    let st = document.getElementById("dept-extra-style");
+    if (!st) { st = document.createElement("style"); st.id = "dept-extra-style"; document.head.appendChild(st); }
+    st.textContent = css;
+  }
+
+  // 「終日」の予定は 00:00〜23:59 で保存されているので、時刻の代わりに「終日」と表示する。
+  function timeRangeText(start, end, sep) {
+    if (start === "00:00") { if (end === "23:59") { return "終日"; } }
+    return `${start || "--:--"}${sep}${end || "--:--"}`;
+  }
+
+  // 案件の「経過日数/予定日数」(例: 3/5日)。予定日数は開始日・終了予定日の両方を含む日数。
+  // 経過日数は、開始日を1日目として、画面の日付(通常は本日)までの日数(まだ開始日前なら0)。
+  // 終了予定日がなく日数も未設定のときは、何も出さない。
+  function dayDiff(a, b) {
+    return Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
+  }
+  function dayCountText(date, dueDate, totalDays, currentDay, asOfDate) {
+    const total = (dueDate && date) ? dayDiff(date, dueDate) + 1 : (totalDays > 0 ? totalDays : 0);
+    if (total <= 0) return "";
+    const cur = date ? Math.min(total, asOfDate >= date ? dayDiff(date, asOfDate) + 1 : 0) : (currentDay || 0);
+    return `${Math.max(0, cur)}/${total}日`;
+  }
+
+  function dateLabel(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    const w = ["日","月","火","水","木","金","土"][d.getDay()];
+    return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${w})`;
+  }
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  const state = {
+    date: todayStr(),
+    calMonth: "", // 月間カレンダーで表示している月(YYYY-MM)。空なら表示中の日付の月
+    records: [], scheduleRecords: [], loading: true, scheduleLoading: true, errorMsg: "" , activeTab: "営業", unreadStaffIds: [],
+    allRecords: [], allScheduleRecords: [], // 「終了していない業務」用: 日付を問わない全件
+    detailId: null, // 案件の詳細ウィンドウで開いている案件(日報の案件はid、進捗ページの案件は "s"+id)
+    lightboxUrl: null, // 詳細ウィンドウの画像を拡大表示するときの画像URL
+  };
+
+  // 管理者からの未読メッセージがある従業員IDを取得する(名前の頭に目印を出すため)
+  async function loadUnreadChat() {
+    try {
+      const res = await apiFetch(`${API_BASE}/chat-messages/unread-staff-ids`);
+      state.unreadStaffIds = res.ok ? await res.json() : [];
+    } catch (e) {
+      state.unreadStaffIds = [];
+    }
+    render();
+  }
+
+  // Firestoreのようなリアルタイム更新は無いため、取得のたびに最新化する方式にしている。
+  async function loadData() {
+    state.loading = true;
+    state.scheduleLoading = true;
+    render();
+    try {
+      const res = await apiFetch(`${API_BASE}/task-records?date=${encodeURIComponent(state.date)}`);
+      if (!res.ok) throw new Error("取得に失敗しました");
+      state.records = await res.json();
+      state.errorMsg = "";
+    } catch (e) {
+      state.errorMsg = "データの取得に失敗しました。通信環境をご確認ください。";
+      state.records = [];
+    }
+    state.loading = false;
+    render();
+
+    // 進捗ページ(schedule-tasks)で保存されている、その日付分のデータも合わせて表示する
+    try {
+      const res2 = await apiFetch(`${API_BASE}/schedule-tasks?date=${encodeURIComponent(state.date)}`);
+      state.scheduleRecords = res2.ok ? await res2.json() : [];
+    } catch (e) {
+      state.scheduleRecords = [];
+    }
+    state.scheduleLoading = false;
+    render();
+  }
+
+  // 「終了していない業務」は、選択中の日付だけでなく過去に入力された分も含めて
+  // 全日付から集める(日付を絞ると、別の日に入力された未完了の案件が出てこないため)。
+  async function loadUnfinishedSource() {
+    try {
+      const res = await apiFetch(`${API_BASE}/task-records`);
+      state.allRecords = res.ok ? await res.json() : [];
+    } catch (e) { state.allRecords = []; }
+    try {
+      const res2 = await apiFetch(`${API_BASE}/schedule-tasks`);
+      state.allScheduleRecords = res2.ok ? await res2.json() : [];
+    } catch (e) { state.allScheduleRecords = []; }
+    render();
+  }
+
+  // 自動更新はしない(表示中の画面が勝手に読み込み直されて、スクロールや開いている詳細が戻らないようにする)。
+  // 最新の内容にしたいときは、日付を選び直すか、ページを再読み込みする。
+  loadUnfinishedSource();
+  loadUnreadChat();
+
+  window.__chorei = {
+    setDate(v) { state.date = v; state.calMonth = ""; loadData(); },
+    // 月間カレンダー: 前月・次月へ移動、日付を選んでその日を表示する
+    calMove(delta) {
+      const ym = state.calMonth || state.date.slice(0, 7);
+      const parts = ym.split("-").map(Number);
+      const d = new Date(parts[0], parts[1] - 1 + delta, 1);
+      state.calMonth = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      render();
+    },
+    calPick(dateStr) { state.date = dateStr; state.calMonth = ""; loadData(); },
+    setTab(d) { state.activeTab = d; render(); },
+    print() { window.print(); }, // ファイル名(PDF保存の名前)は、下のbeforeprintで「全体スケジュール_日付」にする
+    openDetail(id) { state.detailId = String(id); render(); },
+    closeDetail() { state.detailId = null; render(); },
+    openLightbox(url) { state.lightboxUrl = url; render(); },
+    closeLightbox() { state.lightboxUrl = null; render(); },
+  };
+
+  // ---- 案件の詳細ウィンドウ(案件をクリックすると開く) ----
+  function findDetail() {
+    const id = state.detailId;
+    if (!id) return null;
+    if (id.charAt(0) === "s") {
+      const sid = id.slice(1);
+      const t = [...state.scheduleRecords, ...state.allScheduleRecords].find(x => String(x.id) === sid);
+      return t ? { kind: "schedule", t } : null;
+    }
+    const r = [...state.records, ...state.allRecords].find(x => String(x.id) === id);
+    return r ? { kind: "task", r } : null;
+  }
+
+  function renderDetailModal() {
+    const found = findDetail();
+    if (!found) return "";
+    const row = (k, v) => v ? `<div class="detail-row"><div class="detail-k">${k}</div><div class="detail-v">${v}</div></div>` : "";
+    let head = "", body = "";
+    if (found.kind === "schedule") {
+      const t = found.t;
+      const period = t.date ? (t.dueDate && t.dueDate !== t.date ? `${t.date} 〜 ${t.dueDate}` : t.date) : "";
+      head = `<span class="detail-title">${escapeHtml(t.name || "(案件名未入力)")}</span><span class="rec-tag">進捗ページの案件</span><span class="rec-tag">${escapeHtml(t.staffName || "")}</span>`;
+      body = row("担当者", escapeHtml(t.staffName || "")) + row("期間", escapeHtml(period)) + row("日数", escapeHtml(dayCountText(t.date, t.dueDate, 0, 0, state.date)))
+        + row("時間", escapeHtml((t.start || t.end) ? timeRangeText(t.start, t.end, " 〜 ") : ""))
+        + `<div class="detail-section"><div class="detail-section-title">メモ</div><div class="detail-note">${escapeHtml(t.memo || "") || '<span class="detail-empty">メモはありません</span>'}</div></div>`;
+    } else {
+      const r = found.r;
+      const staff = STAFF.find(x => String(x.id) === String(r.staffId));
+      const names = [r.client, r.project].filter(Boolean).map(escapeHtml);
+      const period = r.date ? (r.dueDate && r.dueDate !== r.date ? `${r.date} 〜 ${r.dueDate}` : r.date) : "";
+      const time = (!r.bulkMode && (r.start || r.end)) ? timeRangeText(r.start, r.end, " 〜 ") : "";
+      const outside = r.isOutside ? escapeHtml([r.area, r.prefecture, r.travelType].filter(Boolean).join("・")) : "";
+      const images = r.images || [];
+      const imagesHtml = r.imagesCleared ? `<div class="detail-empty">完了から30日が過ぎたため画像は削除されました</div>`
+        : images.length === 0 ? `<div class="detail-empty">画像はありません</div>`
+        : `<div class="detail-imgs">${images.map(img => `<img class="detail-img" src="${img.url}" alt="" onclick="__chorei.openLightbox('${img.url}')">`).join("")}</div>`;
+      head = `<span class="detail-title">${escapeHtml(r.category || "")}</span><span class="rec-tag status-${r.status}">${r.status}</span><span class="rec-tag">${escapeHtml(r.staffName || "")}</span>`;
+      body = row("担当者", escapeHtml(`${r.staffName || ""}${staff ? "(" + staff.dept + ")" : ""}`))
+        + (r.bulkMode ? row("まとめ入力", `${escapeHtml(String(r.bulkCount || ""))}件`) : row("顧客・案件", names.join(" / ") || "顧客・案件なし"))
+        + row("期間", escapeHtml(period)) + row("日数", escapeHtml(dayCountText(r.date, r.dueDate, r.totalDays, r.currentDay, state.date))) + row("時間", escapeHtml(time)) + row("外出", outside) + row("勤務区分", escapeHtml(flagTextOf(r)))
+        + `<div class="detail-section"><div class="detail-section-title">備考</div><div class="detail-note">${escapeHtml(r.note || "") || '<span class="detail-empty">備考はありません</span>'}</div></div>`
+        + `<div class="detail-section"><div class="detail-section-title">画像</div>${imagesHtml}</div>`
+        + `<div class="detail-meta">登録: ${escapeHtml(r.createdAt || "")}${r.updatedAt ? ` ／ 更新: ${escapeHtml(r.updatedAt)}` : ""}</div>`;
+    }
+    return `
+      <div class="detail-overlay" onclick="__chorei.closeDetail()">
+        <div class="detail-modal" onclick="event.stopPropagation()">
+          <div class="detail-head">${head}<button type="button" class="detail-close-x" onclick="__chorei.closeDetail()" aria-label="閉じる">✕</button></div>
+          ${body}
+          <div class="detail-foot"><button type="button" onclick="__chorei.closeDetail()">閉じる</button></div>
+        </div>
+      </div>`;
+  }
+
+  // Escキーで案件の詳細ウィンドウ(画像の拡大表示があればそちら)を閉じる。
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (state.lightboxUrl) { state.lightboxUrl = null; render(); }
+    else if (state.detailId) { state.detailId = null; render(); }
+  });
+
+  // 印刷(A3横1枚)に収めるため、印刷時だけ表示する件数を絞る(画面では全件表示。省略した分は「…他○件」と出す)。
+  const FLAG_DEFS = [["earlyWork", "早出"], ["nightWork", "夜間"], ["holidayWork", "休日出勤"]];
+  const hasWorkFlag = r => r.earlyWork || r.nightWork || r.holidayWork;
+  const flagTagsHtml = r => FLAG_DEFS.map(d => r[d[0]] ? `<span class="rec-tag flag-${d[0]}">${d[1]}</span>` : "").join("");
+  const flagTextOf = r => FLAG_DEFS.filter(d => r[d[0]]).map(d => d[1]).join("・");
+  const PRINT_SUMMARY_MAX = 4; // 繰越・外出の欄: 最大4件
+  const PRINT_COPY_MAX = 2;    // 各担当者の「終了していない業務」: 最大2件
+  const PROGRESS_BY_STATUS = { "予定": 10, "進行中": 55, "繰越": 30 };
+
+  // 自社情報の「定休曜日」「休日」を取得する(カレンダーで会社休みを赤く表示し、その日の帯を薄くするため)。取得できなければ休みなし扱い。
+  let COMPANY_HOLIDAYS = null; // { weekly: [0=日〜6=土], dates: ["YYYY-MM-DD"] }
+  async function loadCompanyHolidays() {
+    try {
+      const res = await apiFetch(`${API_BASE}/company-info`);
+      const data = res.ok ? await res.json() : null;
+      COMPANY_HOLIDAYS = {
+        weekly: (data ? (data.weeklyHolidays || []) : []).map(Number),
+        dates: data ? (data.holidayDates || []) : [],
+      };
+    } catch (e) {
+      COMPANY_HOLIDAYS = { weekly: [], dates: [] };
+    }
+  }
+  // 日本の祝日(2007年以降の現行ルール)。年ごとに { "YYYY-MM-DD": "祝日名" } を作って使い回す。
+  // 春分・秋分は1980〜2099年に使える近似式。2020・2021年の東京五輪に伴う祝日の移動も反映している。
+  // 日曜と重なった祝日の翌平日=振替休日、祝日にはさまれた平日=国民の休日も含める。
+  const NATIONAL_HOLIDAY_CACHE = {};
+  function nationalHolidays(year) {
+    if (NATIONAL_HOLIDAY_CACHE[year]) return NATIONAL_HOLIDAY_CACHE[year];
+    const h = {};
+    if (year < 2007 || year > 2099) { NATIONAL_HOLIDAY_CACHE[year] = h; return h; }
+    const pad = n => String(n).padStart(2, "0");
+    const keyOf = dt => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    const add = (m, d, name) => { h[`${year}-${pad(m)}-${pad(d)}`] = name; };
+    const nthMonday = (m, n) => 1 + ((8 - new Date(year, m - 1, 1).getDay()) % 7) + (n - 1) * 7;
+    const base = 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4);
+    add(1, 1, "元日");
+    add(1, nthMonday(1, 2), "成人の日");
+    add(2, 11, "建国記念の日");
+    if (year >= 2020) add(2, 23, "天皇誕生日");
+    add(3, Math.floor(20.8431 + base), "春分の日");
+    add(4, 29, "昭和の日");
+    add(5, 3, "憲法記念日");
+    add(5, 4, "みどりの日");
+    add(5, 5, "こどもの日");
+    if (year === 2020) add(7, 23, "海の日"); else if (year === 2021) add(7, 22, "海の日"); else add(7, nthMonday(7, 3), "海の日");
+    if (year === 2020) add(8, 10, "山の日"); else if (year === 2021) add(8, 8, "山の日"); else if (year >= 2016) add(8, 11, "山の日");
+    add(9, nthMonday(9, 3), "敬老の日");
+    add(9, Math.floor(23.2488 + base), "秋分の日");
+    if (year === 2020) add(7, 24, "スポーツの日"); else if (year === 2021) add(7, 23, "スポーツの日"); else if (year >= 2020) add(10, nthMonday(10, 2), "スポーツの日");
+    add(11, 3, "文化の日");
+    add(11, 23, "勤労感謝の日");
+    // 国民の休日: 前日と翌日がどちらも祝日の平日(日曜を除く)
+    for (let dt = new Date(year, 0, 2); dt.getFullYear() === year; dt.setDate(dt.getDate() + 1)) {
+      const prev = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - 1);
+      const next = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1);
+      if (!h[keyOf(dt)]) { if (h[keyOf(prev)]) { if (h[keyOf(next)]) { if (dt.getDay() !== 0) { h[keyOf(dt)] = "国民の休日"; } } } }
+    }
+    // 振替休日: 日曜にあたる祝日の次の、祝日でない日
+    Object.keys(h).forEach(k => {
+      const dt = new Date(k + "T00:00:00");
+      if (dt.getDay() !== 0) return;
+      const sub = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1);
+      while (h[keyOf(sub)]) { sub.setDate(sub.getDate() + 1); }
+      h[keyOf(sub)] = "振替休日";
+    });
+    NATIONAL_HOLIDAY_CACHE[year] = h;
+    return h;
+  }
+  function nationalHolidayName(dateStr) {
+    return nationalHolidays(Number(dateStr.slice(0, 4)))[dateStr] || "";
+  }
+
+  function isCompanyHoliday(dateStr) {
+    const h = COMPANY_HOLIDAYS;
+    if (!h) { return false; }
+    if (h.dates.includes(dateStr)) { return true; }
+    return h.weekly.includes(new Date(dateStr + "T00:00:00").getDay());
+  }
+  // 会社休み(定休曜日・休日)または祝日
+  function isHolidayDate(dateStr) { return isCompanyHoliday(dateStr) || nationalHolidayName(dateStr) !== ""; }
+
+  // 月間カレンダー(ページの一番下)。個別スケジュールの「全員」カレンダーと同じ、案件ごとの帯。
+  // 帯の並び順だけを、部門の順 → 従業員の順 → 開始日の順にそろえ、帯の色は部門の色にする。
+  const CAL_DEPT_COLOR = { "営業": "#0284c7", "デザイン": "#7c3aed", "製作": "#059669", "事務": "#d97706" };
+  function renderCalendar() {
+    const ym = state.calMonth || state.date.slice(0, 7);
+    const parts = ym.split("-").map(Number);
+    const y = parts[0];
+    const m = parts[1];
+    const lastDay = new Date(y, m, 0).getDate();
+    const firstDow = new Date(y, m - 1, 1).getDay();
+    const dayStr = d => ym + "-" + String(d).padStart(2, "0");
+    const monthStart = dayStr(1);
+    const monthEnd = dayStr(lastDay);
+    const staffIndex = {};
+    DEPTS.forEach(d => {
+      STAFF.filter(s => s.dept === d).forEach((s, i) => { staffIndex[s.id] = { dept: d, order: DEPTS.indexOf(d) * 1000 + i }; });
+    });
+    const events = [];
+    // 従業員の一覧にいない人(登録を削除した人)の案件も、個別スケジュールの「全員」カレンダーと同じく出す。
+    // その場合は、記録に残っている部門で並べる(部門が分からないものは一番最後)。
+    const pushEvent = (id, staffId, name, label, from, to, status, recDept, holWork) => {
+      if (!from) { return; }
+      let info = staffIndex[String(staffId)];
+      if (!info) {
+        const di = DEPTS.indexOf(recDept || "");
+        info = { dept: recDept || "", order: (di === -1 ? 99 : di) * 1000 + 500 };
+      }
+      let end = from;
+      if (to) { if (to >= from) { end = to; } }
+      if (end < monthStart) { return; }
+      if (from > monthEnd) { return; }
+      events.push({
+        id, name, label: name + ": " + label, status, dept: info.dept, order: info.order, holWork: !!holWork,
+        start: from > monthStart ? from : monthStart, end: end > monthEnd ? monthEnd : end,
+      });
+    };
+    state.allRecords.forEach(r => {
+      // 全員分のカレンダーは、案件・業務の内容は出さず、顧客名だけを出す(顧客名が無い案件だけ、業務区分を出す)。
+      const label = r.bulkMode ? `まとめ${r.bulkCount}件` : (r.client ? r.client : r.category);
+      pushEvent(String(r.id), r.staffId, r.staffName || "", (r.status === "完了" ? "✓" : "") + label, r.date, r.dueDate, r.status, r.dept, r.holidayWork);
+    });
+    state.allScheduleRecords.forEach(t => {
+      const progress = t.progress === undefined || t.progress === null ? 0 : t.progress;
+      pushEvent("s" + t.id, t.staffId, t.staffName || "", (progress >= 100 ? "✓" : "") + "進捗ページ", t.date, t.dueDate, progress >= 100 ? "完了" : "予定", t.dept);
+    });
+    // 部門の順 → 従業員の順 → 開始日(同じ開始日なら期間の長い順)
+    events.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, "ja") || a.start.localeCompare(b.start) || b.end.localeCompare(a.end));
+    const today = new Date();
+    const todayStr = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
+
+    const weeks = [];
+    let week = new Array(firstDow).fill(null);
+    for (let d = 1; d <= lastDay; d++) {
+      week.push(d);
+      if (week.length === 7) { weeks.push(week); week = []; }
+    }
+    if (week.length > 0) {
+      while (week.length < 7) { week.push(null); }
+      weeks.push(week);
+    }
+    const weeksHtml = weeks.map(days => {
+      const weekDates = days.map(d => d === null ? null : dayStr(d));
+      const valid = weekDates.filter(Boolean);
+      const weekStart = valid[0];
+      const weekEnd = valid[valid.length - 1];
+      const cells = days.map((d, idx) => {
+        if (d === null) { return `<div class="cal-day blank" style="grid-column:${idx + 1};grid-row:1;"></div>`; }
+        const ds = weekDates[idx];
+        const hname = nationalHolidayName(ds);
+        const isHol = isHolidayDate(ds);
+        const cls = ["cal-day", isHol ? "holiday" : (idx === 6 ? "sat" : ""), ds === todayStr ? "today" : "", ds === state.date ? "selected" : ""].join(" ");
+        return `<div class="${cls}" style="grid-column:${idx + 1};grid-row:1;" title="${escapeHtml(hname)}" onclick="__chorei.calPick('${ds}')">${d}${hname ? `<span class="cal-hname">${escapeHtml(hname)}</span>` : ""}</div>`;
+      }).join("");
+      // 期間が重ならない帯は同じ行に並べる(上の並び順のまま、空いている一番上の行に入れる)
+      const laneEnds = [];
+      const bars = events.filter(e => e.end >= weekStart ? e.start <= weekEnd : false).map(e => {
+        let lane = laneEnds.findIndex(endDate => endDate < e.start);
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(e.end); } else { laneEnds[lane] = e.end; }
+        const clipStart = e.start < weekStart ? weekStart : e.start;
+        const clipEnd = e.end > weekEnd ? weekEnd : e.end;
+        const colStart = weekDates.indexOf(clipStart) + 1;
+        const colEnd = weekDates.indexOf(clipEnd) + 1;
+        const color = CAL_DEPT_COLOR[e.dept] || "#64748b";
+        // 休みの日(会社休み・祝日)にかかる部分は、帯を薄くする。休みをはさむ帯は、休みの日の前後で区切って出す。
+        const segs = [];
+        for (let col = colStart; col <= colEnd; col++) {
+          const hol = e.holWork ? false : isHolidayDate(weekDates[col - 1]);
+          const last = segs[segs.length - 1];
+          if (last) { if (last.hol === hol) { last.end = col; continue; } }
+          segs.push({ start: col, end: col, hol });
+        }
+        return segs.map(sg => `<div class="cal-bar status-${e.status}${sg.hol ? " holiday-dim" : ""}" style="background:${color};grid-column:${sg.start} / ${sg.end + 1};grid-row:${lane + 2};" title="${escapeHtml(e.label)}" onclick="__chorei.openDetail('${e.id}')">${escapeHtml(e.label)}</div>`).join("");
+      }).join("");
+      return `<div class="cal-week">${cells}${bars}</div>`;
+    }).join("");
+    const dows = ["日", "月", "火", "水", "木", "金", "土"];
+    const weeklyOff = COMPANY_HOLIDAYS ? COMPANY_HOLIDAYS.weekly : [];
+    const dowHtml = dows.map((w, i) => `<div class="cal-dow ${weeklyOff.includes(i) ? "sun" : (i === 6 ? "sat" : "")}">${w}</div>`).join("");
+    const legend = Object.keys(CAL_DEPT_COLOR).map(k => `<span><i style="background:${CAL_DEPT_COLOR[k]};"></i>${escapeHtml(k)}</span>`).join("");
+    return `
+      <div class="cal-section">
+        <div class="cal-panel">
+          <div class="cal-head">
+            <button type="button" class="cal-nav" onclick="__chorei.calMove(-1)">‹ 前月</button>
+            <h3>${y}年${m}月 全体カレンダー</h3>
+            <button type="button" class="cal-nav" onclick="__chorei.calMove(1)">次月 ›</button>
+          </div>
+          <div class="cal-weekdays">${dowHtml}</div>
+          ${weeksHtml}
+          <div class="cal-legend">${legend}<span>帯は部門の順 → 従業員の順に並びます。薄い色=完了(✓)・休みの日。赤=会社休み・祝日、青=土曜。帯をクリックすると案件の詳細、日付をクリックすると、その日の全体スケジュールを表示します。</span></div>
+        </div>
+      </div>`;
+  }
+
+  function render() {
+    const byStaff = {};
+    STAFF.forEach(s => byStaff[s.id] = []);
+    state.records.forEach(r => { if (byStaff[r.staffId]) byStaff[r.staffId].push(r); });
+    Object.values(byStaff).forEach(list => list.sort((a,b) => (a.start||"99").localeCompare(b.start||"99")));
+
+    const byStaffSchedule = {};
+    STAFF.forEach(s => byStaffSchedule[s.id] = []);
+    state.scheduleRecords.forEach(t => {
+      if (byStaffSchedule[t.staffId]) byStaffSchedule[t.staffId].push(t);
+    });
+
+    const registeredIds = new Set([
+      ...state.records.map(r => r.staffId),
+      ...state.scheduleRecords.map(t => t.staffId),
+    ]);
+    const unregistered = STAFF.filter(s => !registeredIds.has(s.id));
+    const carryover = state.records.filter(r => r.status === "繰越");
+    const outside = state.records.filter(r => r.isOutside || hasWorkFlag(r));
+
+    // 同じ人・同じ案件が日をまたいで何度も記録されるため、案件ごとに一番新しい記録だけを見て、
+    // それが完了していなければ「終了していない」とする(古い記録が残っていても完了済みなら出さない)。
+    // 「終了していない業務」は、選択中の日付(通常は本日)までに始まっているものだけを出す。
+    // 明日以降の予定は含めない(その日付より後の記録は、案件の最新の記録として数えない)。
+    const asOf = state.date;
+    const latestByCase = {};
+    state.allRecords.filter(r => !r.date || r.date <= asOf).forEach(r => {
+      const key = [r.staffId, r.category, r.client, r.project, r.bulkMode ? "bulk" : ""].join("\u0001");
+      const cur = latestByCase[key];
+      if (!cur || (r.date || "") > (cur.date || "") || ((r.date || "") === (cur.date || "") && Number(r.id) > Number(cur.id))) latestByCase[key] = r;
+    });
+    const dateLabel = d => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "";
+    const taskUnfinished = Object.values(latestByCase)
+      .filter(r => r.status !== "完了" && r.status !== "キャンセル")
+      .sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || (a.date || "").localeCompare(b.date || ""))
+      .map(r => ({
+        staffId: r.staffId,
+        recId: r.id,
+        date: r.date || "",
+        staffName: r.staffName,
+        dept: r.dept || "",
+        label: (r.bulkMode ? `${r.category}(まとめ${r.bulkCount}件)`
+          : `${r.category}${(r.client||r.project) ? " / " + [r.client, r.project].filter(Boolean).join("・") : ""}`)
+          + (r.date ? `(${dateLabel(r.date)}記録)` : ""),
+        statusText: r.status,
+        pct: typeof r.progress === "number" ? r.progress : (PROGRESS_BY_STATUS[r.status] ?? 0),
+        dueDate: r.dueDate || "",
+        days: dayCountText(r.date, r.dueDate, r.totalDays, r.currentDay, asOf),
+      }));
+
+    const scheduleUnfinished = [];
+    state.allScheduleRecords.forEach(t => {
+      const staff = STAFF.find(s => s.id === t.staffId);
+      const staffName = staff ? staff.name : (t.staffName || t.staffId);
+      const progress = t.progress ?? 0;
+      if (progress >= 100) return;
+      if (t.date) { if (t.date > asOf) return; } // 本日より後に始まる予定は出さない
+      scheduleUnfinished.push({
+        staffId: t.staffId,
+        recId: "s" + t.id,
+        staffName,
+        dept: (staff ? staff.dept : t.dept) || "",
+        label: `${t.name || "(案件名未入力)"}(進捗ページ)`,
+        days: dayCountText(t.date, t.dueDate, 0, 0, asOf),
+        statusText: progress > 0 ? "進行中" : "予定",
+        pct: progress,
+        dueDate: t.dueDate || "",
+      });
+    });
+
+    const unfinished = [...taskUnfinished, ...scheduleUnfinished];
+    // 「繰越」は、状態が繰越の記録に加え、本日より前に始まってまだ終わっていない案件も含める(日報の「○月○日の繰越」と同じ考え方)。
+    // 「繰越」「外出」の欄には、担当者名だけでなく該当する案件の内容(コピー)を出す。
+    const caseLabel = r => r.bulkMode ? `${r.category}(まとめ${r.bulkCount}件)`
+      : `${r.category}${(r.client||r.project) ? " / " + [r.client, r.project].filter(Boolean).join("・") : ""}`;
+    const carrySeen = new Set();
+    const carryCases = [];
+    carryover.forEach(r => {
+      carrySeen.add(r.id);
+      carryCases.push({ recId: r.id, staffName: r.staffName, label: caseLabel(r), note: r.date ? `${dateLabel(r.date)}記録` : "", due: r.dueDate || "", days: dayCountText(r.date, r.dueDate, r.totalDays, r.currentDay, asOf) });
+    });
+    taskUnfinished.filter(u => u.date && u.date < asOf).forEach(u => {
+      if (carrySeen.has(u.recId)) return;
+      carryCases.push({ recId: u.recId, staffName: u.staffName, label: u.label.replace(/\(\d+\/\d+記録\)$/, ""), note: `${dateLabel(u.date)}記録`, due: u.dueDate || "", days: u.days || "" });
+    });
+    // 終了していない案件は、全体の一覧に加えて、各担当者の欄にもコピーして出す(本日の欄にすでにある分は除く)。
+    const unfinishedByStaff = {};
+    unfinished.forEach(u => { (unfinishedByStaff[u.staffId] = unfinishedByStaff[u.staffId] || []).push(u); });
+
+    const unfinishedHtml = `
+      <div class="unfinished-section">
+        <div class="unfinished-panel">
+          <h3>終了していない業務(本日まで・${unfinished.length}件)</h3>
+          ${unfinished.length === 0 ? '<div class="no-unfinished">現在、進行中・予定・繰越の業務はありません(全員完了)</div>' : `
+          <div class="unfinished-grid">
+            ${unfinished.map(u => `
+                <div class="unfinished-item dept-${u.dept}" onclick="__chorei.openDetail('${u.recId}')">
+                  <span class="who">${u.staffName}</span>
+                  <span class="unfinished-label">${u.label}</span>
+                  ${u.days ? `<span class="rec-days">${u.days}</span>` : ""}
+                  <span class="rec-tag status-${u.statusText}">${u.statusText}</span>
+                  ${u.dueDate ? `<span class="due-label">終了予定: ${u.dueDate}</span>` : ""}
+                </div>`).join("")}
+          </div>`}
+        </div>
+      </div>`;
+
+    const summaryHtml = `
+      <div class="summary">
+        <div class="summary-card">
+          <h3>外出・出張・早出・夜間・休日出勤・直行直帰(${outside.length}件)</h3>
+          ${outside.length === 0 ? '<span class="ok">本日の該当者はいません</span>' :
+            outside.map((r, i) => `<div class="summary-case out${i >= PRINT_SUMMARY_MAX ? " print-hide" : ""}" onclick="__chorei.openDetail('${r.id}')"><b>${r.staffName}</b> ${caseLabel(r)}<span class="sc-sub">${[r.isOutside ? [r.area, r.prefecture, r.travelType].filter(Boolean).join("・") : "", flagTextOf(r)].filter(Boolean).join("・")}${(!r.bulkMode && (r.start || r.end)) ? ` ${timeRangeText(r.start, r.end, "-")}` : ""}${dayCountText(r.date, r.dueDate, r.totalDays, r.currentDay, asOf) ? ` ・${dayCountText(r.date, r.dueDate, r.totalDays, r.currentDay, asOf)}` : ""}</span></div>`).join("")}
+          ${outside.length > PRINT_SUMMARY_MAX ? `<div class="print-only print-more">…他${outside.length - PRINT_SUMMARY_MAX}件</div>` : ""}
+        </div>
+      </div>`;
+
+    const tabsHtml = `<div class="tabs">${DEPTS.map(d =>
+      `<div class="tab-btn ${state.activeTab===d?"active":""}" onclick="__chorei.setTab('${d}')">${d}</div>`).join("")}</div>`;
+
+    function deptColumn(dept) {
+      const deptStaff = STAFF.filter(s => s.dept === dept);
+      const blocks = deptStaff.map(s => {
+        const recs = byStaff[s.id];
+        const schedTasks = byStaffSchedule[s.id] || [];
+        const isUnregistered = recs.length === 0 && schedTasks.length === 0;
+        const rows = recs.map(r => {
+          const label = r.bulkMode ? `${r.category}(まとめ${r.bulkCount}件)`
+            : `${r.category}${(r.client||r.project) ? " / " + [r.client, r.project].filter(Boolean).join("・") : ""}`;
+          const time = (!r.bulkMode && (r.start || r.end)) ? `<span class="rec-time">${timeRangeText(r.start, r.end, "-")}</span>` : "";
+          const outTag = (r.isOutside ? `<span class="rec-tag out">${r.area}・${r.travelType}</span>` : "") + flagTagsHtml(r);
+          const days = dayCountText(r.date, r.dueDate, r.totalDays, r.currentDay, state.date);
+          const daysTag = days ? `<span class="rec-days">${days}</span>` : "";
+          return `<div class="rec-row status-${r.status}" onclick="__chorei.openDetail('${r.id}')">${time}${label}${daysTag}<span class="rec-tag status-${r.status}">${r.status}</span>${outTag}</div>`;
+        }).join("");
+        const schedRows = schedTasks.map(t => {
+          const progress = t.progress ?? 0;
+          const statusText = progress >= 100 ? "完了" : progress > 0 ? "進行中" : "予定";
+          const label = `${t.name || "(案件名未入力)"}(進捗ページ)`;
+          const time = (t.start || t.end) ? `<span class="rec-time">${timeRangeText(t.start, t.end, "-")}</span>` : "";
+          const sdays = dayCountText(t.date, t.dueDate, 0, 0, state.date);
+          const sdaysTag = sdays ? `<span class="rec-days">${sdays}</span>` : "";
+          return `<div class="rec-row status-${statusText}" onclick="__chorei.openDetail('s${t.id}')">${time}${label}${sdaysTag}<span class="rec-tag status-${statusText}">${statusText}</span></div>`;
+        }).join("");
+        const shownIds = new Set([...recs.map(r => r.id), ...schedTasks.map(t => "s" + t.id)]);
+        const copies = (unfinishedByStaff[s.id] || []).filter(u => !shownIds.has(u.recId));
+        const copyRows = copies.map((u, i) => `<div class="rec-row rec-copy status-${u.statusText}${i >= PRINT_COPY_MAX ? " print-hide" : ""}" onclick="__chorei.openDetail('${u.recId}')">${u.label}${u.days ? `<span class="rec-days">${u.days}</span>` : ""}<span class="rec-tag status-${u.statusText}">${u.statusText}</span>${u.dueDate ? `<span class="rec-time">〜${dateLabel(u.dueDate)}</span>` : ""}</div>`).join("");
+        const copyHtml = copies.length > 0 ? `<div class="rec-copy-head">終了していない業務(${copies.length}件)</div>${copyRows}${copies.length > PRINT_COPY_MAX ? `<div class="print-only print-more">…他${copies.length - PRINT_COPY_MAX}件</div>` : ""}` : "";
+        const hasUnreadChat = state.unreadStaffIds.includes(s.id);
+        const unreadMark = hasUnreadChat ? `<span class="chat-mark" title="管理者から未読メッセージがあります">★</span> ` : "";
+        return `
+          <div class="staff-block">
+            <div class="staff-name ${isUnregistered?"unregistered":""}">${unreadMark}${s.name}${isUnregistered?"(未提出)":""}</div>
+            ${isUnregistered ? '<div class="no-entry">本日の予定・実績が未提出です</div>' : rows}
+            ${schedRows}
+            ${copyHtml}
+          </div>`;
+      }).join("");
+      return `
+        <div class="dept-panel ${state.activeTab===dept?"active":""}">
+          <div class="dept-col">
+            <div class="dept-head ${dept}"><span>${dept}</span><span>${deptStaff.length}名</span></div>
+            ${blocks || '<div class="empty-dept">対象社員がいません</div>'}
+          </div>
+        </div>`;
+    }
+
+    const isLoading = state.loading || state.scheduleLoading;
+    document.getElementById("chorei-app").innerHTML = `
+      <div class="top-link" style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a></div>
+      <div class="header">
+        <h1><span class="title-screen">全体スケジュール - 本日の全体予定</span><span class="title-print">全体スケジュール</span> <span class="header-date">${escapeHtml(dateLabel(state.date))}</span></h1>
+        <div class="header-actions">
+          <input type="date" value="${state.date}" onchange="__chorei.setDate(this.value)">
+          <button class="print-btn" onclick="__chorei.print()">🖨 印刷</button>
+        </div>
+      </div>
+      ${isLoading ? '<p style="padding:16px;font-size:13px;color:#8a8577;">読み込み中…</p>' : summaryHtml}
+      ${state.errorMsg ? `<p style="padding:0 16px;color:#ea580c;font-size:13px;">${state.errorMsg}</p>` : ""}
+      ${isLoading ? "" : unfinishedHtml}
+      ${tabsHtml}
+      <div class="layout" style="--dept-count:${DEPTS.length};">
+        ${DEPTS.map(deptColumn).join("")}
+      </div>
+      ${renderCalendar()}
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/">← トップに戻る</a>
+      </div>
+      ${renderDetailModal()}
+      ${state.lightboxUrl ? `<div class="lightbox-overlay" onclick="__chorei.closeLightbox()"><img src="${state.lightboxUrl}" alt=""><button type="button" class="lightbox-close" onclick="__chorei.closeLightbox()">✕</button></div>` : ""}
+    `;
+  }
+
+  // 印刷・PDF保存のとき、ブラウザの既定のファイル名になるページ名を「全体スケジュール_2026-10-06」(表示中の日付)にする。
+  // 印刷が終わったら、元のページ名に戻す。
+  let titleBeforePrint = "";
+  window.addEventListener("beforeprint", () => {
+    titleBeforePrint = document.title;
+    document.title = "全体スケジュール_" + state.date;
+  });
+  window.addEventListener("afterprint", () => {
+    if (titleBeforePrint) { document.title = titleBeforePrint; titleBeforePrint = ""; }
+  });
+
+  async function init() {
+    await loadStaffList();
+    await loadCompanyHolidays();
+    await loadDepartments();
+    loadData();
+  }
+  window.addEventListener("mushLoginAuthed", () => {
+    loadCompanyHolidays().then(render);
+    loadData();
+    loadUnfinishedSource();
+    loadUnreadChat();
+  });
+  init();
+</script>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

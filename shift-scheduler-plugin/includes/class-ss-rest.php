@@ -20,6 +20,12 @@ final class SS_Rest {
             array('methods' => 'GET', 'callback' => array(__CLASS__, 'list_staff'), 'permission_callback' => array(__CLASS__, 'can_manage_staff')),
             array('methods' => 'POST', 'callback' => array(__CLASS__, 'create_staff'), 'permission_callback' => array(__CLASS__, 'can_write_staff')),
         ));
+        register_rest_route(self::NS, '/staff/export', array(
+            array('methods' => 'GET', 'callback' => array(__CLASS__, 'export_staff'), 'permission_callback' => array(__CLASS__, 'can_manage_staff')),
+        ));
+        register_rest_route(self::NS, '/staff/import', array(
+            array('methods' => 'POST', 'callback' => array(__CLASS__, 'import_staff'), 'permission_callback' => array(__CLASS__, 'can_write_staff')),
+        ));
         register_rest_route(self::NS, '/staff/(?P<id>\d+)', array(
             array('methods' => 'PUT,PATCH', 'callback' => array(__CLASS__, 'update_staff'), 'permission_callback' => array(__CLASS__, 'can_write_staff')),
             array('methods' => 'DELETE', 'callback' => array(__CLASS__, 'deactivate_staff'), 'permission_callback' => array(__CLASS__, 'can_write_staff')),
@@ -271,6 +277,192 @@ final class SS_Rest {
             return new WP_Error('failed', 'ログインの設定に失敗しました。', array('status' => 500));
         }
         return rest_ensure_response(array('ok' => true));
+    }
+
+    /* ---------- 名簿のCSV（Excelで開ける形） ---------- */
+
+    const EMP_LABELS = array('full' => '正社員', 'part' => 'パート', 'baito' => 'アルバイト');
+    const CSV_HEADERS = array('社員番号', '名前', 'よみがな', '部署', '雇用区分', '役割', '資格', '状態');
+    const IMPORT_MAX = 500;
+
+    /** 名簿の書き出し。CSVの本文を返す（画面側で、Excel向けにBOMを付けて保存する） */
+    public static function export_staff() {
+        $rows = array(self::CSV_HEADERS);
+        foreach (SS_Repo::current()->all('staff', array(), 'sort_order', 'ASC', 1000) as $s) {
+            $rows[] = array(
+                $s['employee_number'], $s['name'], $s['kana'], $s['department'],
+                isset(self::EMP_LABELS[$s['employment']]) ? self::EMP_LABELS[$s['employment']] : $s['employment'],
+                implode('、', self::decode($s['roles'])), implode('、', self::decode($s['qualifications'])),
+                (int) $s['active'] === 1 ? '有効' : '無効',
+            );
+        }
+        $csv = '';
+        foreach ($rows as $r) {
+            $csv .= implode(',', array_map(array(__CLASS__, 'csv_cell'), $r)) . "\r\n";
+        }
+        return rest_ensure_response(array('filename' => 'staff-' . gmdate('Ymd') . '.csv', 'csv' => $csv));
+    }
+
+    /** 表計算ソフトで式として解釈されないよう、先頭が = + - @ の値は ' を付ける */
+    private static function csv_cell($v) {
+        $v = (string) $v;
+        if ($v !== '' && strpos('=+-@', $v[0]) !== false && !preg_match('/^-?\d+$/', $v)) {
+            $v = "'" . $v;
+        }
+        return '"' . str_replace('"', '""', $v) . '"';
+    }
+
+    /**
+     * 名簿の取り込み。画面で読み込んだCSVの行を受け取る（1行目は見出し）。
+     * 社員番号が同じスタッフは更新、ない人は追加。1件でも誤りがあれば、何も変えない（直してから、やり直す）。
+     * dry_run=true なら、確認だけして、結果（追加・更新の件数と、誤り）を返す。
+     */
+    public static function import_staff(WP_REST_Request $req) {
+        $repo = SS_Repo::current();
+        $tenant = SS_Context::tenant();
+        $p = $req->get_json_params();
+        $rows = isset($p['rows']) && is_array($p['rows']) ? array_values($p['rows']) : array();
+        $dry = !empty($p['dry_run']);
+        if (count($rows) < 2) {
+            return new WP_Error('invalid', '見出しの行と、1人以上のスタッフの行が必要です。', array('status' => 400));
+        }
+        if (count($rows) - 1 > self::IMPORT_MAX) {
+            return new WP_Error('invalid', '一度に取り込めるのは' . self::IMPORT_MAX . '人までです。', array('status' => 400));
+        }
+        $col = self::csv_columns(is_array($rows[0]) ? $rows[0] : array());
+        if (!isset($col['name'])) {
+            return new WP_Error('invalid', '1行目に見出し（「名前」を含む）が必要です。書き出したCSVを、ひな形として使ってください。', array('status' => 400));
+        }
+        $existing = array();
+        foreach ($repo->all('staff', array(), 'id', 'ASC', 1000) as $s) {
+            if ((string) $s['employee_number'] !== '') {
+                $existing[(string) $s['employee_number']] = $s;
+            }
+        }
+        $emp_map = array_flip(self::EMP_LABELS) + array('full' => 'full', 'part' => 'part', 'baito' => 'baito', '社員' => 'full', 'バイト' => 'baito');
+        $errors = array();
+        $plan = array(); // [ ['create'|'update', data, id] ]
+        $seen = array();
+        foreach (array_slice($rows, 1) as $i => $r) {
+            $line = $i + 2;
+            $r = is_array($r) ? array_values($r) : array();
+            $get = function ($k) use ($col, $r) {
+                return isset($col[$k], $r[$col[$k]]) ? trim(sanitize_text_field((string) $r[$col[$k]])) : null;
+            };
+            if (implode('', array_map('strval', $r)) === '') {
+                continue; // 空の行は飛ばす
+            }
+            $name = (string) $get('name');
+            if ($name === '' || mb_strlen($name) > 100) {
+                $errors[] = array('line' => $line, 'message' => '名前がないか、100文字を超えています。');
+                continue;
+            }
+            $data = array('name' => $name);
+            $no = $get('employee_number');
+            if ($no !== null) {
+                $no = self::normalize_empno($no);
+                if ($no !== '' && !preg_match('/^[A-Za-z0-9-]{1,20}$/', $no)) {
+                    $errors[] = array('line' => $line, 'message' => '社員番号「' . $no . '」は、英数字とハイフンで20文字以内にしてください。');
+                    continue;
+                }
+                if ($no !== '' && isset($seen[$no])) {
+                    $errors[] = array('line' => $line, 'message' => '社員番号「' . $no . '」が、' . $seen[$no] . '行目と重なっています。');
+                    continue;
+                }
+                if ($no !== '') {
+                    $seen[$no] = $line;
+                }
+                $data['employee_number'] = $no;
+            }
+            foreach (array('kana' => 100, 'department' => 50) as $k => $max) {
+                $v = $get($k);
+                if ($v !== null) {
+                    $data[$k] = mb_substr($v, 0, $max);
+                }
+            }
+            $emp = $get('employment');
+            if ($emp !== null && $emp !== '') {
+                if (!isset($emp_map[$emp])) {
+                    $errors[] = array('line' => $line, 'message' => '雇用区分「' . $emp . '」は、正社員・パート・アルバイトのどれかにしてください。');
+                    continue;
+                }
+                $data['employment'] = $emp_map[$emp];
+            }
+            foreach (array('roles', 'qualifications') as $k) {
+                $v = $get($k);
+                if ($v !== null) {
+                    $list = array_slice(array_values(array_unique(array_filter(array_map(function ($x) {
+                        return mb_substr(trim($x), 0, 40);
+                    }, preg_split('/[,、，\/／]/u', $v)), 'strlen'))), 0, 20);
+                    $data[$k] = wp_json_encode($list, JSON_UNESCAPED_UNICODE);
+                }
+            }
+            $state = $get('active');
+            if ($state !== null && $state !== '') {
+                $data['active'] = in_array($state, array('無効', '0', '退職'), true) ? 0 : 1;
+            }
+            if (!empty($data['employee_number']) && isset($existing[$data['employee_number']])) {
+                $plan[] = array('update', $data, (int) $existing[$data['employee_number']]['id']);
+            } else {
+                $plan[] = array('create', $data, 0);
+            }
+        }
+        $creates = count(array_filter($plan, function ($x) { return $x[0] === 'create' && (!isset($x[1]['active']) || $x[1]['active'] === 1); }));
+        $active_now = $repo->count('staff', array('active' => 1));
+        $activating = 0;
+        foreach ($plan as $x) {
+            if ($x[0] === 'update' && isset($x[1]['active'])) {
+                $was = (int) $existing[$x[1]['employee_number']]['active'];
+                $activating += $x[1]['active'] - $was;
+            }
+        }
+        $limit = SS_Tenants::staff_limit($tenant);
+        if (!$errors && $active_now + $creates + $activating > $limit) {
+            $errors[] = array('line' => 0, 'message' => '取り込むと、有効なスタッフが' . ($active_now + $creates + $activating) . '人になり、上限（' . $limit . '人）を超えます。');
+        }
+        $summary = array(
+            'created' => count(array_filter($plan, function ($x) { return $x[0] === 'create'; })),
+            'updated' => count(array_filter($plan, function ($x) { return $x[0] === 'update'; })),
+            'errors'  => $errors,
+            'applied' => false,
+        );
+        if ($errors || $dry) {
+            return rest_ensure_response($summary);
+        }
+        $now = SS_System::now();
+        foreach ($plan as $x) {
+            if ($x[0] === 'update') {
+                $repo->update('staff', $x[2], $x[1]);
+            } else {
+                $repo->insert('staff', $x[1] + array('created_at' => $now));
+            }
+        }
+        $summary['applied'] = true;
+        return rest_ensure_response($summary);
+    }
+
+    /** 見出しの行から、列の位置を決める（列の順番は自由。表記のゆれも受け付ける） */
+    private static function csv_columns(array $head) {
+        $names = array(
+            'employee_number' => array('社員番号', '従業員番号', '番号', 'employee_number'),
+            'name'            => array('名前', '氏名', 'name'),
+            'kana'            => array('よみがな', 'ふりがな', 'フリガナ', 'ヨミガナ', 'かな', 'kana'),
+            'department'      => array('部署', '所属', 'department'),
+            'employment'      => array('雇用区分', '雇用形態', 'employment'),
+            'roles'           => array('役割', 'roles'),
+            'qualifications'  => array('資格', 'qualifications'),
+            'active'          => array('状態', 'active'),
+        );
+        $col = array();
+        foreach ($head as $i => $h) {
+            $h = trim(preg_replace('/^\x{FEFF}/u', '', (string) $h));
+            foreach ($names as $k => $alts) {
+                if (!isset($col[$k]) && in_array($h, $alts, true)) {
+                    $col[$k] = $i;
+                }
+            }
+        }
+        return $col;
     }
 
     /* ---------- 補助 ---------- */

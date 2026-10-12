@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>予定・実績入力</title>
+<style>
+  :root{
+    --navy:#1E2A4A;
+    --navy-light:#2C3B63;
+    --paper:#F7F6F3;
+    --card:#FFFFFF;
+    --ink:#20242E;
+    --ink-soft:#6B7280;
+    --line:#E4E2DC;
+    --orange:#E4572E;
+    --dept-sales:#3B5BA5;
+    --dept-design:#7A5CB0;
+    --dept-make:#3F8F6B;
+    --dept-office:#C08A1E;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    padding:18px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .topbar h1{
+    font-size:18px;
+    font-weight:600;
+    margin:0;
+    letter-spacing:.02em;
+  }
+  .topbar .sub{
+    font-size:12px;
+    color:#B7C0D8;
+    margin-top:2px;
+  }
+  .topbar-right{ display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+  .login-badge{ font-size:12px; color:#B7C0D8; }
+  .login-badge b{ color:#fff; font-weight:600; }
+  .user-select{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:var(--navy-light);
+    padding:8px 14px;
+    border-radius:8px;
+  }
+  .user-select select{
+    background:transparent;
+    border:none;
+    color:#fff;
+    font-size:14px;
+    font-family:inherit;
+  }
+  .dept-badge{
+    display:inline-block;
+    width:8px;height:8px;
+    border-radius:50%;
+    margin-right:6px;
+  }
+  .container{
+    max-width:760px;
+    margin:0 auto;
+    padding:22px 20px 80px;
+    transition:max-width .15s ease;
+  }
+  /* 全員表示系タブは列数が多いため、横幅制限を広げて表全体が見えるようにする */
+  #yoteiContainer.wide-view{
+    max-width:1400px;
+  }
+  .footer-inner.wide-view{
+    max-width:1400px;
+  }
+  .date-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:18px;
+  }
+  .date-row .date-label{
+    font-size:15px;
+    font-weight:600;
+    color:var(--navy);
+  }
+  .date-row .date-label span{
+    color:var(--ink-soft);
+    font-weight:400;
+    font-size:12px;
+    margin-left:8px;
+  }
+  .progress-summary{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+  .progress-summary b{
+    color:var(--navy);
+    font-size:16px;
+  }
+  .task-table-wrap{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow-x:auto;
+  }
+  .task-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  .task-table th{
+    text-align:left;
+    padding:9px 10px;
+    font-size:11px;
+    font-weight:600;
+    color:var(--ink-soft);
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  .task-table td{
+    padding:8px 10px;
+    border-bottom:1px solid #F1F0EB;
+    vertical-align:middle;
+  }
+  .task-table tr:last-child td{border-bottom:none;}
+  .task-table tr.carried td{background:#FFF9F3;}
+  .task-cell-name{min-width:170px;}
+  .task-name{
+    width:100%;
+    font-size:14px;
+    font-weight:600;
+    border:none;
+    background:transparent;
+    outline:none;
+    color:var(--ink);
+    padding:2px 0;
+    border-bottom:1px solid transparent;
+  }
+  .task-name:focus{border-bottom:1px solid var(--dept-make);}
+  .task-name::placeholder{color:#B5B8C0;font-weight:400;}
+  .carry-badge{
+    display:inline-block;
+    font-size:10px;
+    font-weight:600;
+    color:var(--orange);
+    background:#FCEFE9;
+    border-radius:999px;
+    padding:2px 7px;
+    margin-top:3px;
+  }
+  .task-cell-time{white-space:nowrap;}
+  .time-field{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-soft);}
+  .time-field select{
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:4px 4px;
+    font-size:12px;
+    font-family:inherit;
+    color:var(--ink);
+    width:76px;
+  }
+  .task-cell-due input[type=date]{
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:4px 6px;
+    font-size:12px;
+    font-family:inherit;
+    color:var(--ink);
+    width:132px;
+  }
+  .task-cell-memo{min-width:150px;}
+  .task-cell-memo input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:5px 8px;
+    font-size:12.5px;
+    font-family:inherit;
+    color:var(--ink);
+  }
+  .task-cell-memo input::placeholder{color:#C1C3CA;}
+  .task-cell-progress{min-width:160px;}
+  .progress-row{display:flex;align-items:center;gap:8px;}
+  .progress-row input[type=range]{
+    width:90px;
+    accent-color:var(--dept-make);
+    height:4px;
+  }
+  .progress-value{
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--navy);
+    width:38px;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  .task-cell-status{white-space:nowrap;}
+  .status-pill{
+    font-size:11px;
+    padding:3px 10px;
+    border-radius:999px;
+    font-weight:600;
+    white-space:nowrap;
+  }
+  .status-pill.notstarted{background:#EEEFF2;color:var(--ink-soft);}
+  .status-pill.progress{background:#FCEFE9;color:var(--orange);}
+  .status-pill.done{background:#E7F3ED;color:var(--dept-make);}
+  .task-cell-del{text-align:center;}
+  .del-btn{
+    border:none;
+    background:transparent;
+    color:#C7C9D1;
+    font-size:16px;
+    cursor:pointer;
+    line-height:1;
+    padding:2px 6px;
+  }
+  .del-btn:hover{color:var(--orange);}
+
+  .add-task-btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    width:100%;
+    padding:13px;
+    background:var(--card);
+    border:1px dashed #C9CCD4;
+    border-radius:var(--radius);
+    color:var(--ink-soft);
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+    margin-top:4px;
+  }
+  .add-task-btn:hover{
+    border-color:var(--navy);
+    color:var(--navy);
+    background:#FBFBFA;
+  }
+  .footer-bar{
+    position:fixed;
+    left:0;right:0;bottom:0;
+    background:#fff;
+    border-top:1px solid var(--line);
+    padding:12px 20px;
+    display:flex;
+    justify-content:center;
+  }
+  .footer-inner{
+    max-width:760px;
+    width:100%;
+    transition:max-width .15s ease;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .save-status{
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+  .save-status.saved{color:var(--dept-make);}
+  .save-btn{
+    background:var(--navy);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    padding:11px 26px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .save-btn:hover{background:var(--navy-light);}
+  .empty-hint{
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:13px;
+    padding:30px 0;
+  }
+  .view-tabs{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+  }
+  .view-tab{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 16px;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-soft);
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .view-tab.active{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+  }
+  .task-cell-owner{min-width:110px;}
+  .owner-name{font-size:12.5px;font-weight:600;color:var(--navy);}
+  .nippo-label{font-size:13px;font-weight:600;color:var(--ink);}
+  .owner-select{
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:4px 6px;
+    font-size:12px;
+    font-family:inherit;
+    color:var(--ink);
+    max-width:130px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     ログインゲート(管理者・従業員どちらでも入れる)
+     管理者(管理者パスワード)または従業員(日報と同じ個人パスワード)のどちらでも
+     ログインできる。管理者ログインはmush_admin_auth、従業員ログインは日報ページと
+     同じmush_nippo_authに保存するので、日報でログイン済みなら再入力は不要。
+     ============================================================ -->
+<div id="mushLoginGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">ログインする人を選び、パスワードを入力してください。</p>
+    <select id="mushLoginWho" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="admin">管理者</option>
+    </select>
+    <input type="password" id="mushLoginPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushLoginErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushLoginSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var ADMIN_KEY = 'mush_admin_auth';
+  var EMP_KEY = 'mush_nippo_auth';
+
+  // 見出しに、自社情報に登録した会社名を差し込む(未設定なら社名なしの表記のまま)。
+  fetch(API_BASE + '/company-name').then(function(res){
+    return res.ok ? res.json() : null;
+  }).then(function(data){
+    var name = (data || {}).name || '';
+    if(!name) return;
+    var subEl = document.querySelector('.topbar .sub');
+    if(subEl) subEl.textContent = name + ' 業務予定・日報管理';
+  }).catch(function(e){ /* 取得できなくても既定の表記のままでよい */ });
+
+  function loadAuth(key){
+    try{
+      var raw = localStorage.getItem(key);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(key, auth){
+    try{ localStorage.setItem(key, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushLoginGate');
+  if(loadAuth(ADMIN_KEY) || loadAuth(EMP_KEY)){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var whoSel = document.getElementById('mushLoginWho');
+  var pwInput = document.getElementById('mushLoginPw');
+  var errEl = document.getElementById('mushLoginErr');
+  var btn = document.getElementById('mushLoginSubmit');
+
+  fetch(API_BASE + '/employees').then(function(res){ return res.json(); }).then(function(rows){
+    rows.forEach(function(r){
+      var o = document.createElement('option');
+      o.value = String(r.id);
+      o.textContent = r.name + (r.department ? '(' + r.department + ')' : '');
+      whoSel.appendChild(o);
+    });
+  }).catch(function(){});
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var who = whoSel.value;
+    var isAdmin = (who === 'admin');
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(API_BASE + (isAdmin ? '/admin/login' : '/auth/login'), {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(isAdmin ? { password: password } : { staffId: who, password: password }),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){ throw new Error(result.data && result.data.error ? result.data.error : 'ログインに失敗しました。'); }
+      var d = result.data;
+      var expiresAt = Date.now() + ((d.expiresIn || 43200) * 1000);
+      if(isAdmin){
+        saveAuth(ADMIN_KEY, { token: d.token, expiresAt: expiresAt });
+      }else{
+        saveAuth(EMP_KEY, { token: d.token, staffId: String(d.staffId), staffName: d.staffName, dept: d.dept, expiresAt: expiresAt });
+      }
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushLoginAuthed')); }catch(e){}
+    }).catch(function(e){
+      errEl.textContent = e.message || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+
+<div class="topbar">
+  <div>
+    <h1>予定・実績入力</h1>
+    <div class="sub">業務予定・日報管理</div>
+  </div>
+  <div class="topbar-right">
+    <div class="login-badge" id="loginBadge"></div>
+    <div class="user-select">
+      <span class="dept-badge" id="deptDot" style="background:var(--dept-make)"></span>
+      <select id="userSelect"></select>
+    </div>
+  </div>
+</div>
+
+<div class="container" id="yoteiContainer">
+  <div class="view-tabs">
+    <button class="view-tab active" id="tabPersonal">個人入力</button>
+    <button class="view-tab" id="tabAll">全員表示(編集可)</button>
+    <button class="view-tab" id="tabAllDates">全員表示・全日程(編集可)</button>
+  </div>
+
+  <div class="date-row">
+    <div class="date-label"><span id="dateSpanLabel">本日の予定・実績</span></div>
+    <div class="progress-summary">進捗平均 <b id="avgProgress">0%</b></div>
+  </div>
+
+  <div class="task-table-wrap" id="taskTableWrap">
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th>案件名</th>
+          <th>時間</th>
+          <th>終了予定日</th>
+          <th>メモ・備考</th>
+          <th>進捗</th>
+          <th>状態</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="taskList"></tbody>
+    </table>
+  </div>
+
+  <button class="add-task-btn" id="addTaskBtn">＋ 案件を追加</button>
+  <div class="empty-hint" id="emptyHint">まだ案件が登録されていません。「＋ 案件を追加」から本日の予定を入力してください。</div>
+
+  <div class="task-table-wrap" id="allTaskTableWrap" style="display:none;">
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th>担当者</th>
+          <th>案件名</th>
+          <th>時間</th>
+          <th>終了予定日</th>
+          <th>メモ・備考</th>
+          <th>進捗</th>
+          <th>状態</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="allTaskList"></tbody>
+    </table>
+  </div>
+
+  <button class="add-task-btn" id="addAllTaskBtn" style="display:none;">＋ 案件を追加</button>
+  <div class="empty-hint" id="allEmptyHint" style="display:none;">この日の案件はまだ登録されていません。</div>
+
+  <div class="task-table-wrap" id="allDatesTaskTableWrap" style="display:none;">
+    <table class="task-table">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>担当者</th>
+          <th>案件名</th>
+          <th>時間</th>
+          <th>終了予定日</th>
+          <th>メモ・備考</th>
+          <th>進捗</th>
+          <th>状態</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="allDatesTaskList"></tbody>
+    </table>
+  </div>
+
+  <button class="add-task-btn" id="addAllDatesTaskBtn" style="display:none;">＋ 案件を追加</button>
+  <div class="empty-hint" id="allDatesEmptyHint" style="display:none;">案件がまだ登録されていません。</div>
+
+  <div style="text-align:center;margin-top:18px;">
+    <a id="topLink" href="#" style="color:var(--ink-soft);font-size:13px;text-decoration:underline;">← トップに戻る</a>
+  </div>
+</div>
+
+<div class="footer-bar">
+  <div class="footer-inner">
+    <span class="save-status" id="saveStatus">未保存の変更があります</span>
+    <button class="save-btn" id="saveBtn">保存する</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+   「マッシュオフィスシステム(WordPress DB版)」プラグインが提供する
+   REST APIを呼び出します。
+============================================================ */
+function getSiteBasePath(){
+  const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+  for (const el of els){
+    const url = el.href || el.src;
+    if(!url) continue;
+    try{
+      const u = new URL(url, window.location.href);
+      const idx = u.pathname.indexOf('/wp-content/');
+      if(idx !== -1){
+        return u.pathname.substring(0, idx);
+      }
+    }catch(e){ /* 無視して次を試す */ }
+  }
+  return '';
+}
+function getRestApiBase(){
+  const link = document.querySelector('link[rel="https://api.w.org/"]');
+  if(link && link.href){
+    return link.href.replace(/\/$/, '');
+  }
+  return getSiteBasePath() + '/wp-json';
+}
+const API_BASE = getRestApiBase() + '/mush-office/v1';
+  // 管理者または従業員のログイントークンを付けてAPIを呼ぶ(ログイン必須のAPI用)。
+  function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = JSON.parse(localStorage.getItem("mush_nippo_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    return fetch(url, o);
+  }
+
+
+/* ============================================================
+   メンバー対応表(従業員登録画面で登録した従業員一覧から取得)
+============================================================ */
+const DEPT_CLASS_MAP = {
+  "営業": "dept-sales",
+  "デザイン": "dept-design",
+  "製作": "dept-make",
+  "事務": "dept-office",
+};
+
+let MEMBERS = {};
+
+async function loadMembers(){
+  const res = await fetch(`${API_BASE}/employees`);
+  const rows = await res.json();
+  MEMBERS = {};
+  rows.forEach(r => {
+    MEMBERS[String(r.id)] = {
+      name: r.name,
+      dept: r.department,
+      deptClass: DEPT_CLASS_MAP[r.department] || 'dept-office',
+    };
+  });
+
+  const select = document.getElementById('userSelect');
+  select.innerHTML = Object.entries(MEMBERS)
+    .map(([key, m]) => `<option value="${key}">${m.name}(${m.dept})</option>`)
+    .join('');
+}
+
+let tasks = [];
+let idSeq = 1;
+let deletedIds = []; // 画面上で削除され、保存時にサーバーからも削除すべきID
+let currentDateStr = todayStr();
+
+// 「全員表示」タブ用(個人入力とは別に保持する。完了済みも含め全担当者分をまとめて表示・編集する)
+let viewMode = 'personal'; // 'personal' | 'all'
+let allTasks = [];
+let allIdSeq = 1;
+let allDeletedIds = [];
+
+// 「全員表示・全日程」タブ用(日付も絞らず、これまでの全案件をまとめて表示・編集する)
+let allDatesTasks = [];
+let allDatesIdSeq = 1;
+let allDatesDeletedIds = [];
+
+function todayStr(){
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+
+function updateDateLabel(){
+  const d = new Date(currentDateStr + 'T00:00:00');
+  const w = ['日','月','火','水','木','金','土'][d.getDay()];
+  document.getElementById('dateSpanLabel').textContent =
+    `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}(${w}) 本日の予定・実績`;
+}
+
+// 時刻選択肢: 7:00〜21:00を15分刻みで生成
+const TIME_OPTIONS = [''];
+for(let mins = 7*60; mins <= 21*60; mins += 15){
+  const h = String(Math.floor(mins/60)).padStart(2,'0');
+  const m = String(mins%60).padStart(2,'0');
+  TIME_OPTIONS.push(`${h}:${m}`);
+}
+function timeOptionsHtml(selected){
+  return TIME_OPTIONS.map(t =>
+    `<option value="${t}" ${t===(selected||'')?'selected':''}>${t === '' ? '--:--' : t}</option>`
+  ).join('');
+}
+
+function getVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+const deptColors = {
+  'dept-sales': getVar('--dept-sales'),
+  'dept-design': getVar('--dept-design'),
+  'dept-make': getVar('--dept-make'),
+  'dept-office': getVar('--dept-office'),
+};
+
+function currentMemberKey(){
+  return document.getElementById('userSelect').value;
+}
+function currentMember(){
+  return MEMBERS[currentMemberKey()];
+}
+function currentDeptClass(){
+  return currentMember().deptClass;
+}
+
+/* ---------- 進捗データの読み書き(ログインなし・名前選択のみで識別) ---------- */
+let pastTasksCache = {}; // { [taskId]: 元のrecord_date } 繰越案件の保存時に使用
+
+async function loadTasksForToday(){
+  updateDateLabel();
+  deletedIds = [];
+
+  try{
+    // 本日分の案件
+    const res = await apiFetch(`${API_BASE}/schedule-tasks?staffId=${encodeURIComponent(currentMemberKey())}&date=${encodeURIComponent(currentDateStr)}`);
+    const todayRows = await res.json();
+    tasks = todayRows.map(r => ({
+      id: idSeq++, dbId: r.id,
+      name: r.name, start: r.start, end: r.end, dueDate: r.dueDate, memo: r.memo, progress: r.progress,
+    }));
+  }catch(e){
+    tasks = [];
+  }
+
+  // 過去の未完了(進捗100%未満)の案件を呼び出して一緒に表示する
+  try{
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const p = n => String(n).padStart(2,'0');
+    const cutoffStr = `${cutoff.getFullYear()}-${p(cutoff.getMonth()+1)}-${p(cutoff.getDate())}`;
+
+    const url = `${API_BASE}/schedule-tasks?staffId=${encodeURIComponent(currentMemberKey())}&dateFrom=${encodeURIComponent(cutoffStr)}&dateTo=${encodeURIComponent(currentDateStr)}`;
+    const pastRes = await apiFetch(url);
+    const pastRows = await pastRes.json();
+    pastRows
+      .filter(r => r.date !== currentDateStr && (r.progress ?? 0) < 100)
+      .forEach(r => {
+        tasks.push({
+          id: idSeq++, dbId: r.id,
+          name: r.name, start: r.start, end: r.end, dueDate: r.dueDate, memo: r.memo, progress: r.progress,
+          _carried: true, _sourceDate: r.date,
+        });
+      });
+  }catch(e){
+    // 繰越データの取得に失敗しても、本日の入力自体は継続できるようにする
+  }
+
+  render();
+  setSavedLabel(true);
+}
+
+async function saveTasks(){
+  const member = currentMember();
+  const memberKey = currentMemberKey();
+
+  // 既存の案件(dbIdあり)は更新、新規追加した案件(dbIdなし)は新規作成
+  for(const t of tasks){
+    const body = {
+      name: t.name, start: t.start, end: t.end, dueDate: t.dueDate, memo: t.memo, progress: t.progress,
+    };
+    if(t.dbId){
+      body.id = t.dbId;
+    }else{
+      body.date = t._carried ? t._sourceDate : currentDateStr;
+      body.staffId = memberKey;
+      body.staffName = member.name;
+      body.dept = member.dept;
+    }
+    const res = await apiFetch(`${API_BASE}/schedule-tasks/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if(!res.ok){
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || '保存に失敗しました。');
+    }
+    const saved = await res.json();
+    if(saved && saved.id) t.dbId = saved.id;
+  }
+
+  // 画面上で削除した案件をサーバー側からも削除する
+  for(const id of deletedIds){
+    await apiFetch(`${API_BASE}/schedule-tasks/${id}`, { method: 'DELETE' });
+  }
+  deletedIds = [];
+}
+
+/* ---------- 全員表示タブ(担当者を絞らず、完了済みも含め本日分をまとめて表示・編集) ---------- */
+// 日報側の案件は業務区分・顧客・案件名をまとめて1つのラベルとして表示する
+// (このタブでは進捗ページの案件のように個別項目としては編集できないため)。
+function nippoLabel(r){
+  const detail = r.bulkMode ? `まとめ${r.bulkCount}件` : [r.client, r.project].filter(Boolean).join('・');
+  return detail ? `${r.category}(${detail})` : r.category;
+}
+
+async function loadAllTasksForToday(){
+  updateDateLabel();
+  allDeletedIds = [];
+  let scheduleRows = [], nippoRows = [];
+  try{
+    const res = await apiFetch(`${API_BASE}/schedule-tasks?date=${encodeURIComponent(currentDateStr)}`);
+    scheduleRows = await res.json();
+  }catch(e){ /* 進捗ページ側が取得できなくても日報側は表示を続ける */ }
+  try{
+    const res = await apiFetch(`${API_BASE}/task-records?date=${encodeURIComponent(currentDateStr)}`);
+    nippoRows = await res.json();
+  }catch(e){ /* 日報側が取得できなくても進捗ページ側は表示を続ける */ }
+
+  const scheduleTasks = scheduleRows.map(r => ({
+    id: allIdSeq++, dbId: r.id, _kind: 'schedule',
+    staffId: r.staffId, staffName: r.staffName, dept: r.dept,
+    name: r.name, start: r.start, end: r.end, dueDate: r.dueDate, memo: r.memo, progress: r.progress,
+  }));
+  const nippoTasks = nippoRows.map(r => ({
+    id: allIdSeq++, dbId: r.id, _kind: 'nippo',
+    staffId: r.staffId, staffName: r.staffName, dept: r.dept,
+    name: nippoLabel(r), start: r.start, end: r.end, dueDate: r.dueDate, memo: r.note, progress: r.progress,
+  }));
+  allTasks = [...scheduleTasks, ...nippoTasks];
+  renderAll();
+  setSavedLabel(true);
+}
+
+async function saveAllTasks(){
+  for(const t of allTasks){
+    if(t._kind === 'nippo'){
+      // 日報側は項目名(業務区分・顧客・案件)を編集できないため、進捗のみ更新する。
+      if(!t.dbId) continue;
+      await apiFetch(`${API_BASE}/task-records/${t.dbId}/admin-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress: t.progress }),
+      });
+      continue;
+    }
+    const body = {
+      name: t.name, start: t.start, end: t.end, dueDate: t.dueDate, memo: t.memo, progress: t.progress,
+    };
+    if(t.dbId){
+      body.id = t.dbId;
+    }else{
+      const m = MEMBERS[t.staffId];
+      body.date = currentDateStr;
+      body.staffId = t.staffId;
+      body.staffName = m ? m.name : t.staffName;
+      body.dept = m ? m.dept : t.dept;
+    }
+    const res = await apiFetch(`${API_BASE}/schedule-tasks/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if(!res.ok){
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || '保存に失敗しました。');
+    }
+    const saved = await res.json();
+    if(saved && saved.id){
+      t.dbId = saved.id;
+      // サーバー側の保存結果(担当者名など)を正として同期しておく
+      t.staffId = saved.staffId; t.staffName = saved.staffName; t.dept = saved.dept;
+    }
+  }
+
+  for(const d of allDeletedIds){
+    const base = d.kind === 'nippo' ? 'task-records' : 'schedule-tasks';
+    await fetch(`${API_BASE}/${base}/${d.id}`, { method: 'DELETE' });
+  }
+  allDeletedIds = [];
+}
+
+function addAllTask(){
+  const firstKey = Object.keys(MEMBERS)[0] || '';
+  const m = MEMBERS[firstKey];
+  allTasks.push({
+    id: allIdSeq++, _kind: 'schedule',
+    staffId: firstKey, staffName: m ? m.name : '', dept: m ? m.dept : '',
+    name: '', start: '', end: '', dueDate: '', memo: '', progress: 0,
+  });
+  renderAll();
+  markUnsaved();
+}
+
+function removeAllTask(id){
+  const target = allTasks.find(t => t.id === id);
+  if(target && target.dbId){
+    allDeletedIds.push({ id: target.dbId, kind: target._kind });
+  }
+  allTasks = allTasks.filter(t => t.id !== id);
+  renderAll();
+  markUnsaved();
+}
+
+function renderAll(){
+  const list = document.getElementById('allTaskList');
+  const tableWrap = document.getElementById('allTaskTableWrap');
+  const emptyHint = document.getElementById('allEmptyHint');
+  list.innerHTML = '';
+  tableWrap.style.display = allTasks.length === 0 ? 'none' : 'block';
+  emptyHint.style.display = allTasks.length === 0 ? 'block' : 'none';
+
+  allTasks.forEach(task => {
+    const row = document.createElement('tr');
+    const st = statusLabel(task.progress);
+    const isNippo = task._kind === 'nippo';
+    const ownerCell = task.dbId
+      ? `<span class="owner-name">${escapeHtml(task.staffName)}</span>`
+      : `<select class="owner-select" data-field="staffId">${
+          Object.entries(MEMBERS).map(([key, m]) =>
+            `<option value="${key}" ${key===task.staffId?'selected':''}>${escapeHtml(m.name)}</option>`
+          ).join('')
+        }</select>`;
+    // 日報側の案件は業務区分・顧客・案件名をこのページからは編集できないため、
+    // 名前・時間・メモは文字表示のみにする(進捗だけ編集可能)。
+    const nameCell = isNippo
+      ? `<span class="nippo-label">${escapeHtml(task.name)}</span>`
+      : `<input class="task-name" placeholder="案件名を入力(例: 〇〇様 サイン製作)" value="${escapeHtml(task.name)}" data-field="name">`;
+    const timeCell = isNippo
+      ? `${escapeHtml(task.start || '')}${task.start||task.end?' 〜 ':''}${escapeHtml(task.end || '')}`
+      : `<div class="time-field">
+          <select data-field="start">${timeOptionsHtml(task.start)}</select>
+          <span>〜</span>
+          <select data-field="end">${timeOptionsHtml(task.end)}</select>
+        </div>`;
+    const dueCell = isNippo
+      ? escapeHtml(task.dueDate || '')
+      : `<input type="date" value="${task.dueDate || ''}" data-field="dueDate">`;
+    const memoCell = isNippo
+      ? escapeHtml(task.memo || '')
+      : `<input type="text" placeholder="メモ・備考(任意)" value="${escapeHtml(task.memo)}" data-field="memo">`;
+
+    row.innerHTML = `
+      <td class="task-cell-owner">${ownerCell}</td>
+      <td class="task-cell-name">${nameCell}</td>
+      <td class="task-cell-time">${timeCell}</td>
+      <td class="task-cell-due">${dueCell}</td>
+      <td class="task-cell-memo">${memoCell}</td>
+      <td class="task-cell-progress">
+        <div class="progress-row">
+          <input type="range" min="0" max="100" step="5" value="${task.progress}" data-field="progress">
+          <span class="progress-value">${task.progress}%</span>
+        </div>
+      </td>
+      <td class="task-cell-status">
+        <span class="status-pill ${st.cls}">${st.text}</span>
+      </td>
+      <td class="task-cell-del">
+        <button class="del-btn" title="削除">✕</button>
+      </td>
+    `;
+
+    row.querySelector('.del-btn').addEventListener('click', () => removeAllTask(task.id));
+
+    row.querySelectorAll('[data-field]').forEach(el => {
+      const handler = () => {
+        const field = el.dataset.field;
+        task[field] = field === 'progress' ? Number(el.value) : el.value;
+        if(field === 'staffId'){
+          // 担当者を切り替えたら、表示用の氏名・部署も一緒に更新しておく
+          // (保存後は編集不可の文字表示に変わるため、ここで同期しておかないと古い氏名が残ってしまう)
+          const m = MEMBERS[task.staffId];
+          if(m){ task.staffName = m.name; task.dept = m.dept; }
+        }
+        if(field === 'progress'){
+          row.querySelector('.progress-value').textContent = task.progress + '%';
+          const s = statusLabel(task.progress);
+          const pill = row.querySelector('.status-pill');
+          pill.className = 'status-pill ' + s.cls;
+          pill.textContent = s.text;
+        }
+        markUnsaved();
+      };
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+    });
+
+    list.appendChild(row);
+  });
+
+  updateAllAvg();
+}
+
+function updateAllAvg(){
+  const el = document.getElementById('avgProgress');
+  if(allTasks.length === 0){ el.textContent = '0%'; return; }
+  const avg = Math.round(allTasks.reduce((s,t)=>s+t.progress,0) / allTasks.length);
+  el.textContent = avg + '%';
+}
+
+/* ---------- 全員表示・全日程タブ(日付も絞らず、これまでの全案件をまとめて表示・編集) ---------- */
+async function loadAllDatesTasks(){
+  allDatesDeletedIds = [];
+  let scheduleRows = [], nippoRows = [];
+  try{
+    const res = await apiFetch(`${API_BASE}/schedule-tasks`);
+    scheduleRows = await res.json();
+  }catch(e){ /* 進捗ページ側が取得できなくても日報側は表示を続ける */ }
+  try{
+    const res = await apiFetch(`${API_BASE}/task-records`);
+    nippoRows = await res.json();
+  }catch(e){ /* 日報側が取得できなくても進捗ページ側は表示を続ける */ }
+
+  const scheduleTasks = scheduleRows.map(r => ({
+    id: allDatesIdSeq++, dbId: r.id, _kind: 'schedule',
+    date: r.date, staffId: r.staffId, staffName: r.staffName, dept: r.dept,
+    name: r.name, start: r.start, end: r.end, dueDate: r.dueDate, memo: r.memo, progress: r.progress,
+  }));
+  const nippoTasks = nippoRows.map(r => ({
+    id: allDatesIdSeq++, dbId: r.id, _kind: 'nippo',
+    date: r.date, staffId: r.staffId, staffName: r.staffName, dept: r.dept,
+    name: nippoLabel(r), start: r.start, end: r.end, dueDate: r.dueDate, memo: r.note, progress: r.progress,
+  }));
+  allDatesTasks = [...scheduleTasks, ...nippoTasks].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  renderAllDates();
+  setSavedLabel(true);
+}
+
+async function saveAllDatesTasks(){
+  for(const t of allDatesTasks){
+    if(t._kind === 'nippo'){
+      if(!t.dbId) continue;
+      await apiFetch(`${API_BASE}/task-records/${t.dbId}/admin-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress: t.progress }),
+      });
+      continue;
+    }
+    const body = {
+      name: t.name, start: t.start, end: t.end, dueDate: t.dueDate, memo: t.memo, progress: t.progress,
+    };
+    if(t.dbId){
+      body.id = t.dbId;
+    }else{
+      const m = MEMBERS[t.staffId];
+      body.date = t.date || todayStr();
+      body.staffId = t.staffId;
+      body.staffName = m ? m.name : t.staffName;
+      body.dept = m ? m.dept : t.dept;
+    }
+    const res = await apiFetch(`${API_BASE}/schedule-tasks/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if(!res.ok){
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || '保存に失敗しました。');
+    }
+    const saved = await res.json();
+    if(saved && saved.id){
+      t.dbId = saved.id;
+      t.date = saved.date; t.staffId = saved.staffId; t.staffName = saved.staffName; t.dept = saved.dept;
+    }
+  }
+
+  for(const d of allDatesDeletedIds){
+    const base = d.kind === 'nippo' ? 'task-records' : 'schedule-tasks';
+    await fetch(`${API_BASE}/${base}/${d.id}`, { method: 'DELETE' });
+  }
+  allDatesDeletedIds = [];
+}
+
+function addAllDatesTask(){
+  const firstKey = Object.keys(MEMBERS)[0] || '';
+  const m = MEMBERS[firstKey];
+  allDatesTasks.unshift({
+    id: allDatesIdSeq++, _kind: 'schedule',
+    date: todayStr(),
+    staffId: firstKey, staffName: m ? m.name : '', dept: m ? m.dept : '',
+    name: '', start: '', end: '', dueDate: '', memo: '', progress: 0,
+  });
+  renderAllDates();
+  markUnsaved();
+}
+
+function removeAllDatesTask(id){
+  const target = allDatesTasks.find(t => t.id === id);
+  if(target && target.dbId){
+    allDatesDeletedIds.push({ id: target.dbId, kind: target._kind });
+  }
+  allDatesTasks = allDatesTasks.filter(t => t.id !== id);
+  renderAllDates();
+  markUnsaved();
+}
+
+function renderAllDates(){
+  const list = document.getElementById('allDatesTaskList');
+  const tableWrap = document.getElementById('allDatesTaskTableWrap');
+  const emptyHint = document.getElementById('allDatesEmptyHint');
+  list.innerHTML = '';
+  tableWrap.style.display = allDatesTasks.length === 0 ? 'none' : 'block';
+  emptyHint.style.display = allDatesTasks.length === 0 ? 'block' : 'none';
+
+  allDatesTasks.forEach(task => {
+    const row = document.createElement('tr');
+    const st = statusLabel(task.progress);
+    const isNippo = task._kind === 'nippo';
+    const isNew = !task.dbId;
+    const dateCell = isNew
+      ? `<input type="date" value="${task.date || ''}" data-field="date">`
+      : escapeHtml(task.date || '');
+    const ownerCell = isNew
+      ? `<select class="owner-select" data-field="staffId">${
+          Object.entries(MEMBERS).map(([key, m]) =>
+            `<option value="${key}" ${key===task.staffId?'selected':''}>${escapeHtml(m.name)}</option>`
+          ).join('')
+        }</select>`
+      : `<span class="owner-name">${escapeHtml(task.staffName)}</span>`;
+    // 日報側の案件は業務区分・顧客・案件名をこのページからは編集できないため、
+    // 名前・時間・メモは文字表示のみにする(進捗だけ編集可能)。
+    const nameCell = isNippo
+      ? `<span class="nippo-label">${escapeHtml(task.name)}</span>`
+      : `<input class="task-name" placeholder="案件名を入力(例: 〇〇様 サイン製作)" value="${escapeHtml(task.name)}" data-field="name">`;
+    const timeCell = isNippo
+      ? `${escapeHtml(task.start || '')}${task.start||task.end?' 〜 ':''}${escapeHtml(task.end || '')}`
+      : `<div class="time-field">
+          <select data-field="start">${timeOptionsHtml(task.start)}</select>
+          <span>〜</span>
+          <select data-field="end">${timeOptionsHtml(task.end)}</select>
+        </div>`;
+    const dueCell = isNippo
+      ? escapeHtml(task.dueDate || '')
+      : `<input type="date" value="${task.dueDate || ''}" data-field="dueDate">`;
+    const memoCell = isNippo
+      ? escapeHtml(task.memo || '')
+      : `<input type="text" placeholder="メモ・備考(任意)" value="${escapeHtml(task.memo)}" data-field="memo">`;
+
+    row.innerHTML = `
+      <td class="task-cell-due">${dateCell}</td>
+      <td class="task-cell-owner">${ownerCell}</td>
+      <td class="task-cell-name">${nameCell}</td>
+      <td class="task-cell-time">${timeCell}</td>
+      <td class="task-cell-due">${dueCell}</td>
+      <td class="task-cell-memo">${memoCell}</td>
+      <td class="task-cell-progress">
+        <div class="progress-row">
+          <input type="range" min="0" max="100" step="5" value="${task.progress}" data-field="progress">
+          <span class="progress-value">${task.progress}%</span>
+        </div>
+      </td>
+      <td class="task-cell-status">
+        <span class="status-pill ${st.cls}">${st.text}</span>
+      </td>
+      <td class="task-cell-del">
+        <button class="del-btn" title="削除">✕</button>
+      </td>
+    `;
+
+    row.querySelector('.del-btn').addEventListener('click', () => removeAllDatesTask(task.id));
+
+    row.querySelectorAll('[data-field]').forEach(el => {
+      const handler = () => {
+        const field = el.dataset.field;
+        task[field] = field === 'progress' ? Number(el.value) : el.value;
+        if(field === 'staffId'){
+          const m = MEMBERS[task.staffId];
+          if(m){ task.staffName = m.name; task.dept = m.dept; }
+        }
+        if(field === 'progress'){
+          row.querySelector('.progress-value').textContent = task.progress + '%';
+          const s = statusLabel(task.progress);
+          const pill = row.querySelector('.status-pill');
+          pill.className = 'status-pill ' + s.cls;
+          pill.textContent = s.text;
+        }
+        markUnsaved();
+      };
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+    });
+
+    list.appendChild(row);
+  });
+
+  updateAllDatesAvg();
+}
+
+function updateAllDatesAvg(){
+  const el = document.getElementById('avgProgress');
+  if(allDatesTasks.length === 0){ el.textContent = '0%'; return; }
+  const avg = Math.round(allDatesTasks.reduce((s,t)=>s+t.progress,0) / allDatesTasks.length);
+  el.textContent = avg + '%';
+}
+
+function setViewMode(mode){
+  viewMode = mode;
+  document.getElementById('tabPersonal').classList.toggle('active', mode === 'personal');
+  document.getElementById('tabAll').classList.toggle('active', mode === 'all');
+  document.getElementById('tabAllDates').classList.toggle('active', mode === 'all-dates');
+  document.querySelector('.user-select').style.display = mode === 'personal' ? 'flex' : 'none';
+
+  // 全員表示系タブは列数が多いので、表全体が見えるよう横幅を広げる
+  // (WordPressテーマ側にも同名の#container要素がありmax-width:760pxで
+  //  頭打ちになっているため、そちらも一緒に広げないと効果が出ない)
+  const isWide = mode !== 'personal';
+  document.getElementById('yoteiContainer').classList.toggle('wide-view', isWide);
+  document.querySelector('.footer-inner').classList.toggle('wide-view', isWide);
+  const themeContainer = document.getElementById('container');
+  if(themeContainer) themeContainer.style.maxWidth = isWide ? '1400px' : '';
+
+  document.getElementById('taskTableWrap').style.display = mode === 'personal' ? (tasks.length ? 'block' : 'none') : 'none';
+  document.getElementById('addTaskBtn').style.display = mode === 'personal' ? 'flex' : 'none';
+  document.getElementById('emptyHint').style.display = mode === 'personal' && tasks.length === 0 ? 'block' : 'none';
+
+  document.getElementById('allTaskTableWrap').style.display = mode === 'all' ? (allTasks.length ? 'block' : 'none') : 'none';
+  document.getElementById('addAllTaskBtn').style.display = mode === 'all' ? 'flex' : 'none';
+  document.getElementById('allEmptyHint').style.display = mode === 'all' && allTasks.length === 0 ? 'block' : 'none';
+
+  document.getElementById('allDatesTaskTableWrap').style.display = mode === 'all-dates' ? (allDatesTasks.length ? 'block' : 'none') : 'none';
+  document.getElementById('addAllDatesTaskBtn').style.display = mode === 'all-dates' ? 'flex' : 'none';
+  document.getElementById('allDatesEmptyHint').style.display = mode === 'all-dates' && allDatesTasks.length === 0 ? 'block' : 'none';
+
+  const dateLabel = document.getElementById('dateSpanLabel');
+  if(mode === 'all-dates'){
+    dateLabel.textContent = '全日程の予定・実績';
+  }else{
+    updateDateLabel();
+  }
+
+  if(mode === 'personal'){
+    updateAvg();
+  }else if(mode === 'all'){
+    updateAllAvg();
+    if(allTasks.length === 0) loadAllTasksForToday();
+  }else{
+    updateAllDatesAvg();
+    if(allDatesTasks.length === 0) loadAllDatesTasks();
+  }
+}
+
+function setSavedLabel(saved){
+  const st = document.getElementById('saveStatus');
+  if(saved){
+    st.textContent = '保存済み';
+    st.classList.add('saved');
+  }else{
+    st.textContent = '未保存の変更があります';
+    st.classList.remove('saved');
+  }
+}
+
+function addTask(prefill){
+  const task = Object.assign({
+    id: idSeq++,
+    name: '',
+    start: '',
+    end: '',
+    dueDate: '',
+    memo: '',
+    progress: 0
+  }, prefill || {});
+  tasks.push(task);
+  render();
+}
+
+function removeTask(id){
+  const target = tasks.find(t => t.id === id);
+  if(target && target.dbId){
+    deletedIds.push(target.dbId);
+  }
+  tasks = tasks.filter(t => t.id !== id);
+  render();
+  markUnsaved();
+}
+
+function statusLabel(p){
+  if(p == 0) return {cls:'notstarted', text:'未着手'};
+  if(p >= 100) return {cls:'done', text:'完了'};
+  return {cls:'progress', text:'進行中'};
+}
+
+function render(){
+  const list = document.getElementById('taskList');
+  const tableWrap = document.getElementById('taskTableWrap');
+  const emptyHint = document.getElementById('emptyHint');
+  list.innerHTML = '';
+  tableWrap.style.display = tasks.length === 0 ? 'none' : 'block';
+  emptyHint.style.display = tasks.length === 0 ? 'block' : 'none';
+
+  const deptClass = currentDeptClass();
+  const deptColor = deptColors[deptClass];
+  document.getElementById('deptDot').style.background = deptColor;
+
+  tasks.forEach(task => {
+    const row = document.createElement('tr');
+    const rowColor = task._carried ? '#f97316' : deptColor;
+    if(task._carried) row.classList.add('carried');
+
+    const st = statusLabel(task.progress);
+    const carryBadge = task._carried
+      ? `<div class="carry-badge">繰越(${task._sourceDate.slice(5).replace('-', '/')})</div>`
+      : '';
+
+    row.innerHTML = `
+      <td class="task-cell-name">
+        <input class="task-name" placeholder="案件名を入力(例: 〇〇様 サイン製作)" value="${escapeHtml(task.name)}" data-field="name">
+        ${carryBadge}
+      </td>
+      <td class="task-cell-time">
+        <div class="time-field">
+          <select data-field="start">${timeOptionsHtml(task.start)}</select>
+          <span>〜</span>
+          <select data-field="end">${timeOptionsHtml(task.end)}</select>
+        </div>
+      </td>
+      <td class="task-cell-due">
+        <input type="date" value="${task.dueDate || ''}" data-field="dueDate">
+      </td>
+      <td class="task-cell-memo">
+        <input type="text" placeholder="メモ・備考(任意)" value="${escapeHtml(task.memo)}" data-field="memo">
+      </td>
+      <td class="task-cell-progress">
+        <div class="progress-row">
+          <input type="range" min="0" max="100" step="5" value="${task.progress}" data-field="progress" style="accent-color:${rowColor}">
+          <span class="progress-value">${task.progress}%</span>
+        </div>
+      </td>
+      <td class="task-cell-status">
+        <span class="status-pill ${st.cls}">${st.text}</span>
+      </td>
+      <td class="task-cell-del">
+        <button class="del-btn" title="削除">✕</button>
+      </td>
+    `;
+
+    row.querySelector('.del-btn').addEventListener('click', () => removeTask(task.id));
+
+    row.querySelectorAll('[data-field]').forEach(el => {
+      const handler = () => {
+        const field = el.dataset.field;
+        task[field] = field === 'progress' ? Number(el.value) : el.value;
+        if(field === 'progress'){
+          row.querySelector('.progress-value').textContent = task.progress + '%';
+          const s = statusLabel(task.progress);
+          const pill = row.querySelector('.status-pill');
+          pill.className = 'status-pill ' + s.cls;
+          pill.textContent = s.text;
+        }
+        markUnsaved();
+      };
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+    });
+
+    list.appendChild(row);
+  });
+
+  updateAvg();
+}
+
+function updateAvg(){
+  const el = document.getElementById('avgProgress');
+  if(tasks.length === 0){ el.textContent = '0%'; return; }
+  const avg = Math.round(tasks.reduce((s,t)=>s+t.progress,0) / tasks.length);
+  el.textContent = avg + '%';
+}
+
+function escapeHtml(s){
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function markUnsaved(){
+  setSavedLabel(false);
+}
+
+document.getElementById('addTaskBtn').addEventListener('click', () => {
+  addTask();
+  markUnsaved();
+});
+
+document.getElementById('addAllTaskBtn').addEventListener('click', () => {
+  addAllTask();
+});
+
+document.getElementById('addAllDatesTaskBtn').addEventListener('click', () => {
+  addAllDatesTask();
+});
+
+document.getElementById('userSelect').addEventListener('change', () => {
+  loadTasksForToday();
+});
+
+document.getElementById('tabPersonal').addEventListener('click', () => setViewMode('personal'));
+document.getElementById('tabAll').addEventListener('click', () => setViewMode('all'));
+document.getElementById('tabAllDates').addEventListener('click', () => setViewMode('all-dates'));
+
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const st = document.getElementById('saveStatus');
+  st.textContent = '保存中...';
+  try{
+    if(viewMode === 'all'){
+      await saveAllTasks();
+      renderAll();
+    }else if(viewMode === 'all-dates'){
+      await saveAllDatesTasks();
+      renderAllDates();
+    }else{
+      await saveTasks();
+    }
+    setSavedLabel(true);
+  }catch(e){
+    st.textContent = '保存に失敗しました。通信環境をご確認のうえ再度お試しください。';
+    st.classList.remove('saved');
+  }
+});
+
+// ログイン中の人(ゲートが保存した管理者/従業員トークン)を上部に表示する。
+function loadLoginSession(key){
+  try{
+    const a = JSON.parse(localStorage.getItem(key) || 'null');
+    if(a && a.token && a.expiresAt > Date.now()) return a;
+  }catch(e){}
+  return null;
+}
+function currentLogin(){
+  if(loadLoginSession('mush_admin_auth')) return { name: '管理者', staffId: '' };
+  const e = loadLoginSession('mush_nippo_auth');
+  return e ? { name: e.staffName || '', staffId: String(e.staffId) } : null;
+}
+function updateLoginBadge(){
+  const login = currentLogin();
+  const el = document.getElementById('loginBadge');
+  el.innerHTML = login ? 'ログイン中: <b>' + escapeHtml(login.name) + '</b>' : '';
+}
+// 従業員としてログインしている場合は、個人入力の対象を最初から本人にしておく。
+function selectLoggedInStaff(notify){
+  const login = currentLogin();
+  const sel = document.getElementById('userSelect');
+  if(login && login.staffId && MEMBERS[login.staffId] && sel.value !== login.staffId){
+    sel.value = login.staffId;
+    if(notify){ sel.dispatchEvent(new Event('change')); }
+  }
+}
+window.addEventListener('mushLoginAuthed', () => { updateLoginBadge(); selectLoggedInStaff(true); });
+
+// 初期表示: 従業員一覧を読み込んでから、選択中のメンバーの本日データを読み込み
+async function init(){
+  await loadMembers();
+  if(Object.keys(MEMBERS).length === 0){
+    document.querySelector('.container').innerHTML =
+      '<p style="padding:16px;color:#ea580c;font-size:13px;">従業員登録がまだありません。先に従業員登録画面から登録してください。</p>';
+    return;
+  }
+  updateLoginBadge();
+  selectLoggedInStaff(false);
+  loadTasksForToday();
+  setViewMode('personal');
+}
+document.getElementById('topLink').href = getSiteBasePath() + '/トップ/';
+init();
+</script>
+
+</body>
+</html>

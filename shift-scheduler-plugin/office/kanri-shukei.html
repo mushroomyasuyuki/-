@@ -1,0 +1,1735 @@
+<!--
+  ============================================================
+  管理者集計画面(WordPress DB版 / Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「マッシュオフィスシステム(WordPress DB版)」プラグインを有効化しておく必要があります。
+  ============================================================
+-->
+<!-- ============================================================
+     管理者ログインゲート(共通)
+     WordPressのパスワード保護は使わず、日報ページの従業員ログインと
+     同じ「パスワード入力→トークン発行」の仕組みで管理者だけを通す。
+     従業員登録・管理者チャット・管理者集計の3ページで共通のログイン状態
+     (localStorageのmush_admin_auth)を共有するので、1回ログインすれば
+     3ページとも入れるようになる。
+     ============================================================ -->
+<div id="mushAdminGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">管理者ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">このページは管理者のみ閲覧できます。<br>ご自身のお名前とパスワードでログインしてください。</p>
+    <select id="mushAdminStaff" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="">-- 読み込み中… --</option>
+    </select>
+    <input type="password" id="mushAdminPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushAdminErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushAdminSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var STORAGE_KEY = 'mush_admin_auth';
+
+  function loadAuth(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(auth){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushAdminGate');
+  if(loadAuth()){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var pwInput = document.getElementById('mushAdminPw');
+  var errEl = document.getElementById('mushAdminErr');
+  var btn = document.getElementById('mushAdminSubmit');
+  var staffSelect = document.getElementById('mushAdminStaff');
+  var DEPTS = ['営業', 'デザイン', '製作', '事務'];
+
+  function loadStaffOptions(){
+    fetch(API_BASE + '/employees').then(function(res){
+      return res.json();
+    }).then(function(rows){
+      if(!Array.isArray(rows)) rows = [];
+      // 「従業員登録」で追加した新しい部署の従業員も選べるよう、所属している部署を一覧に加える。
+      for(var x=0; x<rows.length; x++){ var dn = rows[x].department; if(dn){ if(DEPTS.indexOf(dn) === -1){ DEPTS.push(dn); } } }
+      var html = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+      for(var d=0; d<DEPTS.length; d++){
+        var dept = DEPTS[d];
+        var opts = '';
+        for(var i=0; i<rows.length; i++){
+          var r = rows[i];
+          if(r.department === dept){
+            opts += '<option value="' + r.id + '">' + String(r.name).replace(/[&<>"]/g, function(c){
+              return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+            }) + '</option>';
+          }
+        }
+        if(opts){ html += '<optgroup label="' + dept + '">' + opts + '</optgroup>'; }
+      }
+      staffSelect.innerHTML = html;
+    }).catch(function(e){
+      staffSelect.innerHTML = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+    });
+  }
+  loadStaffOptions();
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var staffId = staffSelect.value;
+    var isStaffLogin = !!staffId;
+    var url = isStaffLogin ? (API_BASE + '/auth/login') : (API_BASE + '/admin/login');
+    var body = isStaffLogin ? { staffId: staffId, password: password } : { password: password };
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(url, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){
+        var msg = 'ログインに失敗しました。';
+        if(result.data){ if(result.data.error){ msg = result.data.error; } }
+        throw new Error(msg);
+      }
+      if(isStaffLogin){
+        if(!result.data.isAdmin){ throw new Error('このアカウントには管理者権限がありません。'); }
+      }
+      saveAuth({ token: result.data.token, expiresAt: Date.now() + (result.data.expiresIn * 1000) });
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushAdminAuthed')); }catch(e){}
+    }).catch(function(e){
+      var msg = '';
+      if(e){ if(e.message){ msg = e.message; } }
+      errEl.textContent = msg || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+<div id="kanri-app">読み込み中…</div>
+
+<style>
+  #kanri-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    --plan: #38bdf8; --plan-bg: #f0f9ff;
+    --progress: #f59e0b; --progress-bg: #fffbeb;
+    --done: #10b981; --done-bg: #ecfdf5;
+    --carry: #f97316; --carry-bg: #fff7ed;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 1100px; margin: 0 auto;
+  }
+  #kanri-app * { box-sizing: border-box; }
+  #kanri-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+  }
+  #kanri-app .header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  #kanri-app .header .sub { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  #kanri-app .date-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #kanri-app .date-range input[type=date], #kanri-app .date-range input[type=month], #kanri-app .date-range select {
+    background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 3px; padding: 6px 8px; font-size: 13px;
+  }
+  #kanri-app .date-range span { color: #94a3b8; font-size: 12px; }
+  #kanri-app .quick-btn {
+    background: #334155; color: #cbd5e1; border: 1px solid #475569; border-radius: 3px; padding: 6px 10px;
+    font-size: 12px; cursor: pointer;
+  }
+  #kanri-app .quick-btn.active { background: #f8fafc; color: #1e293b; }
+  #kanri-app .mode-tabs { display: flex; gap: 4px; }
+  #kanri-app .range-label { color: #94a3b8; font-size: 11.5px; width: 100%; }
+
+  #kanri-app .summary { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 14px 16px 0; }
+  @media (min-width: 700px) { #kanri-app .summary { grid-template-columns: repeat(4, 1fr); } }
+  #kanri-app .summary-card { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; }
+  #kanri-app .summary-card h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+  #kanri-app .summary-card .big { font-size: 22px; font-weight: 700; color: #1e293b; }
+  #kanri-app .summary-card .big.done { color: var(--done); }
+  #kanri-app .summary-card .big.carry { color: var(--carry); }
+
+  #kanri-app .panel { background: #fff; border: 1px solid var(--border); border-radius: 4px; margin: 14px 16px 0; overflow: hidden; }
+  #kanri-app .panel-head {
+    padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #kanri-app .panel-head.collapsible { cursor: pointer; user-select: none; }
+  #kanri-app .chevron { font-size: 12px; color: var(--muted); font-weight: 400; }
+  #kanri-app .export-btn {
+    background: var(--done); color: #fff; border: none; border-radius: 3px; padding: 6px 12px; font-size: 12px;
+    font-weight: 600; cursor: pointer;
+  }
+  #kanri-app table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #kanri-app th { text-align: left; padding: 8px 12px; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
+  #kanri-app td { padding: 8px 12px; border-bottom: 1px solid #f1f0eb; }
+  #kanri-app tr:last-child td { border-bottom: none; }
+  #kanri-app .dept-pill {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px;
+  }
+  #kanri-app .dept-pill.営業 { background: #e0f2fe; color: #0369a1; }
+  #kanri-app .dept-pill.デザイン { background: #ede9fe; color: #6d28d9; }
+  #kanri-app .dept-pill.製作 { background: #d1fae5; color: #047857; }
+  #kanri-app .dept-pill.事務 { background: #fef3c7; color: #b45309; }
+  #kanri-app .rate-bar-track {
+    width: 100px; height: 7px; background: #eceae3; border-radius: 999px; overflow: hidden; display: inline-block;
+    vertical-align: middle; margin-right: 6px; pointer-events: none;
+  }
+  #kanri-app .rate-bar-fill { display: block; height: 100%; background: var(--done); border-radius: 999px; }
+  #kanri-app .rate-pct { font-size: 12px; color: var(--muted); vertical-align: middle; }
+  #kanri-app .inline-progress { width: 90px; vertical-align: middle; margin-right: 6px; accent-color: var(--done); }
+  #kanri-app .clickable-row { cursor: pointer; }
+  #kanri-app .clickable-row:hover { background: #f8f7f4; }
+  #kanri-app .modal-overlay {
+    position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  #kanri-app .modal-box {
+    background: #fff; border-radius: 8px; padding: 20px 24px; max-width: 440px; width: 100%;
+    max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 28px rgba(0,0,0,.2);
+  }
+  #kanri-app .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  #kanri-app .modal-head h2 { font-size: 15px; margin: 0; }
+  #kanri-app .modal-close { background: none; border: none; font-size: 16px; cursor: pointer; color: var(--muted); padding: 2px 6px; }
+  #kanri-app .modal-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #kanri-app .modal-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 10px 6px 0; white-space: nowrap; vertical-align: top; width: 88px; }
+  #kanri-app .modal-table td { padding: 6px 0; border-top: 1px solid var(--border); word-break: break-word; }
+  #kanri-app .modal-table tr:first-child td { border-top: none; }
+  #kanri-app .detail-image-thumbs { display: flex; flex-wrap: wrap; gap: 6px; }
+  #kanri-app .detail-image-thumbs img { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; }
+  #kanri-app .lightbox-overlay {
+    position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,.8);
+    display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;
+  }
+  #kanri-app .lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 4px; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+  #kanri-app .lightbox-close {
+    position: fixed; top: 16px; right: 20px; width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,.9); color: #1f2937; border: none; font-size: 18px; cursor: pointer;
+  }
+  #kanri-app .detail-image-note { color: var(--muted); font-size: 12.5px; }
+  #kanri-app .image-count-badge {
+    display: inline-block; margin-left: 6px; font-size: 11px; color: #0369a1; background: #f0f9ff;
+    border: 1px solid #bae6fd; border-radius: 3px; padding: 1px 6px;
+  }
+  #kanri-app .image-count-badge.cleared { color: var(--muted); background: #f5f4f0; border-color: var(--border); }
+  #kanri-app .list-image-thumbs { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+  #kanri-app .list-image-thumbs img {
+    width: 28px; height: 28px; object-fit: cover; border-radius: 3px; border: 1px solid var(--border); cursor: pointer;
+  }
+  #kanri-app .modal-box.wide { max-width: 480px; }
+  #kanri-app .timecard-edit-hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+  #kanri-app .timecard-edit-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #kanri-app .timecard-edit-table th { text-align: center; background: #f5f4f0; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  #kanri-app .timecard-edit-table td { text-align: center; padding: 3px 4px; border-bottom: 1px solid #f1f0eb; }
+  #kanri-app .timecard-edit-table input[type=time] {
+    width: 100%; border: 1px solid var(--border); border-radius: 3px; padding: 4px 3px; font-size: 12px; font-family: inherit;
+  }
+  #kanri-app .timecard-edit-table tr.timecard-weekend td { background: #fff7f2; }
+  #kanri-app .timecard-edit-table tr.timecard-holiday td { background: #fdecea; }
+  #kanri-app .timecard-edit-table td:last-child { text-align: center; }
+  #kanri-app .timecard-edit-actions { margin-top: 12px; text-align: right; }
+  #kanri-app .timecard-edit-table td.timecard-loc a { display: inline-block; margin: 0 4px; font-size: 12px; color: #2563eb; text-decoration: underline; white-space: nowrap; }
+  #kanri-app .empty { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+  #kanri-app .action-btn {
+    border: 1px solid var(--border); background: #fff; border-radius: 3px; padding: 4px 9px; cursor: pointer;
+    font-size: 11.5px; font-family: inherit; margin-right: 4px;
+  }
+  #kanri-app .action-btn:hover { background: #f5f4f0; }
+  #kanri-app .action-btn.danger { color: #ea580c; border-color: #fed7aa; }
+  #kanri-app .action-btn.danger:hover { background: #fff7ed; }
+  #kanri-app .status-pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap;
+    color: var(--muted); background: #eeefF2;
+  }
+  #kanri-app .status-pill.進行中 { color: var(--progress); background: var(--progress-bg); }
+  #kanri-app .status-pill.完了 { color: var(--done); background: var(--done-bg); }
+  #kanri-app .status-pill.繰越 { color: var(--carry); background: var(--carry-bg); }
+  #kanri-app .status-pill.継続 { color: var(--progress); background: var(--progress-bg); }
+  #kanri-app .status-pill.保留 { color: #64748b; background: #f1f5f9; }
+  #kanri-app .status-pill.キャンセル { color: #dc2626; background: #fef2f2; }
+  #kanri-app .back-link { text-align: center; padding: 20px 16px; }
+  #kanri-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+  #kanri-app .msg-error { color: #ea580c; font-size: 13px; padding: 0 16px; margin: 8px 0 0; }
+  #kanri-app .backup-panel { margin: 14px 16px 0; }
+  #kanri-app .backup-body { padding: 14px; }
+  #kanri-app .backup-warn {
+    background: #fff7ed; color: #9a3412; border: 1px solid #fed7aa; border-radius: 4px;
+    padding: 10px 12px; font-size: 12.5px; margin-bottom: 10px; line-height: 1.6;
+  }
+  #kanri-app .backup-status { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  #kanri-app .backup-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  #kanri-app .restore-btn {
+    background: #fff; color: #1e293b; border: 1px solid var(--border); border-radius: 3px; padding: 6px 12px;
+    font-size: 12px; font-weight: 600; cursor: pointer; display: inline-block;
+  }
+  #kanri-app .restore-btn:hover { background: #f5f4f0; }
+  #kanri-app .backup-note { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+  #kanri-app .backup-danger {
+    margin-top: 16px; padding: 12px 14px; background: #fef2f2; border: 2px solid #dc2626; border-radius: 4px;
+  }
+  #kanri-app .backup-danger-title { font-size: 13px; font-weight: 700; color: #b91c1c; margin-bottom: 6px; }
+  #kanri-app .backup-danger-desc { font-size: 11.5px; color: #7f1d1d; line-height: 1.7; margin-bottom: 10px; }
+  #kanri-app .backup-danger-btn {
+    background: #dc2626; color: #fff; border: none; border-radius: 3px; padding: 8px 16px;
+    font-size: 12.5px; font-weight: 700; cursor: pointer;
+  }
+  #kanri-app .backup-danger-btn:hover { background: #b91c1c; }
+  #kanri-app .backup-danger-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+  /* ヘッダー行+5データ行分の高さに収め、それ以降はスクロールで見せる */
+  #kanri-app .activity-log-body { max-height: 300px; overflow-y: auto; }
+  #kanri-app tr.filter-row th { background: #fff; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  #kanri-app .cf-input { width: 100%; box-sizing: border-box; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 3px; background: #fff; min-width: 70px; font-family: inherit; }
+  #kanri-app .de-input { width: 100%; box-sizing: border-box; font-size: 13px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 3px; font-family: inherit; background: #fff; }
+  #kanri-app textarea.de-input { resize: vertical; }
+  #kanri-app .de-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  #kanri-app .de-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  #kanri-app .de-save { background: #1e293b; color: #fff; border-color: #1e293b; padding: 8px 22px; font-weight: 600; }
+  #kanri-app .de-save:disabled { opacity: .6; cursor: not-allowed; }
+  #kanri-app .de-msg { margin-top: 10px; font-size: 13px; font-weight: 600; }
+  #kanri-app .de-msg.ok { color: #047857; }
+  #kanri-app .de-msg.err { color: #dc2626; }
+  /* 案件一覧は15件ぶんの高さまで表示し、それより多いときは右側のスクロールバーで見る(見出しと検索欄は固定)。 */
+  #kanri-app .case-scroll { overflow: auto; scrollbar-width: auto; scrollbar-color: #94a3b8 #e2e8f0; }
+  #kanri-app .case-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+  #kanri-app .case-scroll::-webkit-scrollbar-track { background: #e2e8f0; }
+  #kanri-app .case-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #e2e8f0; }
+  #kanri-app .case-scroll thead th { position: sticky; top: 0; background: #f8f7f4; z-index: 2; }
+  #kanri-app .case-scroll thead tr.filter-row th { background: #fff; z-index: 2; }
+  #kanri-app .tc-count-cell { text-align: left; }
+  #kanri-app .case-count { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+  #kanri-app .activity-log-filter { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0; font-size: 12.5px; color: var(--muted); }
+  #kanri-app .activity-log-filter select { padding: 3px 8px; font-size: 12.5px; }
+  #kanri-app .activity-log-empty { padding: 14px 16px; font-size: 12.5px; color: var(--muted); margin: 0; }
+  #kanri-app table.activity-log-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #kanri-app table.activity-log-table th { position: sticky; top: 0; background: #f8f7f4; text-align: left; padding: 7px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+  #kanri-app table.activity-log-table td { padding: 6px 12px; border-bottom: 1px solid #f1f0ec; white-space: nowrap; }
+  #kanri-app table.activity-log-table td:last-child { white-space: normal; }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script>
+  // ============================================================
+  // データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+  // 「マッシュオフィスシステム(WordPress DB版)」プラグインが提供するREST APIを呼び出します。
+  // ============================================================
+
+  // リンク先URLをサイトの実際の設置場所(ドメイン直下 or サブディレクトリ)に応じて動的に生成する
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+  // 管理者または従業員のログイントークンを付けてAPIを呼ぶ(ログイン必須のAPI用)。
+  function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = JSON.parse(localStorage.getItem("mush_nippo_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    return fetch(url, o);
+  }
+
+
+  const DEPTS = ["営業", "デザイン", "製作", "事務"];
+  let STAFF = [];
+  async function loadStaffList() {
+    try {
+      const res = await fetch(`${API_BASE}/employees`);
+      const rows = await res.json();
+      STAFF = rows.map(r => ({ id: String(r.id), name: r.name, dept: r.department }));
+    } catch (e) {
+      STAFF = [];
+    }
+  }
+
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate())}`.replace(/-(\d)$/, "-0$1");
+  }
+  function fmt(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  function startOfWeek() {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = (day === 0 ? -6 : 1) - day;
+    d.setDate(d.getDate() + diff);
+    return fmt(d);
+  }
+  function startOfMonth() {
+    const d = new Date();
+    return fmt(new Date(d.getFullYear(), d.getMonth(), 1));
+  }
+  function tomorrowStr() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return fmt(d);
+  }
+  function yearSelectOptionsHtml(selected) {
+    const current = new Date().getFullYear();
+    const years = [];
+    for (let y = current - 5; y <= current + 1; y++) { years.push(y); }
+    return years.map(y => `<option value="${y}" ${String(y)===String(selected)?"selected":""}>${y}年</option>`).join("");
+  }
+
+  function hoursBetween(inTime, outTime) {
+    if (!inTime || !outTime) return 0;
+    const [ih, im] = inTime.split(":").map(Number);
+    const [oh, om] = outTime.split(":").map(Number);
+    const mins = (oh * 60 + om) - (ih * 60 + im);
+    return mins > 0 ? mins / 60 : 0;
+  }
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  // "YYYY-MM-DD"同士の日数差(終了日 - 開始日)。終了日の方が前なら0にする。
+  function daysBetween(fromStr, toStr) {
+    const from = new Date(fromStr + "T00:00:00");
+    const to = new Date(toStr + "T00:00:00");
+    return Math.max(0, Math.round((to - from) / 86400000));
+  }
+  // 経過日数・予定日数は手入力させず、日付・終了予定日・本日の日付から自動計算する。
+  // 予定日数は開始日・終了予定日の両方を含む日数、経過日数は開始日を1日目として数える
+  // (まだ開始日を迎えていなければ0)。案件一覧・詳細ウィンドウの両方で共通して使う。
+  function formatDayCount(r) {
+    const totalDays = (r.dueDate && r.date) ? daysBetween(r.date, r.dueDate) + 1 : (typeof r.totalDays === "number" && r.totalDays > 0 ? r.totalDays : 0);
+    const today = todayStr();
+    const currentDay = totalDays > 0 ? Math.min(totalDays, today >= r.date ? daysBetween(r.date, today) + 1 : 0) : 0;
+    return totalDays > 0 ? `${currentDay}/${totalDays}日` : `進捗${typeof r.progress === "number" ? r.progress : 0}%`;
+  }
+  // 進捗ページの案件はstatus文字列を持たないため、進捗(%)から状態表示を求める。
+  function scheduleStatusText(progress) {
+    const p = Number(progress) || 0;
+    if (p >= 100) return "完了";
+    if (p > 0) return "進行中";
+    return "未着手";
+  }
+
+  const state = {
+    from: startOfMonth(),
+    to: tomorrowStr(),
+    rangeMode: "period", // "day" | "month" | "year" | "period"
+    pickDay: fmt(new Date()),
+    pickMonth: fmt(new Date()).slice(0, 7),
+    pickYear: String(new Date().getFullYear()),
+    records: [],
+    scheduleTaskList: [],
+    timeCards: [],
+    loading: true,
+    errorMsg: "",
+    backup: { lastDownloadAt: null, loading: true, busy: false },
+    timecardPanelOpen: false, // 勤怠(タイムカード)集計の折りたたみ状態(初期値は畳んだ状態)
+    activityLog: { entries: [], loading: true, filter: "all" }, // filter: "all"=すべて / "task"=予定の操作(登録・更新・削除など)だけ
+    detailRecordId: null, // 案件一覧で選んだ案件の詳細ウィンドウ(nullなら非表示)
+    timecardFilter: { staff: "", dept: "" }, // 勤怠(タイムカード)集計の検索条件(氏名・部署)
+    detailEdit: null, // 案件の編集ウィンドウの入力中の値(保存前)。{ date, category, client, project, status, start, end, dueDate, isOutside, area, prefecture, travelType, note, saving, msg, msgOk }
+    caseFilter: { date: "", staff: "", dept: "", caseText: "", status: "", days: "" }, // 案件一覧の項目ごとの検索条件
+    lightboxUrl: null, // 画像サムネイルをクリックしたときに拡大表示する画像URL(nullなら非表示)
+    timecardEditStaffId: null, // タイムカード編集ウィンドウの対象従業員(nullなら非表示)
+    timecardEditDays: [], // [{date, clockIn, clockOut}, ...] 編集ウィンドウの作業用コピー
+    timecardSaving: false,
+    companyHolidays: null, // { weekly: [0,...], dates: ["YYYY-MM-DD", ...] } 自社情報の休日設定
+  };
+
+  async function loadActivityLog() {
+    state.activityLog.loading = true;
+    try {
+      const res = await apiFetch(`${API_BASE}/activity-log`);
+      state.activityLog.entries = res.ok ? await res.json() : [];
+    } catch (e) {
+      state.activityLog.entries = [];
+    }
+    state.activityLog.loading = false;
+    render();
+  }
+
+  // 全データバックアップのシート定義。ダウンロード・復元の両方でこの配列を共有することで、
+  // テーブル識別キー(サーバーAPIのキー)とExcelのシート名の対応を一箇所にまとめている。
+  const BACKUP_SHEETS = [
+    ["employees", "従業員"],
+    ["taskRecords", "日報"],
+    ["scheduleTasks", "進捗"],
+    ["timeCards", "タイムカード"],
+    ["chatMessages", "チャット"],
+    ["dmMessages", "従業員チャット"],
+    ["clients", "顧客"],
+    ["products", "商品"],
+    ["quotes", "見積もり"],
+    ["invoices", "請求書"],
+    ["costs", "原価計算書"],
+    ["payslips", "給与明細"],
+    ["payslipHistory", "給与明細の履歴"],
+    ["attendanceDays", "勤怠"],
+    ["leaveGrants", "有給付与"],
+    ["yearEnd", "年末調整"],
+    ["yearEndDecl", "年末調整の申告"],
+    ["companyDocuments", "社内書類"],
+    ["announcements", "お知らせ"],
+    ["taskImages", "案件の画像"],
+    ["activityLog", "操作ログ"],
+    ["insuranceTables", "保険料額表"],
+    ["taxTables", "源泉税額表(月額)"],
+    ["dailyTaxTables", "源泉税額表(日額)"],
+    ["bonusTaxTables", "源泉税額表(賞与)"],
+    ["settings", "設定(自社情報・部署)"],
+  ];
+  // Excelの1つのセルには約3万2千文字までしか入らないため、税額表などの長い文字列は、
+  // 「列名__続き2」「列名__続き3」…の列に分けて保存し、復元するときにつなぎ直す。
+  const BACKUP_CELL_MAX = 30000;
+  function splitLongCells(rows) {
+    return rows.map(r => {
+      const o = {};
+      Object.keys(r).forEach(k => {
+        const v = r[k];
+        const isLong = typeof v === "string" ? v.length > BACKUP_CELL_MAX : false;
+        if (!isLong) { o[k] = v; return; }
+        let part = 1;
+        for (let i = 0; v.length > i; i += BACKUP_CELL_MAX) {
+          o[part === 1 ? k : `${k}__続き${part}`] = v.slice(i, i + BACKUP_CELL_MAX);
+          part++;
+        }
+      });
+      return o;
+    });
+  }
+  function joinLongCells(rows) {
+    return rows.map(r => {
+      const o = {};
+      const conts = [];
+      Object.keys(r).forEach(k => {
+        const m = k.match(/^(.+)__続き(\d+)$/);
+        if (m) { conts.push([m[1], Number(m[2]), r[k]]); } else { o[k] = r[k]; }
+      });
+      conts.sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1])
+        .forEach(c => { o[c[0]] = String(o[c[0]] ?? "") + String(c[2] ?? ""); });
+      return o;
+    });
+  }
+  const BACKUP_WARNING_DAYS = 14;
+
+  async function loadBackupStatus() {
+    try {
+      const res = await apiFetch(`${API_BASE}/backup/status`);
+      const data = res.ok ? await res.json() : { lastDownloadAt: null };
+      state.backup.lastDownloadAt = data.lastDownloadAt || null;
+    } catch (e) {
+      state.backup.lastDownloadAt = null;
+    }
+    state.backup.loading = false;
+    render();
+  }
+
+  function daysSinceBackup() {
+    if (!state.backup.lastDownloadAt) return null;
+    const last = new Date(state.backup.lastDownloadAt.replace(" ", "T"));
+    if (isNaN(last.getTime())) return null;
+    const diffMs = Date.now() - last.getTime();
+    return Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  }
+
+// 管理者ログイン(mush_admin_auth)のトークンをAuthorizationヘッダーとして付ける。
+  function adminAuthHeaders(extra){
+    var h = Object.assign({}, extra || {});
+    try{
+      var a = JSON.parse(localStorage.getItem('mush_admin_auth') || 'null');
+      if(a && a.token){ h['Authorization'] = 'Bearer ' + a.token; }
+    }catch(e){}
+    return h;
+  }
+  // 全データダウンロード。silent=trueのときは完了アラートを出さない
+  // (復元直前の自動バックアップから呼ぶときに使う)。
+  async function downloadFullBackup(silent) {
+    const res = await fetch(`${API_BASE}/backup/export`, { headers: adminAuthHeaders() });
+    if (!res.ok) throw new Error("バックアップデータの取得に失敗しました");
+    const data = await res.json();
+
+    const wb = XLSX.utils.book_new();
+    BACKUP_SHEETS.forEach(([key, sheetName]) => {
+      const rows = data[key] || [];
+      const ws = XLSX.utils.json_to_sheet(splitLongCells(rows));
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    let companyLabel = "";
+    try {
+      const nameRes = await fetch(`${API_BASE}/company-name`);
+      const nameData = nameRes.ok ? await nameRes.json() : null;
+      const fetchedName = (nameData || {}).name;
+      if (fetchedName) { companyLabel = fetchedName; }
+    } catch (e) { /* 取得できなくても既定の表記のままでよい */ }
+    XLSX.writeFile(wb, `${companyLabel}業務データバックアップ_${todayStr()}.xlsx`);
+
+    await apiFetch(`${API_BASE}/backup/mark-downloaded`, { method: "POST" });
+    state.backup.lastDownloadAt = new Date().toISOString().slice(0, 19).replace("T", " ");
+    if (!silent) {
+      alert("ダウンロードが完了しました。ファイルは他人に見られない安全な場所に保管してください。");
+    }
+    render();
+  }
+
+  async function loadRange() {
+    state.loading = true;
+    state.errorMsg = "";
+    render();
+    try {
+      const res = await apiFetch(`${API_BASE}/task-records?dateFrom=${encodeURIComponent(state.from)}&dateTo=${encodeURIComponent(state.to)}`);
+      if (!res.ok) throw new Error("取得に失敗しました");
+      state.records = await res.json();
+
+      const tRes = await apiFetch(`${API_BASE}/time-cards?dateFrom=${encodeURIComponent(state.from)}&dateTo=${encodeURIComponent(state.to)}`);
+      state.timeCards = tRes.ok ? await tRes.json() : [];
+
+      const sRes = await apiFetch(`${API_BASE}/schedule-tasks?dateFrom=${encodeURIComponent(state.from)}&dateTo=${encodeURIComponent(state.to)}`);
+      state.scheduleTaskList = sRes.ok ? await sRes.json() : [];
+    } catch (e) {
+      state.errorMsg = "データの取得に失敗しました。通信環境をご確認ください。";
+      state.records = [];
+      state.timeCards = [];
+      state.scheduleTaskList = [];
+    }
+    state.loading = false;
+    render();
+  }
+
+  // 案件の編集ウィンドウの「保存」。変更した項目だけをサーバーへ送り、成功したら一覧の内容も更新する。
+  async function saveRecordDetail() {
+    const e = state.detailEdit;
+    const r = state.records.find(x => x.id === state.detailRecordId);
+    if (!e || !r || e.saving) return;
+    const orig = {
+      date: r.date || "", category: r.category || "", client: r.client || "", project: r.project || "", status: r.status || "",
+      start: r.start || "", end: r.end || "", dueDate: r.dueDate || "", isOutside: !!r.isOutside, area: r.area || "",
+      prefecture: r.prefecture || "", travelType: r.travelType || "", note: r.note || "",
+    };
+    const body = {};
+    Object.keys(orig).forEach(k => { if (e[k] !== orig[k]) { body[k] = e[k]; } });
+    if (r.bulkMode) { delete body.client; delete body.project; }
+    if (body.status !== undefined) { body.progress = body.status === "完了" ? 100 : ((body.status === "キャンセル" || body.status === "予定") ? 0 : 50); }
+    if (Object.keys(body).length === 0) { e.msg = "変更はありません。"; e.msgOk = false; render(); return; }
+    if (e.category.trim() === "") { e.msg = "業務区分を入力してください。"; e.msgOk = false; render(); return; }
+    e.saving = true; e.msg = ""; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/task-records/${r.id}/admin-update`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) { throw new Error((data && data.error) ? data.error : "保存に失敗しました。"); }
+      Object.assign(r, data, { id: r.id });
+      e.saving = false; e.msg = "保存しました。"; e.msgOk = true;
+    } catch (err) {
+      e.saving = false; e.msg = err.message || "保存に失敗しました。"; e.msgOk = false;
+    }
+    render();
+  }
+
+  // 終日の予定(開始 00:00・終了 23:59)は、時刻の代わりに「終日」と出す。
+  function allDayText(r) { return (r.start === "00:00" ? r.end === "23:59" : false) ? "終日" : ""; }
+
+  // 完了率・進捗の棒と数字は、パーセンテージに合わせて色を変える(0%=赤 → 50%=黄 → 100%=緑)。
+  function rateColor(pct) {
+    const v = Math.max(0, Math.min(100, Number(pct) || 0));
+    return `hsl(${Math.round(v * 1.2)}, 72%, 40%)`;
+  }
+
+  // 案件一覧の項目ごとの検索。文字の項目は「含む」、部署・状態は一致で絞り込む(すべての条件を満たす行だけ表示)。
+  function textHas(hay, needle) {
+    const n = String(needle || "").trim().toLowerCase();
+    if (n === "") return true;
+    return String(hay || "").toLowerCase().indexOf(n) !== -1;
+  }
+  function caseRowMatches(ds) {
+    const f = state.caseFilter;
+    if (f.date !== "") { if (ds.date !== f.date) return false; }
+    if (f.staff !== "") { if (ds.staff !== f.staff) return false; }
+    if (f.dept !== "") { if (ds.dept !== f.dept) return false; }
+    if (!textHas(ds.caseText, f.caseText)) return false;
+    if (f.status !== "") { if (ds.status !== f.status) return false; }
+    if (!textHas(ds.days, f.days)) return false;
+    return true;
+  }
+  function caseFilterActive() {
+    const f = state.caseFilter;
+    return [f.date, f.staff, f.dept, f.caseText, f.status, f.days].some(v => String(v).trim() !== "");
+  }
+  // 入力のたびに画面全体を描き直さず、行の表示/非表示だけを切り替える(入力中の文字やカーソルを保つため)。
+  function applyCaseFilter() {
+    const rows = document.querySelectorAll("#kanri-app tr[data-case-row]");
+    let shown = 0;
+    rows.forEach(tr => {
+      const ok = caseRowMatches(tr.dataset);
+      tr.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    const el = document.getElementById("caseCount");
+    if (el) { el.textContent = caseFilterActive() ? `${shown}件 / 全${rows.length}件` : `全${rows.length}件`; }
+    fitCaseScroll();
+  }
+
+  // 勤怠(タイムカード)集計の氏名・部署の検索。両方の条件を満たす従業員の行だけを表示する。
+  function timecardRowMatches(ds) {
+    const f = state.timecardFilter;
+    if (f.staff !== "") { if (ds.staff !== f.staff) return false; }
+    if (f.dept !== "") { if (ds.dept !== f.dept) return false; }
+    return true;
+  }
+  function applyTimecardFilter() {
+    const rows = document.querySelectorAll("#kanri-app tr[data-tc-row]");
+    let shown = 0;
+    rows.forEach(tr => {
+      const ok = timecardRowMatches(tr.dataset);
+      tr.style.display = ok ? "" : "none";
+      if (ok) shown++;
+    });
+    const el = document.getElementById("timecardCount");
+    if (el) { el.textContent = (state.timecardFilter.staff !== "" || state.timecardFilter.dept !== "") ? `${shown}名 / 全${rows.length}名` : `全${rows.length}名`; }
+    fitTimecardScroll();
+  }
+
+  // 案件一覧の表示枠: 見出し2行+表示中の先頭15行ぶんの高さにして、16件目以降は枠内のスクロールで見る。
+  const CASE_LIST_VISIBLE_ROWS = 15;
+  function fitCaseScroll() { fitScrollBox("caseScroll", "tbody tr[data-case-row]"); }
+  // 勤怠(タイムカード)集計も同じく、15人ぶんの高さまで表示し、それより多いときは枠内のスクロールで見る。
+  function fitTimecardScroll() { fitScrollBox("timecardScroll", "tbody tr[data-tc-row]"); }
+  function fitScrollBox(boxId, rowSelector) {
+    const box = document.getElementById(boxId);
+    if (!box) return;
+    const headRows = box.querySelectorAll("thead tr");
+    let headH = 0;
+    headRows.forEach((tr, i) => {
+      // 検索欄の行は、見出し行のすぐ下に固定する
+      if (i === 1) { tr.querySelectorAll("th").forEach(th => { th.style.top = headH + "px"; }); }
+      headH += tr.getBoundingClientRect().height;
+    });
+    const visible = Array.from(box.querySelectorAll(rowSelector)).filter(tr => tr.style.display !== "none");
+    if (visible.length <= CASE_LIST_VISIBLE_ROWS) { box.style.maxHeight = ""; return; }
+    let h = headH;
+    visible.slice(0, CASE_LIST_VISIBLE_ROWS).forEach(tr => { h += tr.getBoundingClientRect().height; });
+    box.style.maxHeight = Math.ceil(h + 2) + "px";
+  }
+
+  window.__kanri = {
+    showRecordDetail(id) {
+      const r = state.records.find(x => x.id === id);
+      state.detailRecordId = id;
+      state.detailEdit = r ? {
+        date: r.date || "", category: r.category || "", client: r.client || "", project: r.project || "", status: r.status || "予定",
+        start: r.start || "", end: r.end || "", dueDate: r.dueDate || "", isOutside: !!r.isOutside, area: r.area || "",
+        prefecture: r.prefecture || "", travelType: r.travelType || "", note: r.note || "", saving: false, msg: "", msgOk: false,
+      } : null;
+      render();
+    },
+    setDetailField(key, val) { if (state.detailEdit) { state.detailEdit[key] = val; } },
+    toggleDetailAllDay(on) {
+      const e = state.detailEdit;
+      if (!e) { return; }
+      if (on) { e.savedStart = e.start; e.savedEnd = e.end; e.start = "00:00"; e.end = "23:59"; }
+      else {
+        const wasAllDay = e.savedStart === "00:00" ? e.savedEnd === "23:59" : false;
+        e.start = (e.savedStart && !wasAllDay) ? e.savedStart : "08:00";
+        e.end = (e.savedEnd && !wasAllDay) ? e.savedEnd : "10:00";
+      }
+      render();
+    },
+    toggleDetailOutside(on) { if (state.detailEdit) { state.detailEdit.isOutside = !!on; render(); } },
+    saveRecordDetail() { saveRecordDetail(); },
+    toggleTimecardPanel() { state.timecardPanelOpen = !state.timecardPanelOpen; render(); },
+    openLightbox(url) { state.lightboxUrl = url; render(); },
+    closeLightbox() { state.lightboxUrl = null; render(); },
+    closeRecordDetail() { state.detailRecordId = null; state.detailEdit = null; render(); },
+    openTimecardEdit(staffId) {
+      const days = [];
+      const from = new Date(state.from + "T00:00:00");
+      const to = new Date(state.to + "T00:00:00");
+      for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+        const dateStr = fmt(d);
+        const existing = state.timeCards.find(t => t.staffId === staffId && t.date === dateStr);
+        days.push({
+          date: dateStr,
+          clockIn: existing ? existing.clockIn : "",
+          clockOut: existing ? existing.clockOut : "",
+          clockInLocation: existing ? existing.clockInLocation || null : null,
+          clockOutLocation: existing ? existing.clockOutLocation || null : null,
+        });
+      }
+      state.timecardEditStaffId = staffId;
+      state.timecardEditDays = days;
+      render();
+    },
+    closeTimecardEdit() {
+      state.timecardEditStaffId = null;
+      state.timecardEditDays = [];
+      render();
+    },
+    setTimecardEditField(date, key, val) {
+      const row = state.timecardEditDays.find(d => d.date === date);
+      if (!row) { return; }
+      row[key] = val;
+      render();
+    },
+    async saveTimecardEdits() {
+      const staffId = state.timecardEditStaffId;
+      const staff = STAFF.find(s => s.id === staffId);
+      if (!staff) { return; }
+      state.timecardSaving = true; render();
+      try {
+        const targets = state.timecardEditDays.filter(d => d.clockIn || d.clockOut);
+        await Promise.all(targets.map(d => apiFetch(`${API_BASE}/time-cards/upsert`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: d.date, staffId: staffId, staffName: staff.name, dept: staff.dept,
+            clockIn: d.clockIn, clockOut: d.clockOut,
+          }),
+        })));
+        state.timecardEditStaffId = null;
+        state.timecardEditDays = [];
+        await loadRange();
+      } catch (e) {
+        alert("保存に失敗しました。通信環境をご確認ください。");
+      }
+      state.timecardSaving = false; render();
+    },
+    async downloadBackup() {
+      if (state.backup.busy) return;
+      state.backup.busy = true;
+      render();
+      try {
+        await downloadFullBackup(false);
+      } catch (e) {
+        alert("ダウンロードに失敗しました。通信環境をご確認ください。");
+      }
+      state.backup.busy = false;
+      render();
+    },
+    async restoreFileSelected(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const proceed = confirm(
+        "バックアップファイルから復元します。\n\n" +
+        "⚠️ この操作を行うと、現在の全業務データ(従業員・日報・進捗・タイムカード・チャット・" +
+        "顧客・商品・見積もり・請求書・原価計算書・給与明細・勤怠・有給・年末調整・社内書類・お知らせ・" +
+        "操作ログ・保険料額表・税額表・自社情報・部署)が、選択したファイルの内容で" +
+        "完全に置き換えられます(ファイルに無いテーブルはそのまま残ります)。\n\n" +
+        "念のため、復元の直前に現在のデータを自動でダウンロードします。\n\n" +
+        "よろしいですか?"
+      );
+      if (!proceed) { input.value = ""; return; }
+
+      if (state.backup.busy) { input.value = ""; return; }
+      state.backup.busy = true;
+      render();
+
+      try {
+        await downloadFullBackup(true);
+      } catch (e) {
+        alert("復元前の自動バックアップに失敗したため、復元を中止しました。通信環境をご確認ください。");
+        state.backup.busy = false;
+        render();
+        input.value = "";
+        return;
+      }
+
+      let payload;
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        payload = {};
+        // シートが無いテーブルはキー自体を含めない(サーバー側はキーが無いテーブルの
+        // 既存データをそのまま残す仕様のため、空配列を送ると誤って全削除されてしまう)
+        BACKUP_SHEETS.forEach(([key, sheetName]) => {
+          const sheet = wb.Sheets[sheetName];
+          if (sheet) {
+            payload[key] = joinLongCells(XLSX.utils.sheet_to_json(sheet));
+          }
+        });
+      } catch (e) {
+        alert("ファイルの読み込みに失敗しました。f19の「全データダウンロード」で作成したファイルを選択してください。");
+        state.backup.busy = false;
+        render();
+        input.value = "";
+        return;
+      }
+
+      const finalCheck = prompt('最終確認: 復元を実行するには「復元する」と入力してください。');
+      if (finalCheck !== "復元する") {
+        alert("復元をキャンセルしました。");
+        state.backup.busy = false;
+        render();
+        input.value = "";
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/backup/restore`, {
+          method: "POST",
+          headers: adminAuthHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error("復元に失敗しました");
+        const result = await res.json();
+        const summary = BACKUP_SHEETS.map(([key, label]) =>
+          (result.restored && key in result.restored) ? `${label}: ${result.restored[key]}件` : null
+        ).filter(Boolean).join("\n");
+        const errMsg = (result.errors && result.errors.length > 0)
+          ? `\n\n⚠️ 一部のデータで問題が発生しました:\n${result.errors.join("\n")}` : "";
+        alert(`復元が完了しました。\n\n${summary}${errMsg}\n\nページを再読み込みします。`);
+        location.reload();
+      } catch (e) {
+        alert("復元に失敗しました。通信環境をご確認ください。");
+        state.backup.busy = false;
+        render();
+        input.value = "";
+      }
+    },
+    // 全データ削除: 業務データを完全に空にする、最も取り返しがつかない操作。
+    // (1)警告付き確認 (2)削除前の自動バックアップ (3)固定フレーズの入力確認、の
+    // 3段階を必ず経由させることで誤操作を防ぐ。
+    rateColor(pct) { return rateColor(pct); },
+    setTimecardFilter(key, val) { state.timecardFilter[key] = val; applyTimecardFilter(); },
+    clearTimecardFilter() { state.timecardFilter = { staff: "", dept: "" }; render(); },
+    setCaseFilter(key, val) { state.caseFilter[key] = val; applyCaseFilter(); },
+    clearCaseFilter() { state.caseFilter = { date: "", staff: "", dept: "", caseText: "", status: "", days: "" }; render(); },
+    setActivityFilter(v) { state.activityLog.filter = v === "task" ? "task" : "all"; render(); },
+    async deleteAllData() {
+      if (state.backup.busy) return;
+      const proceed = confirm(
+        "⚠️ 最重要操作: 業務データを全て完全に削除します。\n\n" +
+        "従業員・日報・進捗・タイムカード・チャット・顧客・商品・見積もり・請求書・原価計算書、" +
+        "全てのデータが消え、元に戻すことはできません。\n\n" +
+        "削除の直前に、現在のデータを自動で1回ダウンロードします。\n\n" +
+        "本当に全データを削除しますか?"
+      );
+      if (!proceed) return;
+
+      state.backup.busy = true;
+      render();
+
+      try {
+        await downloadFullBackup(true);
+      } catch (e) {
+        alert("削除前の自動バックアップに失敗したため、削除を中止しました。通信環境をご確認ください。");
+        state.backup.busy = false;
+        render();
+        return;
+      }
+
+      const finalCheck = prompt('最終確認: 全データを削除するには「全データ削除する」と入力してください。');
+      if (finalCheck !== "全データ削除する") {
+        alert("削除をキャンセルしました。");
+        state.backup.busy = false;
+        render();
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/backup/delete-all`, { method: "DELETE", headers: adminAuthHeaders() });
+        if (!res.ok) throw new Error("削除に失敗しました");
+        alert("全データを削除しました。直前に自動でダウンロードしたバックアップファイルは保管しておいてください。\n\nページを再読み込みします。");
+        location.reload();
+      } catch (e) {
+        alert("削除に失敗しました。通信環境をご確認ください。");
+        state.backup.busy = false;
+        render();
+      }
+    },
+    setFrom(v) { state.from = v; loadRange(); },
+    setTo(v) { state.to = v; loadRange(); },
+    setRangeMode(mode) {
+      state.rangeMode = mode;
+      if (mode === "day") { state.from = state.pickDay; state.to = state.pickDay; }
+      if (mode === "month") {
+        const parts = state.pickMonth.split("-").map(Number);
+        state.from = fmt(new Date(parts[0], parts[1] - 1, 1));
+        state.to = fmt(new Date(parts[0], parts[1], 0));
+      }
+      if (mode === "year") {
+        state.from = `${state.pickYear}-01-01`;
+        state.to = `${state.pickYear}-12-31`;
+      }
+      loadRange();
+    },
+    setPickDay(v) {
+      state.pickDay = v;
+      state.from = v;
+      state.to = v;
+      loadRange();
+    },
+    setPickMonth(v) {
+      state.pickMonth = v;
+      const parts = v.split("-").map(Number);
+      state.from = fmt(new Date(parts[0], parts[1] - 1, 1));
+      state.to = fmt(new Date(parts[0], parts[1], 0));
+      loadRange();
+    },
+    setPickYear(v) {
+      state.pickYear = v;
+      state.from = `${v}-01-01`;
+      state.to = `${v}-12-31`;
+      loadRange();
+    },
+    quickRange(type) {
+      const today = fmt(new Date());
+      const tomorrow = tomorrowStr();
+      if (type === "week") { state.from = startOfWeek(); state.to = today; }
+      if (type === "month") { state.from = startOfMonth(); state.to = today; }
+      if (type === "today") { state.from = today; state.to = today; }
+      if (type === "tomorrow") { state.from = tomorrow; state.to = tomorrow; }
+      loadRange();
+    },
+    exportExcel() {
+      if (state.records.length === 0 && state.timeCards.length === 0) { alert("集計対象のデータがありません。"); return; }
+      const wb = XLSX.utils.book_new();
+
+      if (state.records.length > 0) {
+        const rows = state.records.map(r => ({
+          "日付": r.date, "氏名": r.staffName, "部署": r.dept, "業務区分": r.category,
+          "顧客名": r.client || "", "案件名": r.project || "", "状態": r.status,
+          "開始": allDayText(r) || r.start || "", "終了": allDayText(r) || r.end || "", "外出": r.isOutside ? `${r.area}/${r.travelType}` : "",
+          "備考": r.note || "",
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws["!cols"] = [{wch:11},{wch:12},{wch:9},{wch:16},{wch:16},{wch:20},{wch:8},{wch:7},{wch:7},{wch:16},{wch:24}];
+        XLSX.utils.book_append_sheet(wb, ws, "業務記録");
+      }
+
+      if (state.timeCards.length > 0) {
+        const tRows = state.timeCards.map(t => ({
+          "日付": t.date, "氏名": t.staffName, "部署": t.dept,
+          "出勤": t.clockIn || "", "退勤": t.clockOut || "",
+          "勤務時間": hoursBetween(t.clockIn, t.clockOut).toFixed(1),
+          "出勤の打刻場所": punchLocationMapUrl(t.clockInLocation),
+          "退勤の打刻場所": punchLocationMapUrl(t.clockOutLocation),
+        }));
+        const tWs = XLSX.utils.json_to_sheet(tRows);
+        tWs["!cols"] = [{wch:11},{wch:12},{wch:9},{wch:7},{wch:7},{wch:9},{wch:30},{wch:30}];
+        XLSX.utils.book_append_sheet(wb, tWs, "タイムカード");
+      }
+
+      XLSX.writeFile(wb, `業務集計_${state.from}_${state.to}.xlsx`);
+    },
+    async duplicateRecord(id) {
+      try {
+        const res = await apiFetch(`${API_BASE}/task-records/${id}/duplicate`, { method: "POST" });
+        if (!res.ok) throw new Error("複製に失敗しました");
+        await loadRange();
+      } catch (e) {
+        state.errorMsg = "複製に失敗しました。通信環境をご確認ください。";
+        render();
+      }
+    },
+    async deleteRecord(id) {
+      const rec = state.records.find(r => r.id === id);
+      if (!rec) return;
+      const label = rec.bulkMode ? `${rec.category}(まとめ${rec.bulkCount}件)`
+        : `${rec.category}${(rec.client||rec.project) ? " / " + [rec.client, rec.project].filter(Boolean).join("・") : ""}`;
+      if (!confirm(`「${rec.staffName}」さんの案件「${label}」を削除します。よろしいですか?`)) return;
+      try {
+        const res = await apiFetch(`${API_BASE}/task-records/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("削除に失敗しました");
+        await loadRange();
+      } catch (e) {
+        state.errorMsg = "削除に失敗しました。通信環境をご確認ください。";
+        render();
+      }
+    },
+    async duplicateScheduleTask(id) {
+      try {
+        const res = await apiFetch(`${API_BASE}/schedule-tasks/${id}/duplicate`, { method: "POST" });
+        if (!res.ok) throw new Error("複製に失敗しました");
+        await loadRange();
+      } catch (e) {
+        state.errorMsg = "複製に失敗しました。通信環境をご確認ください。";
+        render();
+      }
+    },
+    async deleteScheduleTask(id) {
+      const target = state.scheduleTaskList.find(t => t.id === id);
+      if (!confirm(`「${target ? target.name || "(案件名未入力)" : ""}」(進捗ページ)を削除します。よろしいですか?`)) return;
+      try {
+        const res = await apiFetch(`${API_BASE}/schedule-tasks/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("削除に失敗しました");
+        await loadRange();
+      } catch (e) {
+        state.errorMsg = "削除に失敗しました。通信環境をご確認ください。";
+        render();
+      }
+    },
+    // 案件一覧の進捗スライダーをその場で編集した際の保存(進捗ページ側の案件)。
+    // upsertは更新時に送った項目で他の項目も上書きしてしまうため、既存の値を
+    // そのまま一緒に送ることで、意図せず名前や時間を消してしまわないようにする。
+    async updateScheduleProgress(id, value) {
+      const t = state.scheduleTaskList.find(x => x.id === id);
+      if (!t) return;
+      const progress = Number(value);
+      t.progress = progress; // 先に画面側だけ更新して滑らかに見せる
+      try {
+        await apiFetch(`${API_BASE}/schedule-tasks/upsert`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, name: t.name, start: t.start, end: t.end, dueDate: t.dueDate, memo: t.memo, progress }),
+        });
+      } catch (e) {
+        state.errorMsg = "進捗の更新に失敗しました。通信環境をご確認ください。";
+      }
+      render();
+    },
+    async mergeDuplicates() {
+      // 同じ日・スタッフ・顧客名・案件名の案件が複数ある場合、
+      // 最も進捗が進んでいる(同率なら最後に更新された)ものだけを残し、他を削除する
+      const groups = new Map();
+      state.records.forEach(r => {
+        if (r.bulkMode) return;
+        const key = `${r.date}__${r.staffId}__${(r.client||"").trim()}__${(r.project||"").trim()}`;
+        if (!key.trim()) return;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+      });
+      const dupGroups = Array.from(groups.values()).filter(list => list.length > 1);
+      if (dupGroups.length === 0) {
+        alert("重複している案件は見つかりませんでした。");
+        return;
+      }
+      const totalDupCount = dupGroups.reduce((sum, list) => sum + list.length - 1, 0);
+      if (!confirm(`重複している案件が${dupGroups.length}組見つかりました(削除対象: ${totalDupCount}件)。\n各組で最も進捗が進んでいる1件を残し、残りを削除します。よろしいですか?`)) return;
+
+      try {
+        for (const list of dupGroups) {
+          const sorted = [...list].sort((a, b) => {
+            const pa = typeof a.progress === "number" ? a.progress : 0;
+            const pb = typeof b.progress === "number" ? b.progress : 0;
+            if (pa !== pb) return pb - pa;
+            return (b.id || 0) - (a.id || 0);
+          });
+          const toDelete = sorted.slice(1);
+          for (const r of toDelete) {
+            await apiFetch(`${API_BASE}/task-records/${r.id}`, { method: "DELETE" });
+          }
+        }
+        await loadRange();
+        alert("重複していた案件を統合しました。");
+      } catch (e) {
+        state.errorMsg = "重複の統合に失敗しました。通信環境をご確認ください。";
+        render();
+      }
+    },
+  };
+
+  // 案件一覧の行をクリックしたときに開く、案件の詳細・編集ウィンドウ(モーダル)。
+  function renderRecordDetailModal() {
+    if (!state.detailRecordId) return "";
+    const r = state.records.find(x => x.id === state.detailRecordId);
+    const e = state.detailEdit;
+    if (!r) return "";
+    if (!e) return "";
+    const input = (key, type, extra) => `<input type="${type}" class="de-input" value="${escapeHtml(String(e[key] === undefined ? "" : e[key]))}" ${extra || ""} oninput="__kanri.setDetailField('${key}', this.value)">`;
+    const sel = (key, options) => `<select class="de-input" onchange="__kanri.setDetailField('${key}', this.value)">${options.map(o => `<option value="${escapeHtml(o)}" ${e[key] === o ? "selected" : ""}>${escapeHtml(o === "" ? "(未選択)" : o)}</option>`).join("")}</select>`;
+    const categories = Array.from(new Set(state.records.map(x => x.category).filter(Boolean)));
+    // 「終日」の予定は、開始 00:00・終了 23:59 として保存されている(個別スケジュールの「終日」チェック)。
+    const allDay = e.start === "00:00" ? e.end === "23:59" : false;
+    const statusOptions = ["予定", "進行中", "継続", "繰越", "保留", "完了", "キャンセル"];
+    if (statusOptions.indexOf(e.status) === -1) { statusOptions.push(e.status); }
+    const readRows = [
+      ["氏名", r.staffName],
+      ["部署", r.dept],
+      ["進捗", formatDayCount(r)],
+      ["登録日時", r.createdAt || "-"],
+      ["更新日時", r.updatedAt || "-"],
+    ];
+    const caseRows = r.bulkMode
+      ? `<tr><th>案件</th><td>まとめ入力(${escapeHtml(String(r.bulkCount))}件)</td></tr>`
+      : `<tr><th>顧客名</th><td>${input("client", "text")}</td></tr>
+         <tr><th>案件名</th><td>${input("project", "text")}</td></tr>`;
+    const outsideRows = e.isOutside ? `
+          <tr><th>区域</th><td>${sel("area", ["", "県内", "県外", "出張", "夜間", "休日出勤"])}</td></tr>
+          <tr><th>都道府県</th><td>${input("prefecture", "text")}</td></tr>
+          <tr><th>移動</th><td>${sel("travelType", ["", "直行", "直帰", "直行・直帰"])}</td></tr>` : "";
+    const imagesRow = r.imagesCleared
+      ? `<tr><th>画像</th><td class="detail-image-note">完了から30日が過ぎたため画像は削除されました</td></tr>`
+      : (r.images && r.images.length > 0
+        ? `<tr><th>画像(${r.images.length}/10)</th><td>
+            <div class="detail-image-thumbs">
+              ${r.images.map(img => `<img src="${img.url}" alt="" onclick="__kanri.openLightbox('${img.url}')">`).join("")}
+            </div>
+          </td></tr>`
+        : "");
+    const msgHtml = e.msg ? `<div class="de-msg ${e.msgOk ? "ok" : "err"}">${escapeHtml(e.msg)}</div>` : "";
+    return `
+      <div class="modal-overlay" onclick="if(event.target===this) __kanri.closeRecordDetail()">
+        <div class="modal-box">
+          <div class="modal-head">
+            <h2>案件の詳細・編集</h2>
+            <button type="button" class="modal-close" onclick="__kanri.closeRecordDetail()">✕</button>
+          </div>
+          <table class="modal-table">
+            ${readRows.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`).join("")}
+            <tr><th>日付</th><td>${input("date", "date")}</td></tr>
+            <tr><th>業務区分</th><td><input type="text" class="de-input" list="de-categories" value="${escapeHtml(e.category)}" oninput="__kanri.setDetailField('category', this.value)"><datalist id="de-categories">${categories.map(c => `<option value="${escapeHtml(c)}"></option>`).join("")}</datalist></td></tr>
+            ${caseRows}
+            <tr><th>状態</th><td>${sel("status", statusOptions)}</td></tr>
+            <tr><th>終日</th><td><label class="de-check"><input type="checkbox" ${allDay ? "checked" : ""} onchange="__kanri.toggleDetailAllDay(this.checked)"> 終日の予定(開始・終了の時刻は使いません)</label></td></tr>
+            <tr><th>開始</th><td>${allDay ? '<input type="time" class="de-input" value="" disabled>' : input("start", "time", 'step="900"')}</td></tr>
+            <tr><th>終了</th><td>${allDay ? '<input type="time" class="de-input" value="" disabled>' : input("end", "time", 'step="900"')}</td></tr>
+            <tr><th>終了予定日</th><td>${input("dueDate", "date")}</td></tr>
+            <tr><th>外出</th><td><label class="de-check"><input type="checkbox" ${e.isOutside ? "checked" : ""} onchange="__kanri.toggleDetailOutside(this.checked)"> 外出・出張・直行直帰あり</label></td></tr>
+            ${outsideRows}
+            <tr><th>備考</th><td><textarea class="de-input" rows="3" oninput="__kanri.setDetailField('note', this.value)">${escapeHtml(e.note)}</textarea></td></tr>
+            ${imagesRow}
+          </table>
+          ${msgHtml}
+          <div class="de-foot">
+            <button type="button" class="action-btn" onclick="__kanri.closeRecordDetail()">閉じる</button>
+            <button type="button" class="action-btn de-save" ${e.saving ? "disabled" : ""} onclick="__kanri.saveRecordDetail()">${e.saving ? "保存中…" : "保存"}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function punchLocationMapUrl(loc) {
+    return loc ? `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}` : "";
+  }
+
+  // 打刻位置(GPS)の地図リンク。位置が無ければ空文字。
+  function punchLocationLink(loc, label) {
+    if (!loc) { return ""; }
+    const acc = loc.accuracy !== null && loc.accuracy !== undefined ? `(誤差 約${loc.accuracy}m)` : "";
+    return `<a href="${punchLocationMapUrl(loc)}" target="_blank" rel="noopener" title="${label}の打刻場所${acc}">📍${label}</a>`;
+  }
+
+  function renderTimecardEditModal() {
+    if (!state.timecardEditStaffId) { return ""; }
+    const staff = STAFF.find(s => s.id === state.timecardEditStaffId);
+    if (!staff) { return ""; }
+    const weekdayLabels = ["日", "月", "火", "水", "木", "金", "土"];
+    const rows = state.timecardEditDays.map(d => {
+      const dow = new Date(d.date + "T00:00:00").getDay();
+      const isWeekend = dow === 0 || dow === 6;
+      const isHoliday = isCompanyHoliday(d.date);
+      const rowClass = isHoliday ? "timecard-holiday" : (isWeekend ? "timecard-weekend" : "");
+      return `
+        <tr class="${rowClass}">
+          <td>${d.date.slice(5).replace("-", "/")}(${weekdayLabels[dow]})</td>
+          <td><input type="time" value="${d.clockIn || ""}" onchange="__kanri.setTimecardEditField('${d.date}', 'clockIn', this.value)"></td>
+          <td><input type="time" value="${d.clockOut || ""}" onchange="__kanri.setTimecardEditField('${d.date}', 'clockOut', this.value)"></td>
+          <td class="timecard-loc">${punchLocationLink(d.clockInLocation, "出勤")}${punchLocationLink(d.clockOutLocation, "退勤")}</td>
+        </tr>`;
+    }).join("");
+    return `
+      <div class="modal-overlay" onclick="if(event.target===this) __kanri.closeTimecardEdit()">
+        <div class="modal-box wide">
+          <div class="modal-head">
+            <h2>タイムカードを編集(${escapeHtml(staff.name)})</h2>
+            <button type="button" class="modal-close" onclick="__kanri.closeTimecardEdit()">✕</button>
+          </div>
+          <p class="timecard-edit-hint">期間: ${escapeHtml(state.from)} 〜 ${escapeHtml(state.to)}(打刻ミスの修正・追加ができます)</p>
+          <p class="timecard-edit-hint">「打刻場所」の📍を押すと、タイムカードで打刻した場所を地図で確認できます(位置情報を許可せずに打刻した日や、管理者が追加した日は表示されません)。</p>
+          <p class="timecard-edit-hint">オレンジ色の日は自社情報の休日設定に該当する日です。欠勤・有休・特休・休日出勤などの区分は<a href="${getSiteBasePath()}/給与計算/">給与計算</a>ページの勤怠(日ごとの区分)から設定してください。</p>
+          <table class="timecard-edit-table">
+            <thead><tr><th>日付</th><th>出勤</th><th>退勤</th><th>打刻場所</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="timecard-edit-actions">
+            <button type="button" class="action-btn" ${state.timecardSaving ? "disabled" : ""} onclick="__kanri.saveTimecardEdits()">保存する</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function render() {
+    const scheduleTaskList = state.scheduleTaskList;
+
+    const total = state.records.length + scheduleTaskList.length;
+    const doneCount = state.records.filter(r => r.status === "完了").length
+      + scheduleTaskList.filter(t => t.status === "完了").length;
+    const progressCount = state.records.filter(r => r.status === "進行中").length
+      + scheduleTaskList.filter(t => t.status === "進行中").length;
+    const carryCount = state.records.filter(r => r.status === "繰越").length;
+    const rate = total === 0 ? 0 : Math.round((doneCount / total) * 100);
+
+    const summaryHtml = `
+      <div class="summary">
+        <div class="summary-card"><h3>期間内の総件数</h3><div class="big">${total}件</div></div>
+        <div class="summary-card"><h3>完了率</h3><div class="big done">${rate}%</div></div>
+        <div class="summary-card"><h3>進行中</h3><div class="big">${progressCount}件</div></div>
+        <div class="summary-card"><h3>繰越</h3><div class="big carry">${carryCount}件</div></div>
+      </div>`;
+
+    const deptRows = DEPTS.map(dept => {
+      const deptStaffIds = STAFF.filter(s => s.dept === dept).map(s => s.id);
+      const deptRecs = state.records.filter(r => deptStaffIds.includes(r.staffId));
+      const deptSched = scheduleTaskList.filter(t => deptStaffIds.includes(t.staffId));
+      const dTotal = deptRecs.length + deptSched.length;
+      const dDone = deptRecs.filter(r => r.status === "完了").length
+        + deptSched.filter(t => t.status === "完了").length;
+      const dRate = dTotal === 0 ? 0 : Math.round((dDone / dTotal) * 100);
+      return `
+        <tr>
+          <td><span class="dept-pill ${dept}">${dept}</span></td>
+          <td>${dTotal}件</td>
+          <td>${dDone}件</td>
+          <td>
+            <span class="rate-bar-track"><span class="rate-bar-fill" style="width:${dRate}%;background:${rateColor(dRate)}"></span></span>
+            <span class="rate-pct" style="color:${rateColor(dRate)}">${dRate}%</span>
+          </td>
+        </tr>`;
+    }).join("");
+
+    const staffRows = STAFF.map(s => {
+      const recs = state.records.filter(r => r.staffId === s.id);
+      const sched = scheduleTaskList.filter(t => t.staffId === s.id);
+      const sTotal = recs.length + sched.length;
+      const sDone = recs.filter(r => r.status === "完了").length
+        + sched.filter(t => t.status === "完了").length;
+      const sCarry = recs.filter(r => r.status === "繰越").length;
+      const sRate = sTotal === 0 ? 0 : Math.round((sDone / sTotal) * 100);
+      return `
+        <tr>
+          <td>${s.name}</td>
+          <td><span class="dept-pill ${s.dept}">${s.dept}</span></td>
+          <td>${sTotal}件</td>
+          <td>${sDone}件</td>
+          <td>${sCarry}件</td>
+          <td>
+            <span class="rate-bar-track"><span class="rate-bar-fill" style="width:${sRate}%;background:${rateColor(sRate)}"></span></span>
+            <span class="rate-pct" style="color:${rateColor(sRate)}">${sRate}%</span>
+          </td>
+        </tr>`;
+    }).join("");
+
+    const nippoProjectRows = state.records.map(r => {
+      const label = r.bulkMode ? `${r.category}(まとめ${r.bulkCount}件)`
+        : ([r.client, r.project].filter(Boolean).join(" / ") || "(顧客・案件なし)");
+      const dayCountText = formatDayCount(r);
+      const imageIndicator = (!r.bulkMode && r.images && r.images.length > 0)
+        ? `<div class="list-image-thumbs">
+            ${r.images.slice(0, 3).map(img => `<img src="${img.url}" alt="" title="クリックで拡大表示" onclick="event.stopPropagation(); __kanri.openLightbox('${img.url}')">`).join("")}
+            ${r.images.length > 3 ? `<span class="image-count-badge">+${r.images.length - 3}</span>` : ""}
+          </div>`
+        : (r.imagesCleared ? `<span class="image-count-badge cleared" title="完了から30日が過ぎたため画像は削除されました">📷 削除済</span>` : "");
+      return {
+        sortKey: `${r.date || ""}_${r.start || "99"}`,
+        html: `
+          <tr class="clickable-row" data-case-row="1" data-date="${escapeHtml(r.date || "")}" data-staff="${escapeHtml(r.staffName || "")}" data-dept="${escapeHtml(r.dept || "")}" data-case-text="${escapeHtml([r.category, label].join(" "))}" data-status="${escapeHtml(r.status || "")}" data-days="${escapeHtml(dayCountText)}" ${caseRowMatches({ date: r.date || "", staff: r.staffName || "", dept: r.dept || "", caseText: [r.category, label].join(" "), status: r.status || "", days: dayCountText }) ? "" : 'style="display:none"'} onclick="__kanri.showRecordDetail(${r.id})">
+            <td>${r.date}</td>
+            <td>${r.staffName}</td>
+            <td><span class="dept-pill ${r.dept}">${r.dept}</span></td>
+            <td>${r.category}<br><span style="color:var(--muted);font-size:11.5px;">${label}</span>${imageIndicator}</td>
+            <td><span class="status-pill ${r.status}">${r.status}</span></td>
+            <td>${dayCountText}</td>
+            <td>
+              <button class="action-btn" onclick="event.stopPropagation(); __kanri.duplicateRecord(${r.id})">複製</button>
+              <button class="action-btn danger" onclick="event.stopPropagation(); __kanri.deleteRecord(${r.id})">削除</button>
+            </td>
+          </tr>`,
+      };
+    });
+
+    const scheduleProjectRows = scheduleTaskList.map(t => ({
+      sortKey: `${t.date || ""}_${t.start || "99"}`,
+      html: `
+        <tr data-case-row="1" data-date="${escapeHtml(t.date || "")}" data-staff="${escapeHtml(t.staffName || "")}" data-dept="${escapeHtml(t.dept || "")}" data-case-text="${escapeHtml("進捗ページ " + (t.name || ""))}" data-status="${escapeHtml(scheduleStatusText(t.progress))}" data-days="${t.progress}%" ${caseRowMatches({ date: t.date || "", staff: t.staffName || "", dept: t.dept || "", caseText: "進捗ページ " + (t.name || ""), status: scheduleStatusText(t.progress), days: t.progress + "%" }) ? "" : 'style="display:none"'}>
+          <td>${t.date}</td>
+          <td>${t.staffName}</td>
+          <td><span class="dept-pill ${t.dept}">${t.dept}</span></td>
+          <td>進捗ページ<br><span style="color:var(--muted);font-size:11.5px;">${escapeHtml(t.name)}</span></td>
+          <td><span class="status-pill ${scheduleStatusText(t.progress)}">${scheduleStatusText(t.progress)}</span></td>
+          <td>
+            <input type="range" min="0" max="100" step="5" value="${t.progress}" class="inline-progress" style="accent-color:${rateColor(t.progress)}"
+              oninput="this.nextElementSibling.textContent = this.value + '%'; this.style.accentColor = __kanri.rateColor(this.value); this.nextElementSibling.style.color = __kanri.rateColor(this.value)"
+              onchange="__kanri.updateScheduleProgress(${t.id}, this.value)">
+            <span class="rate-pct" style="color:${rateColor(t.progress)}">${t.progress}%</span>
+          </td>
+          <td>
+            <button class="action-btn" onclick="__kanri.duplicateScheduleTask(${t.id})">複製</button>
+            <button class="action-btn danger" onclick="__kanri.deleteScheduleTask(${t.id})">削除</button>
+          </td>
+        </tr>`,
+    }));
+
+    const projectRows = [...nippoProjectRows, ...scheduleProjectRows]
+      .sort((a,b) => b.sortKey.localeCompare(a.sortKey))
+      .map(x => x.html)
+      .join("");
+
+    const timecardRows = STAFF.map(s => {
+      const cards = state.timeCards.filter(t => t.staffId === s.id);
+      const days = cards.filter(t => t.clockIn).length;
+      const totalHours = cards.reduce((sum, t) => sum + hoursBetween(t.clockIn, t.clockOut), 0);
+      const avgHours = days === 0 ? 0 : totalHours / days;
+      return `
+        <tr data-tc-row="1" data-staff="${escapeHtml(s.name)}" data-dept="${escapeHtml(s.dept || "")}" ${timecardRowMatches({ staff: s.name, dept: s.dept || "" }) ? "" : 'style="display:none"'}>
+          <td>${s.name}</td>
+          <td><span class="dept-pill ${s.dept}">${s.dept}</span></td>
+          <td>${days}日</td>
+          <td>${totalHours.toFixed(1)}h</td>
+          <td>${avgHours.toFixed(1)}h/日</td>
+          <td><button class="action-btn" onclick="__kanri.openTimecardEdit('${s.id}')">編集</button></td>
+        </tr>`;
+    }).join("");
+
+    const daysSince = daysSinceBackup();
+    const needsWarning = !state.backup.loading && (daysSince === null || daysSince >= BACKUP_WARNING_DAYS);
+    const lastLabel = state.backup.lastDownloadAt
+      ? `${state.backup.lastDownloadAt.slice(0, 10)}(${daysSince}日前)`
+      : "まだダウンロードされていません";
+    const backupPanelHtml = `
+      <div class="panel backup-panel">
+        <div class="panel-head">全データバックアップ(ダウンロード・復元)</div>
+        <div class="backup-body">
+          ${needsWarning ? `
+            <div class="backup-warn">
+              ⚠️ 業務データを${BACKUP_WARNING_DAYS}日以上バックアップダウンロードしていません。
+              下のボタンからダウンロードをお願いします。
+            </div>` : ""}
+          <div class="backup-status">最終ダウンロード: ${lastLabel}</div>
+          <div class="backup-actions">
+            <button class="export-btn" ${state.backup.busy ? "disabled" : ""} onclick="__kanri.downloadBackup()">
+              ⬇ 全データダウンロード(Excel)
+            </button>
+            <label class="restore-btn">
+              ⬆ バックアップから復元
+              <input type="file" accept=".xlsx" ${state.backup.busy ? "disabled" : ""}
+                onchange="__kanri.restoreFileSelected(this)" style="display:none;">
+            </label>
+          </div>
+          <div class="backup-note">
+            従業員・日報・進捗・タイムカード・チャット・顧客・商品・見積もり・請求書・原価計算書に加えて、
+            給与明細(履歴を含む)・勤怠・有給付与・年末調整・社内書類・お知らせ・案件の画像の記録・操作ログ・
+            保険料額表・税額表・自社情報・追加した部署の全データを1つのExcelファイルにまとめます。
+            画像・書類のファイルそのものは含まれません(サイト全体のバックアップで保管してください)。2週間ごとの定期的なダウンロードを推奨します。
+            復元は「全件置換」方式で、実行前に現在のデータを自動でダウンロードします。
+          </div>
+
+          <div class="backup-danger">
+            <div class="backup-danger-title">⚠️ 最重要・取り扱い注意</div>
+            <div class="backup-danger-desc">
+              下のボタンは、従業員・日報・進捗・タイムカード・チャット・顧客・商品・見積もり・請求書・原価計算書など
+              業務データを<strong>すべて完全に削除</strong>します。<strong>元に戻すことはできません。</strong>
+              実行すると、削除前に自動で1回バックアップをダウンロードしますが、必要であれば先に
+              「全データダウンロード」を押して内容をご自身でも確認してから実行してください。
+            </div>
+            <button class="backup-danger-btn" ${state.backup.busy ? "disabled" : ""} onclick="__kanri.deleteAllData()">
+              🗑 バックアップデータを全て削除
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">操作ログ(ログイン・予定の登録/更新/削除・見積もり/請求書の作成・変更・印刷・重要操作、最新1000件)</div>
+        <div class="activity-log-filter">
+          <label for="log-filter">表示:</label>
+          <select id="log-filter" onchange="__kanri.setActivityFilter(this.value)">
+            <option value="all" ${state.activityLog.filter === "all" ? "selected" : ""}>すべての操作</option>
+            <option value="task" ${state.activityLog.filter === "task" ? "selected" : ""}>予定の操作(誰が誰の予定を登録・更新・削除したか)</option>
+          </select>
+        </div>
+        <div class="activity-log-body">
+          ${(() => {
+            const logEntries = state.activityLog.filter === "task"
+              ? state.activityLog.entries.filter(e => String(e.action || "").indexOf("予定") === 0)
+              : state.activityLog.entries;
+            if (state.activityLog.loading) { return `<p class="activity-log-empty">読み込み中…</p>`; }
+            if (logEntries.length === 0) { return `<p class="activity-log-empty">記録がありません。</p>`; }
+            return `<table class="activity-log-table">
+                  <thead><tr><th>日時</th><th>操作した人</th><th>操作</th><th>対象</th><th>内容</th></tr></thead>
+                  <tbody>
+                    ${logEntries.map(e => `
+                      <tr>
+                        <td>${escapeHtml(e.occurredAt)}</td>
+                        <td>${escapeHtml(e.actorName || "-")}</td>
+                        <td>${escapeHtml(e.action)}</td>
+                        <td style="white-space:normal;min-width:14em;">${escapeHtml(e.targetLabel || "")}</td>
+                        <td>${escapeHtml(e.detail || "")}</td>
+                      </tr>`).join("")}
+                  </tbody>
+                </table>`;
+          })()}
+        </div>
+      </div>`;
+
+    document.getElementById("kanri-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a></div>
+      <div class="header">
+        <div>
+          <h1>管理者集計画面</h1>
+          <div class="sub">部署別・担当者別の業務実績を集計します</div>
+        </div>
+        <div class="date-range">
+          <div class="mode-tabs">
+            <button class="quick-btn ${state.rangeMode === "day" ? "active" : ""}" onclick="__kanri.setRangeMode('day')">日</button>
+            <button class="quick-btn ${state.rangeMode === "month" ? "active" : ""}" onclick="__kanri.setRangeMode('month')">月間</button>
+            <button class="quick-btn ${state.rangeMode === "year" ? "active" : ""}" onclick="__kanri.setRangeMode('year')">年間</button>
+            <button class="quick-btn ${state.rangeMode === "period" ? "active" : ""}" onclick="__kanri.setRangeMode('period')">期間指定</button>
+          </div>
+          ${state.rangeMode === "day" ? `<input type="date" value="${state.pickDay}" onchange="__kanri.setPickDay(this.value)">` : ""}
+          ${state.rangeMode === "month" ? `<input type="month" value="${state.pickMonth}" onchange="__kanri.setPickMonth(this.value)">` : ""}
+          ${state.rangeMode === "year" ? `<select onchange="__kanri.setPickYear(this.value)">${yearSelectOptionsHtml(state.pickYear)}</select>` : ""}
+          ${state.rangeMode === "period" ? `
+            <button class="quick-btn" onclick="__kanri.quickRange('today')">本日</button>
+            <button class="quick-btn" onclick="__kanri.quickRange('tomorrow')">明日</button>
+            <button class="quick-btn" onclick="__kanri.quickRange('week')">今週</button>
+            <button class="quick-btn" onclick="__kanri.quickRange('month')">今月</button>
+            <input type="date" value="${state.from}" onchange="__kanri.setFrom(this.value)">
+            <span>〜</span>
+            <input type="date" value="${state.to}" onchange="__kanri.setTo(this.value)">
+          ` : ""}
+          <span class="range-label">検索期間: ${state.from} 〜 ${state.to}</span>
+        </div>
+      </div>
+
+      ${backupPanelHtml}
+
+      ${state.loading ? '<p style="padding:16px;font-size:13px;color:#8a8577;">読み込み中…</p>' : summaryHtml}
+      ${state.errorMsg ? `<p class="msg-error">${state.errorMsg}</p>` : ""}
+
+      ${state.loading ? "" : `
+      <div class="panel">
+        <div class="panel-head">部署別集計</div>
+        <table>
+          <thead><tr><th>部署</th><th>件数</th><th>完了件数</th><th>完了率</th></tr></thead>
+          <tbody>${deptRows}</tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span>担当者別集計</span>
+          <button class="export-btn" onclick="__kanri.exportExcel()">Excelで保存</button>
+        </div>
+        ${total === 0 ? '<div class="empty">この期間のデータがありません</div>' : `
+        <table>
+          <thead><tr><th>氏名</th><th>部署</th><th>件数</th><th>完了</th><th>繰越</th><th>完了率</th></tr></thead>
+          <tbody>${staffRows}</tbody>
+        </table>`}
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span>案件一覧(進捗・複製・削除) <span id="caseCount" class="case-count"></span><span class="case-count"> ※案件をクリックすると内容を編集できます</span></span>
+          <span>
+            <button class="action-btn" onclick="__kanri.clearCaseFilter()">検索条件をクリア</button>
+            <button class="action-btn" onclick="__kanri.mergeDuplicates()">重複を統合</button>
+          </span>
+        </div>
+        ${total === 0 ? '<div class="empty">この期間のデータがありません</div>' : `
+        <div class="case-scroll" id="caseScroll">
+        <table>
+          <thead>
+            <tr><th>日付</th><th>氏名</th><th>部署</th><th>業務区分/案件</th><th>状態</th><th>進捗(経過日数/予定日数)</th><th>操作</th></tr>
+            <tr class="filter-row">
+              <th><input type="date" class="cf-input" title="クリックするとカレンダーが開きます" value="${escapeHtml(state.caseFilter.date)}" onchange="__kanri.setCaseFilter('date', this.value)"></th>
+              <th><select class="cf-input" onchange="__kanri.setCaseFilter('staff', this.value)"><option value="">全員</option>${DEPTS.map(d => {
+                const members = STAFF.filter(st => st.dept === d);
+                if (members.length === 0) return "";
+                return `<optgroup label="${escapeHtml(d)}">${members.map(st => `<option value="${escapeHtml(st.name)}" ${state.caseFilter.staff === st.name ? "selected" : ""}>${escapeHtml(st.name)}</option>`).join("")}</optgroup>`;
+              }).join("")}</select></th>
+              <th><select class="cf-input" onchange="__kanri.setCaseFilter('dept', this.value)"><option value="">すべて</option>${DEPTS.map(d => `<option value="${escapeHtml(d)}" ${state.caseFilter.dept === d ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}</select></th>
+              <th><input type="text" class="cf-input" placeholder="区分・顧客・案件名で検索" value="${escapeHtml(state.caseFilter.caseText)}" oninput="__kanri.setCaseFilter('caseText', this.value)"></th>
+              <th><select class="cf-input" onchange="__kanri.setCaseFilter('status', this.value)"><option value="">すべて</option>${["予定", "進行中", "継続", "繰越", "保留", "完了", "キャンセル"].map(st => `<option value="${st}" ${state.caseFilter.status === st ? "selected" : ""}>${st}</option>`).join("")}</select></th>
+              <th><input type="text" class="cf-input" placeholder="例: 3/5日" value="${escapeHtml(state.caseFilter.days)}" oninput="__kanri.setCaseFilter('days', this.value)"></th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${projectRows}</tbody>
+        </table>
+        </div>`}
+      </div>
+
+      <div class="panel">
+        <div class="panel-head collapsible" onclick="__kanri.toggleTimecardPanel()">
+          <span>勤怠(タイムカード)集計</span>
+          <span class="chevron">${state.timecardPanelOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+        </div>
+        ${state.timecardPanelOpen ? (STAFF.length === 0 ? '<div class="empty">従業員が登録されていません</div>' : `
+        <div class="case-scroll" id="timecardScroll">
+        <table>
+          <thead>
+            <tr><th>氏名</th><th>部署</th><th>出勤日数</th><th>合計勤務時間</th><th>1日平均</th><th></th></tr>
+            <tr class="filter-row">
+              <th><select class="cf-input" onchange="__kanri.setTimecardFilter('staff', this.value)"><option value="">全員</option>${DEPTS.map(d => {
+                const members = STAFF.filter(st => st.dept === d);
+                if (members.length === 0) return "";
+                return `<optgroup label="${escapeHtml(d)}">${members.map(st => `<option value="${escapeHtml(st.name)}" ${state.timecardFilter.staff === st.name ? "selected" : ""}>${escapeHtml(st.name)}</option>`).join("")}</optgroup>`;
+              }).join("")}</select></th>
+              <th><select class="cf-input" onchange="__kanri.setTimecardFilter('dept', this.value)"><option value="">すべて</option>${DEPTS.map(d => `<option value="${escapeHtml(d)}" ${state.timecardFilter.dept === d ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}</select></th>
+              <th colspan="3" class="tc-count-cell"><span id="timecardCount" class="case-count"></span></th>
+              <th><button class="action-btn" onclick="__kanri.clearTimecardFilter()">条件をクリア</button></th>
+            </tr>
+          </thead>
+          <tbody>${timecardRows}</tbody>
+        </table>
+        </div>`) : ""}
+      </div>
+      `}
+
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/">← トップに戻る</a>
+      </div>
+      ${renderRecordDetailModal()}
+      ${renderTimecardEditModal()}
+      ${state.lightboxUrl ? `
+        <div class="lightbox-overlay" onclick="__kanri.closeLightbox()">
+          <img src="${state.lightboxUrl}" alt="">
+          <button type="button" class="lightbox-close" onclick="__kanri.closeLightbox()">✕</button>
+        </div>
+      ` : ""}
+    `;
+    applyCaseFilter(); // 案件一覧の件数表示を更新する
+    applyTimecardFilter(); // 勤怠集計の人数表示を更新する
+  }
+
+  async function loadCompanyHolidaySettings() {
+    try {
+      const res = await apiFetch(`${API_BASE}/company-info`);
+      const data = res.ok ? await res.json() : null;
+      state.companyHolidays = {
+        weekly: (data && data.weeklyHolidays) || [],
+        dates: (data && data.holidayDates) || [],
+      };
+    } catch (e) {
+      state.companyHolidays = { weekly: [], dates: [] };
+    }
+  }
+  function isCompanyHoliday(dateStr) {
+    const h = state.companyHolidays;
+    if (!h) { return false; }
+    if (h.dates.includes(dateStr)) { return true; }
+    const dow = new Date(dateStr + "T00:00:00").getDay();
+    return h.weekly.includes(dow);
+  }
+
+  // 「従業員登録」で追加した新しい部署を、標準の4部署の後ろに加え、その色(CSS)も用意する。
+  async function loadDepartments() {
+    let list = [];
+    try {
+      const res = await fetch(`${API_BASE}/departments`);
+      const j = res.ok ? await res.json() : [];
+      if (Array.isArray(j)) { list = j; }
+    } catch (e) { list = []; }
+    list.forEach(d => { if (DEPTS.indexOf(d.name) === -1) { DEPTS.push(d.name); } });
+    STAFF.forEach(s => { if (s.dept) { if (DEPTS.indexOf(s.dept) === -1) { DEPTS.push(s.dept); } } });
+    const css = list.filter(d => !d.builtin).map(d => {
+      const c = CSS.escape(d.name);
+      return `#kanri-app .dept-pill.${c} { background: ${d.bg}; color: ${d.fg}; }`;
+    }).join("\n");
+    let st = document.getElementById("dept-extra-style");
+    if (!st) { st = document.createElement("style"); st.id = "dept-extra-style"; document.head.appendChild(st); }
+    st.textContent = css;
+  }
+
+  async function init() {
+    await loadStaffList();
+    await loadDepartments();
+    loadRange();
+    loadBackupStatus();
+    loadActivityLog();
+    loadCompanyHolidaySettings();
+  }
+  init();
+</script>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

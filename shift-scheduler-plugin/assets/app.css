@@ -96,3 +96,6 @@ body.ss{margin:0;background:var(--ss-bg);color:var(--ss-text);font:16px/1.6 -app
 .ss-login-url input{flex:1 1 280px;min-width:0;padding:8px 10px;border:1px solid var(--ss-line);border-radius:6px;font-family:monospace;background:#fff;color:#222}
 .ss-login-url .ss-sub{flex-basis:100%;margin:0}
 .ss [hidden]{display:none!important}
+.ss-csv{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.ss-csv .ss-sub{flex-basis:100%;margin:0}
+.ss-file-btn{cursor:pointer;display:inline-flex;align-items:center}

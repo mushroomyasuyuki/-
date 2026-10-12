@@ -23,6 +23,25 @@ final class SS_View {
         exit;
     }
 
+    /** レイアウトを使わず、テンプレートだけで1ページを出す（マッシュオフィスシステムの画面用） */
+    public static function render_standalone($ss_template, array $vars = array()) {
+        status_header(200);
+        nocache_headers();
+        header('X-Robots-Tag: noindex, nofollow');
+        header('Content-Type: text/html; charset=utf-8');
+        header('X-Frame-Options: SAMEORIGIN');
+        extract($vars, EXTR_SKIP);
+        include SS_DIR . 'templates/' . $ss_template . '.php';
+        exit;
+    }
+
+    /** 同梱した画面のHTMLを読み込む。1つの文書として書かれたもの（<html>…）は、中身だけにする */
+    public static function office_html($file) {
+        $path = SS_DIR . 'office/' . basename($file);
+        $html = is_readable($path) ? (string) file_get_contents($path) : '';
+        return preg_replace('#<!DOCTYPE[^>]*>|</?html[^>]*>|</?head[^>]*>|</?body[^>]*>|<title>.*?</title>|<meta\b[^>]*>#is', '', $html);
+    }
+
     public static function message($title, $text, $http_status = 200, $link_url = '', $link_label = '') {
         self::render('message', compact('title', 'text', 'link_url', 'link_label'), $http_status);
     }

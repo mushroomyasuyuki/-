@@ -40,12 +40,22 @@ foreach (array('shift_owner', 'shift_manager', 'shift_staff') as $role) {
     }
 }
 
-foreach (array('tenants', 'users', 'staff', 'tokens', 'plans', 'billing_events', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries') as $name) {
+foreach (array('tenants', 'users', 'staff', 'tokens', 'plans', 'billing_events', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries', 'task_records', 'task_images', 'schedule_tasks', 'activity_log') as $name) {
     $wpdb->query('DROP TABLE IF EXISTS ' . $wpdb->prefix . 'shift_' . $name); // phpcs:ignore
 }
 
 foreach (array('shift_owner', 'shift_manager', 'shift_staff') as $role) {
     remove_role($role);
+}
+
+// お客様ごとの非公開ファイル（日報の写真など）を削除
+$ss_files_dir = rtrim(wp_upload_dir()['basedir'], '/') . '/mush-office-tenants';
+if (is_dir($ss_files_dir)) {
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($ss_files_dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+    foreach ($it as $f) {
+        $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname());
+    }
+    @rmdir($ss_files_dir);
 }
 
 delete_option('ss_db_version');

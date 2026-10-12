@@ -166,6 +166,11 @@ final class SS_Router {
         $pages['schedules'] = array('cap' => 'shift_manage_schedule', 'template' => 'app-page', 'title' => 'シフト表', 'script' => array('ui.js', 'pages.js'), 'page' => 'schedules');
         $pages['me/schedule'] = array('cap' => 'shift_view', 'template' => 'app-page', 'title' => 'シフトを見る', 'script' => array('ui.js', 'pages.js'), 'page' => 'me-schedule');
         $pages['billing'] = array('cap' => 'shift_manage_billing', 'template' => 'app-page', 'title' => 'ご契約・お支払い', 'script' => array('ui.js', 'pages.js'), 'page' => 'billing');
+        // マッシュオフィスシステムから移した画面（全幅で表示）
+        $office = self::office_pages();
+        foreach ($office as $key => $def) {
+            $pages[$key] = $def;
+        }
         $pages['settings'] = array('cap' => 'shift_manage_settings', 'template' => 'app-page', 'title' => '設定', 'script' => array('ui.js', 'pages.js'), 'page' => 'settings');
         $extra = array();
         if (preg_match('#^schedules/(\d+)$#', $path, $m)) {
@@ -181,6 +186,9 @@ final class SS_Router {
             $def = $pages[$path];
             if (!current_user_can($def['cap']) || (!empty($def['needs_staff']) && empty($user['staff_id']))) {
                 SS_View::message('権限がありません', 'この画面は利用できません。', 403, SS_View::app_url($tenant['public_id']), 'ダッシュボードへ');
+            }
+            if (!empty($def['office'])) {
+                self::render_office($tenant, $user, $path, $def, $common);
             }
             $config = array(
                 'page'     => $def['page'],
@@ -232,6 +240,53 @@ final class SS_Router {
         ));
     }
 
+    /** マッシュオフィスシステムから移した画面の一覧（パス => 定義） */
+    public static function office_pages() {
+        return array(
+            'nippo'  => array('cap' => 'shift_view', 'office' => 'nippo1-fixed.html', 'title' => '日報', 'label' => '日報'),
+            'yotei'  => array('cap' => 'shift_view', 'office' => 'yotei-jisseki-input.html', 'title' => '予定・進捗', 'label' => '予定進捗'),
+            'chorei' => array('cap' => 'shift_view', 'office' => 'chorei-fixed.html', 'title' => '朝礼（全体スケジュール）', 'label' => '朝礼'),
+            'shukei' => array('cap' => 'shift_manage_staff', 'office' => 'kanri-shukei.html', 'title' => '管理者集計', 'label' => '管理者集計'),
+        );
+    }
+
+    private static function render_office(array $tenant, array $user, $path, array $def, array $common) {
+        $repo = SS_Repo::current();
+        $staff = !empty($user['staff_id']) ? $repo->find('staff', (int) $user['staff_id']) : null;
+        $pid = $tenant['public_id'];
+        $links = array('トップ' => SS_View::app_url($pid));
+        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計');
+        $menu = array(array('url' => SS_View::app_url($pid), 'label' => 'ダッシュボード', 'current' => false));
+        foreach (self::office_pages() as $key => $p) {
+            if (current_user_can($p['cap'])) {
+                $links[$labels[$key]] = SS_View::app_url($pid, $key);
+                $menu[] = array('url' => SS_View::app_url($pid, $key), 'label' => $p['label'], 'current' => $key === $path);
+            }
+        }
+        $menu[] = array('url' => SS_View::app_url($pid, current_user_can('shift_manage_schedule') ? 'schedules' : 'me/schedule'), 'label' => 'シフト', 'current' => false);
+        SS_View::render_standalone('office-page', array(
+            'title'       => $def['title'],
+            'tenant_name' => $tenant['name'],
+            'home_url'    => SS_View::app_url($pid),
+            'menu'        => $menu,
+            'logout'      => $common['logout'],
+            'readonly'    => !SS_Tenants::is_writable($tenant),
+            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && $path !== 'shukei',
+            'office_html' => SS_View::office_html($def['office']),
+            'mo_config'   => array(
+                'tenant'   => $pid,
+                'base'     => esc_url_raw(rest_url(SS_Rest_Office::NS)),
+                'nonce'    => wp_create_nonce('wp_rest'),
+                'readonly' => !SS_Tenants::is_writable($tenant),
+                'links'    => $links,
+                'auth'     => array(
+                    'staff' => $staff && (int) $staff['active'] === 1 ? array('staffId' => (string) $staff['id'], 'staffName' => $staff['name'], 'dept' => (string) $staff['department']) : null,
+                    'admin' => current_user_can('shift_manage_staff'),
+                ),
+            ),
+        ));
+    }
+
     private static function nav($tenant, $current) {
         $items = array(array('', 'ダッシュボード'));
         if (current_user_can('shift_manage_staff')) {
@@ -248,6 +303,11 @@ final class SS_Router {
             $items[] = array('me/requests', '希望休の提出');
         }
         $items[] = array('me/schedule', 'シフトを見る');
+        foreach (self::office_pages() as $key => $p) {
+            if (current_user_can($p['cap'])) {
+                $items[] = array($key, $p['label']);
+            }
+        }
         if (current_user_can('shift_manage_billing')) {
             $items[] = array('billing', 'ご契約・お支払い');
         }

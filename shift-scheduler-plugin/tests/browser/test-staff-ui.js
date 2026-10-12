@@ -35,6 +35,12 @@ const server = http.createServer((req, res) => {
       }
       let m = p.match(/^staff\/(\d+)$/);
       if (m && req.method === 'PUT') { const s = staff.find(x => x.id === +m[1]); Object.assign(s, d); return json({ staff: s }); }
+      if (req.method === 'GET' && p === 'staff/export') return json({ filename: 'staff-20261012.csv', csv: '"社員番号","名前"\r\n"101","山田太郎"\r\n' });
+      if (req.method === 'POST' && p === 'staff/import') {
+        if (d.dry_run) return json({ created: 1, updated: 1, errors: [], applied: false });
+        staff.push(present({ id: nextId++, name: d.rows[2][1], employee_number: d.rows[2][0] }));
+        return json({ created: 1, updated: 1, errors: [], applied: true });
+      }
       m = p.match(/^staff\/(\d+)\/password$/);
       if (m && req.method === 'POST') { const s = staff.find(x => x.id === +m[1]); s.account = 'active'; s.staff_login = true; return json({ ok: true }); }
       return json({ message: 'not found' }, 404);
@@ -48,7 +54,7 @@ const server = http.createServer((req, res) => {
   await new Promise(r => server.listen(0, r));
   const base = 'http://127.0.0.1:' + server.address().port + '/';
   const browser = await chromium.launch(process.env.PLAYWRIGHT_BROWSERS_PATH ? {} : { executablePath: '/opt/pw-browsers/chromium' });
-  const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, acceptDownloads: true });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('dialog', async d => { await d.accept(page.__answer || ''); });
@@ -94,6 +100,21 @@ const server = http.createServer((req, res) => {
   await page.click('#ss-copy-url');
   await page.waitForFunction(() => document.getElementById('ss-notice').textContent.includes('コピー'));
   check('copy button gives feedback', true);
+
+  // CSV：Excelで保存した Shift_JIS のファイルを取り込む
+  const sjis = path.join(require('os').tmpdir(), 'staff-sjis.csv');
+  const utf8 = sjis + '.utf8';
+  fs.writeFileSync(utf8, '社員番号,名前,部署\r\n101,山田太郎,ホール\r\n102,"鈴木, 花子",キッチン\r\n');
+  execFileSync('php', ['-r', 'file_put_contents($argv[2], mb_convert_encoding(file_get_contents($argv[1]), "SJIS-win", "UTF-8"));', utf8, sjis]);
+  page.__answer = '';
+  await page.setInputFiles('#ss-import', sjis);
+  await page.waitForFunction(() => document.getElementById('ss-import-result').textContent.includes('取り込みました'));
+  const imp = calls.filter(c => c.p === 'staff/import');
+  check('CSV import: Shift_JIS is decoded (names readable, quoted comma kept)', imp.length === 2 && imp[0].d.dry_run === true && imp[0].d.rows[1][1] === '山田太郎' && imp[0].d.rows[2][1] === '鈴木, 花子');
+  check('CSV import: checked first (dry run), applied after confirming', imp[1].d.dry_run === undefined && (await page.textContent('#ss-import-result')).includes('追加：1人'));
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#ss-export')]);
+  const buf = fs.readFileSync(await dl.path());
+  check('CSV export: saved with BOM (opens in Excel without garbled text) and the given filename', buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF && dl.suggestedFilename() === 'staff-20261012.csv' && buf.toString('utf8').includes('山田太郎'));
 
   await page.setViewportSize({ width: 375, height: 800 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);

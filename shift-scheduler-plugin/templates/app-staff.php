@@ -14,6 +14,15 @@
     <span class="ss-sub">このURLを、スタッフに伝えてください。会社ごとに専用のURLです。</span>
   </div>
 
+  <div class="ss-csv">
+    <button type="button" class="ss-btn ss-btn-sub" id="ss-export">名簿をCSVで書き出す</button>
+    <?php if ($config['writable']) : ?>
+      <label class="ss-btn ss-btn-sub ss-file-btn">CSVを取り込む<input type="file" id="ss-import" accept=".csv,text/csv" hidden></label>
+    <?php endif; ?>
+    <span class="ss-sub">Excelで編集できます。社員番号が同じ人は更新、ない人は追加します。まず書き出したCSVを、ひな形として使ってください。</span>
+  </div>
+  <div id="ss-import-result" class="ss-alert" hidden></div>
+
   <form id="ss-add" class="ss-form ss-form-row"<?php echo $config['writable'] ? '' : ' hidden'; ?>>
     <label>社員番号<input type="text" name="employee_number" maxlength="20" placeholder="101"></label>
     <label>名前<input type="text" name="name" maxlength="100" required></label>

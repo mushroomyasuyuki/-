@@ -1,0 +1,1995 @@
+<!--
+  ============================================================
+  個人の予定・実績入力画面(WordPress DB版 / Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「マッシュオフィスシステム(WordPress DB版)」プラグインを
+  有効化しておく必要があります。
+
+  【2026/09 改修】
+  ・作業日を自分で選ぶ日付欄(カレンダー)を廃止し、
+    「今日の分」「明日の分」を1ページ内に並べて入力できるようにしました。
+  ・時刻入力は15分刻み(00/15/30/45分)に統一しました。
+  ・入力項目(業務区分・顧客名・案件名・時刻・状態・外出・備考など)は
+    今日分・明日分ともに従来どおりすべて残しています。
+  ・データ保存先をFirebase/FirestoreからWordPress自体のデータベースに変更しました。
+    リアルタイム同期の代わりに、保存時・30秒ごとの自動更新でデータを最新化しています。
+  ・進捗ページ(schedules)との連携表示は、進捗ページ側の移行が完了するまで
+    一時的に非表示にしています。
+  ============================================================
+-->
+<div id="nippo-app">読み込み中…</div>
+
+<style>
+  #nippo-app {
+    --bg: #f0efe9;
+    --card: #ffffff;
+    --ink: #1f2937;
+    --border: #d6d3cb;
+    --muted: #8a8577;
+    --plan: #38bdf8;
+    --plan-bg: #f0f9ff;
+    --progress: #f59e0b;
+    --progress-bg: #fffbeb;
+    --done: #10b981;
+    --done-bg: #ecfdf5;
+    --carry: #f97316;
+    --carry-bg: #fff7ed;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    padding: 0;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  #nippo-app * { box-sizing: border-box; }
+  #nippo-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0;
+  }
+  #nippo-app .header .app-title { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  #nippo-app .header p { margin: 0; font-size: 13px; color: #94a3b8; }
+  #nippo-app .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  #nippo-app select#staffSelect {
+    background: #334155; color: #f8fafc; border: 1px solid #475569; border-radius: 3px; padding: 6px 8px; font-size: 13px;
+  }
+  #nippo-app .dept-badge {
+    display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 3px; border: 1px solid;
+    margin-right: 6px;
+  }
+  #nippo-app .day-section { margin-bottom: 6px; }
+  #nippo-app .day-title-bar {
+    display: flex; align-items: center; gap: 10px; padding: 14px 20px 0;
+  }
+  #nippo-app .day-title-bar .day-title { font-size: 16px; margin: 0; color: var(--ink); font-weight: 600; }
+  #nippo-app .day-pill {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; color: #fff;
+    vertical-align: middle;
+  }
+  #nippo-app .day-pill.today { background: #1e293b; }
+  #nippo-app .tomorrow-preview {
+    background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; margin: 12px 20px 0;
+  }
+  #nippo-app .day-pill.custom { background: #7c3aed; }
+  #nippo-app .day-title-bar .day-date { font-size: 12.5px; color: var(--muted); }
+  #nippo-app .layout { display: grid; grid-template-columns: 1fr; gap: 16px; padding: 12px 16px 16px; }
+  @media (min-width: 800px) {
+    #nippo-app .layout { grid-template-columns: 360px 1fr; align-items: start; }
+  }
+  #nippo-app .layout.single { grid-template-columns: 1fr; }
+  #nippo-app .panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 18px; }
+  #nippo-app .add-today-btn {
+    width: 100%; background: #f97316; color: #fff; border: none; border-radius: 6px; padding: 16px;
+    font-size: 16px; font-weight: 700; cursor: pointer; margin-bottom: 16px;
+    box-shadow: 0 2px 6px rgba(249, 115, 22, 0.35);
+  }
+  #nippo-app .add-today-btn:hover { background: #ea580c; }
+  /* 今日の分の新規入力は、一覧の上に横に広げて、3列で出す(狭い画面では1列) */
+  #nippo-app .wide-panel { width: 100%; box-sizing: border-box; }
+  #nippo-app .wide-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 24px; align-items: start; }
+  @media (max-width: 900px) { #nippo-app .wide-grid { grid-template-columns: 1fr; } }
+  #nippo-app .panel-close-row { display: flex; justify-content: flex-end; margin: -6px -6px 10px 0; }
+  #nippo-app .panel-close-row button { background: none; border: none; color: #94a3b8; font-size: 12.5px; cursor: pointer; text-decoration: underline; }
+  #nippo-app label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #nippo-app input[type=text],
+  #nippo-app input[type=number], #nippo-app select, #nippo-app textarea {
+    width: 100%; border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px; font-size: 14px; margin-bottom: 12px;
+    font-family: inherit; background: #fff; color: var(--ink);
+  }
+  #nippo-app .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #nippo-app .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  #nippo-app .daycount-row { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  #nippo-app .daycount-row input[type=number] { width: 64px; margin-bottom: 0; text-align: center; }
+  #nippo-app .daycount-row span { font-size: 13px; color: var(--muted); }
+  #nippo-app .chip {
+    flex: 1; text-align: center; padding: 7px 10px; font-size: 13px; border: 1px solid var(--border); border-radius: 3px;
+    background: #fff; color: #64748b; cursor: pointer;
+  }
+  #nippo-app .chip.active { background: #1e293b; color: #fff; border-color: #1e293b; }
+  #nippo-app .save-btn {
+    width: 100%; background: #1e293b; color: #fff; border: none; border-radius: 3px; padding: 11px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
+  }
+  #nippo-app .save-btn:hover { background: #334155; }
+  #nippo-app .save-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+  #nippo-app .outside-box { background: #faf9f6; border: 1px solid #e7e4db; border-radius: 3px; padding: 10px; margin-bottom: 12px; }
+  #nippo-app .msg-error { color: #ea580c; font-size: 13px; margin-bottom: 10px; }
+  #nippo-app .msg-success { color: #10b981; font-size: 13px; margin-top: 8px; font-weight: 600; }
+  #nippo-app .list-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  #nippo-app .list-head .list-title { font-size: 14px; margin: 0; font-weight: 600; }
+  #nippo-app .reset-link { font-size: 12px; color: #a3a099; background: none; border: none; cursor: pointer; text-decoration: underline; }
+  #nippo-app .empty {
+    background: #fff; border: 1px dashed var(--border); border-radius: 4px; padding: 30px; text-align: center;
+    color: var(--muted); font-size: 13px;
+  }
+  #nippo-app .record-card {
+    background: #fff; border: 1px solid #e7e4db; border-left: 4px solid var(--plan); border-radius: 3px;
+    padding: 12px 14px; margin-bottom: 8px;
+  }
+  #nippo-app .record-card.status-進行中 { border-left-color: var(--progress); }
+  #nippo-app .record-card.status-完了 { border-left-color: var(--done); }
+  #nippo-app .record-card.status-繰越 { border-left-color: var(--carry); }
+  #nippo-app .record-card.status-継続 { border-left-color: var(--progress); }
+  #nippo-app .record-card.status-保留 { border-left-color: #94a3b8; }
+  #nippo-app .record-card.status-キャンセル { border-left-color: #ef4444; }
+  /* 1件を横長・低め(2段)のコンパクト表示にする: 上段=区分・案件・日時・日数 / 下段=状態チェック・画像。 */
+  #nippo-app .record-card { padding: 6px 12px; margin-bottom: 4px; }
+  #nippo-app .record-card .rec-body { flex: 1 1 auto; min-width: 0; }
+  #nippo-app .record-card .rec-main { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+  #nippo-app .record-card .rec-main strong { font-size: 14px; min-width: 7em; }
+  #nippo-app .record-card .record-no { margin-right: 0; }
+  #nippo-app .record-card .status-tag { margin-left: 0; }
+  #nippo-app .record-card .record-sub, #nippo-app .record-card .record-time { margin: 0; font-size: 12.5px; }
+  #nippo-app .record-card .rec-main .record-sub:first-of-type { flex: 1 1 120px; min-width: 0; }
+  #nippo-app .record-card .rec-main .record-time, #nippo-app .record-card .rec-main .record-sub:last-of-type { white-space: nowrap; }
+  #nippo-app .record-card .rec-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px 14px; margin-top: 2px; }
+  #nippo-app .record-card .image-upload-btn { padding: 2px 8px; }
+  #nippo-app .record-card .rec-actions:empty { display: none; }
+  #nippo-app .record-card .record-status-checks { margin: 0; gap: 10px; flex-wrap: wrap; }
+  #nippo-app .record-card .record-images { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+  #nippo-app .record-card .image-thumbs { margin-bottom: 0; gap: 4px; }
+  #nippo-app .record-card .image-thumb { width: 28px; height: 28px; }
+  #nippo-app .record-card .images-note { margin: 0; font-size: 10.5px; }
+  #nippo-app .record-card { cursor: pointer; }
+  #nippo-app .record-card:hover { background: #f8fafc; box-shadow: 0 1px 4px rgba(15,23,42,.12); }
+  #nippo-app .list-hint { font-size: 11.5px; color: var(--muted); margin: -4px 0 8px; text-align: center; }
+  /* 案件の詳細(備考・画像など)を開くウィンドウ */
+  #nippo-app .detail-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+  #nippo-app .detail-modal { background: #fff; border-radius: 10px; width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; padding: 16px 18px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+  #nippo-app .detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e7e4db; }
+  #nippo-app .detail-title { font-size: 17px; font-weight: 700; color: #1e293b; }
+  #nippo-app .detail-close-x { margin-left: auto; background: none; border: none; font-size: 20px; line-height: 1; color: #64748b; cursor: pointer; padding: 2px 6px; }
+  #nippo-app .detail-row { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px dashed #eee9dd; font-size: 13.5px; }
+  #nippo-app .detail-k { flex: 0 0 5.5em; color: #64748b; font-size: 12.5px; }
+  #nippo-app .detail-v { flex: 1; min-width: 0; color: #1e293b; word-break: break-word; }
+  #nippo-app .detail-note { white-space: pre-wrap; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; font-size: 13.5px; min-height: 2.5em; }
+  #nippo-app .detail-section { margin-top: 12px; }
+  #nippo-app .detail-section-title { font-size: 12.5px; color: #64748b; margin-bottom: 4px; font-weight: 600; }
+  #nippo-app .detail-imgs { display: flex; flex-wrap: wrap; gap: 8px; }
+  #nippo-app .detail-img { width: 110px; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); cursor: zoom-in; }
+  #nippo-app .detail-empty { font-size: 13px; color: #94a3b8; }
+  #nippo-app .detail-foot { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  #nippo-app .detail-foot button { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 6px; padding: 9px 18px; font-size: 14px; cursor: pointer; }
+  #nippo-app .detail-foot button.primary { background: #1e293b; color: #fff; border-color: #1e293b; }
+  #nippo-app .detail-meta { margin-top: 10px; font-size: 11px; color: #94a3b8; }
+  /* 「明日以降の予定」は約3件分の高さにとどめ、残りは右側のスクロールバーで見る。 */
+  #nippo-app .tomorrow-scroll { max-height: 242px; overflow-y: scroll; padding-right: 6px; scrollbar-width: auto; scrollbar-color: #94a3b8 #e2e8f0; }
+  #nippo-app .tomorrow-scroll::-webkit-scrollbar { width: 12px; }
+  #nippo-app .tomorrow-scroll::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 6px; }
+  #nippo-app .tomorrow-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #e2e8f0; }
+  #nippo-app .record-top { display: flex; justify-content: space-between; gap: 10px; }
+  #nippo-app .record-no { font-family: monospace; font-size: 11px; color: #b0aca0; margin-right: 6px; }
+  #nippo-app .status-tag {
+    font-size: 11px; padding: 2px 6px; border-radius: 3px; border: 1px solid; margin-left: 6px;
+  }
+  #nippo-app .status-tag.予定 { color: var(--plan); background: var(--plan-bg); border-color: #bae6fd; }
+  #nippo-app .status-tag.進行中 { color: var(--progress); background: var(--progress-bg); border-color: #fde68a; }
+  #nippo-app .status-tag.完了 { color: var(--done); background: var(--done-bg); border-color: #a7f3d0; }
+  #nippo-app .status-tag.繰越 { color: var(--carry); background: var(--carry-bg); border-color: #fed7aa; }
+  #nippo-app .status-tag.継続 { color: var(--progress); background: var(--progress-bg); border-color: #fde68a; }
+  #nippo-app .status-tag.保留 { color: #64748b; background: #f1f5f9; border-color: #e2e8f0; }
+  #nippo-app .status-tag.キャンセル { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
+  #nippo-app .record-sub { font-size: 13px; color: #475569; margin: 5px 0 0; }
+  #nippo-app .record-status-checks { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  #nippo-app .record-status-checks label { display: flex; align-items: center; gap: 4px; font-size: 12.5px; color: #334155; margin-bottom: 0; }
+  #nippo-app .record-status-checks input[type=checkbox] { width: auto; margin: 0; }
+  #nippo-app .allday-check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #334155; margin: -2px 0 12px; cursor: pointer; }
+  #nippo-app .allday-check input { width: auto; margin: 0; }
+  #nippo-app .record-time { font-size: 12px; color: var(--muted); font-family: monospace; margin-top: 4px; }
+  #nippo-app .record-images { margin-top: 8px; }
+  #nippo-app .image-thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  #nippo-app .image-thumb { position: relative; width: 56px; height: 56px; }
+  #nippo-app .image-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; }
+  #nippo-app .lightbox-overlay {
+    position: fixed; inset: 0; z-index: 99999; background: rgba(0,0,0,.8);
+    display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;
+  }
+  #nippo-app .lightbox-overlay img { max-width: 100%; max-height: 100%; border-radius: 4px; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+  #nippo-app .lightbox-close {
+    position: fixed; top: 16px; right: 20px; width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,.9); color: #1f2937; border: none; font-size: 18px; cursor: pointer;
+  }
+  #nippo-app .image-thumb-del {
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+    background: #ef4444; color: #fff; border: none; font-size: 11px; line-height: 18px; padding: 0; cursor: pointer;
+  }
+  #nippo-app .image-upload-btn {
+    display: inline-block; font-size: 12px; color: #0369a1; background: #f0f9ff; border: 1px dashed #bae6fd;
+    border-radius: 4px; padding: 5px 10px; cursor: pointer;
+  }
+  #nippo-app .images-note { font-size: 11.5px; color: var(--muted); margin: 4px 0 0; }
+  #nippo-app .required { color: #ea580c; font-size: 11px; }
+  #nippo-app .picked-info {
+    font-size: 12px; color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 3px; padding: 6px 8px; margin: -6px 0 12px;
+  }
+  #nippo-app .divider { height: 1px; background: var(--border); margin: 8px 16px 0; opacity: .7; }
+  #nippo-app .chat-panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; margin: 4px 0; }
+  #nippo-app .chat-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; line-height: 1.3; }
+  #nippo-app .chat-body { max-height: 56px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; padding: 2px; }
+  #nippo-app .chat-bubble-row { display: flex; }
+  #nippo-app .chat-bubble-row.admin { justify-content: flex-start; }
+  #nippo-app .chat-bubble-row.staff { justify-content: flex-end; }
+  #nippo-app .chat-bubble { max-width: 78%; padding: 4px 8px; border-radius: 10px; font-size: 12.5px; line-height: 1.35; word-break: break-word; }
+  #nippo-app .chat-bubble.admin { background: #eef2f7; color: var(--ink); border-bottom-left-radius: 2px; }
+  #nippo-app .chat-bubble.staff { background: #1e293b; color: #fff; border-bottom-right-radius: 2px; }
+  #nippo-app .chat-time { font-size: 10px; opacity: .6; margin-top: 1px; }
+  #nippo-app .chat-input-row { display: flex; gap: 6px; margin-top: 4px; }
+  #nippo-app .chat-input-row input { flex: 1; margin-bottom: 0; padding: 4px 8px; font-size: 13px; }
+  #nippo-app .chat-input-row button { background: #1e293b; color: #fff; border: none; border-radius: 3px; padding: 0 16px; font-size: 13px; cursor: pointer; }
+  #nippo-app .chat-input-row button:disabled { background: #94a3b8; cursor: not-allowed; }
+  #nippo-app .chat-read { font-size: 10px; color: var(--muted); align-self: flex-end; margin: 0 6px 2px; white-space: nowrap; }
+  #nippo-app .chat-read.unread { color: #ea580c; }
+  #nippo-app .chat-title .unread-badge { display: inline-block; background: #e11d48; color: #fff; border-radius: 999px; font-size: 11px; padding: 0 7px; margin-left: 6px; vertical-align: 1px; }
+  #nippo-app .dm-picker { display: flex; gap: 6px; align-items: center; margin-bottom: 3px; }
+  #nippo-app .dm-picker select { flex: 1; margin-bottom: 0; padding: 4px 8px; font-size: 13px; }
+  #nippo-app .dm-unread-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 3px; }
+  #nippo-app .dm-unread-chip { background: #fff1f2; border: 1px solid #fecdd3; color: #be123c; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #nippo-app .calendar-panel { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; margin: 12px 0; }
+  /* 「日報を更新」は押し忘れ・押し間違いがないよう、大きく目立つ緑のボタンにする。 */
+  #nippo-app .submit-report-btn {
+    display: block; width: 100%; background: #16a34a; color: #fff; border: none; border-radius: 8px; padding: 22px 12px;
+    font-size: 22px; font-weight: 700; letter-spacing: .08em; cursor: pointer; margin-bottom: 14px;
+    box-shadow: 0 4px 0 #15803d, 0 6px 14px rgba(22,163,74,.35); transition: transform .08s, box-shadow .08s, background .15s;
+  }
+  #nippo-app .submit-report-btn:not(:disabled)::before { content: "✔ "; }
+  #nippo-app .submit-report-btn:hover { background: #15a34a; filter: brightness(1.06); }
+  #nippo-app .submit-report-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #15803d, 0 2px 6px rgba(22,163,74,.35); }
+  #nippo-app .submit-report-btn:disabled { background: #94a3b8; box-shadow: 0 4px 0 #64748b; cursor: not-allowed; }
+  #nippo-app .submit-report-msg { font-size: 16px; font-weight: 700; color: #15803d; text-align: center; margin: 6px 0 12px; }
+  #nippo-app .calendar-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  #nippo-app .cal-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  #nippo-app .cal-title-row .calendar-title { margin-bottom: 0; }
+  #nippo-app .cal-scope-toggle { display: flex; gap: 6px; margin-bottom: 10px; }
+  #nippo-app .cal-scope-toggle .chip { flex: none; padding: 4px 14px; margin-bottom: 0; }
+  #nippo-app .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  #nippo-app .cal-nav button { background: #fff; border: 1px solid var(--border); border-radius: 3px; padding: 5px 10px; font-size: 12.5px; color: #334155; cursor: pointer; }
+  #nippo-app .cal-month-label { font-size: 13.5px; font-weight: 600; }
+  #nippo-app .cal-weekdays-header { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 4px; }
+  /* 曜日の見出しは色つきの帯にする(平日は濃い紺、会社休みは赤、土曜は青) */
+  #nippo-app .cal-weekday { text-align: center; font-size: 12px; font-weight: 600; color: #fff; background: #475569; border-radius: 3px; padding: 5px 0; }
+  #nippo-app .cal-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 2px; }
+  #nippo-app .cal-daycell {
+    border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer;
+    font-size: 11px; color: #475569; padding: 2px 4px; min-height: 20px;
+  }
+  #nippo-app .cal-daycell.empty { border: none; background: transparent; cursor: default; }
+  #nippo-app .cal-daycell:hover:not(.empty) { background: #f0f9ff; }
+  #nippo-app .cal-daycell.holiday { background: #fee2e2; border-color: #fecaca; color: #dc2626; font-weight: 600; }
+  #nippo-app .cal-daycell.holiday:hover:not(.empty) { background: #fecaca; }
+  #nippo-app .cal-daycell.has-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #nippo-app .cal-hname { margin-left: 4px; font-size: 9.5px; font-weight: 400; }
+  #nippo-app .cal-weekday.holiday { color: #fff; background: #dc2626; font-weight: 700; }
+  /* 土曜日(会社休みでない場合)は青 */
+  #nippo-app .cal-daycell.sat { background: #dbeafe; border-color: #bfdbfe; color: #1d4ed8; font-weight: 600; }
+  #nippo-app .cal-daycell.sat:hover:not(.empty) { background: #bfdbfe; }
+  #nippo-app .cal-weekday.sat { color: #fff; background: #2563eb; font-weight: 700; }
+  #nippo-app .cal-daycell.today { border-color: #1e293b; border-width: 2px; }
+  #nippo-app .cal-daycell.selected { background: #1e293b; color: #fff; }
+  #nippo-app .cal-bar {
+    border-radius: 4px; padding: 2px 6px; margin-top: 1px; font-size: 10px; font-weight: 600; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; line-height: 1.5;
+  }
+  /* バーの色は部門ごと(営業=青 / デザイン=紫 / 製作=緑 / 事務=橙)。状態は濃淡・取り消し線・記号で見分ける。 */
+  #nippo-app .cal-bar { background: #64748b; }
+  #nippo-app .cal-bar.dept-営業 { background: #0284c7; }
+  #nippo-app .cal-bar.dept-デザイン { background: #7c3aed; }
+  #nippo-app .cal-bar.dept-製作 { background: #059669; }
+  #nippo-app .cal-bar.dept-事務 { background: #d97706; }
+  #nippo-app .cal-bar.holiday-dim { opacity: .3 !important; }
+  #nippo-app .cal-bar.status-完了 { opacity: .55; }
+  #nippo-app .cal-bar.status-保留 { opacity: .75; outline: 1px dashed rgba(255,255,255,.9); outline-offset: -2px; }
+  #nippo-app .cal-bar.status-キャンセル { opacity: .4; text-decoration: line-through; }
+  #nippo-app .cal-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; font-size: 11px; color: var(--muted); }
+  #nippo-app .cal-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  #nippo-app .cal-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+  #nippo-app .cal-scope-toggle select { padding: 4px 8px; font-size: 12.5px; margin-bottom: 0; border: 1px solid var(--border); border-radius: 3px; background: #fff; max-width: 150px; }
+  #nippo-app .cal-hint { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+</style>
+
+<script>
+  // ============================================================
+  // データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+  // 「マッシュオフィスシステム(WordPress DB版)」プラグインが提供する
+  // REST APIを呼び出します。
+  // ============================================================
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+
+  // ============================================================
+  // ログイン(本人確認): 従業員を選んでパスワードを入力してから
+  // 使う方式に変更。ログイン中の本人以外の日報は保存できないよう、
+  // 保存・削除のAPI呼び出しにはこのトークンを付与する。
+  // ============================================================
+  const AUTH_STORAGE_KEY = 'mush_nippo_auth';
+
+  function loadAuth() {
+    try {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (!raw) return null;
+      const auth = JSON.parse(raw);
+      if (!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    } catch (e) { return null; }
+  }
+  function saveAuth(auth) {
+    try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth)); } catch (e) {}
+  }
+  function clearAuth() {
+    try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch (e) {}
+  }
+  function authHeaders() {
+    return state.auth ? { "Authorization": "Bearer " + state.auth.token } : {};
+  }
+
+  let STAFF = [];
+  async function loadStaffList() {
+    try{
+      const res = await fetch(`${API_BASE}/employees`);
+      const rows = await res.json();
+      STAFF = rows.map(r => ({ id: String(r.id), name: r.name, dept: r.department }));
+    }catch(e){
+      STAFF = [];
+    }
+  }
+
+  const CATEGORY_BY_DEPT = {
+    "営業": ["顧客訪問","案件打合せ","見積作成","電話・メール対応","クレーム対応","現場管理","納品・配達","出張","その他営業対応"],
+    "デザイン": ["デザイン作成／修正","出力データ作成","入稿対応","校正対応","デザイン関連加工","納品・配達","その他デザイン業務"],
+    "製作": ["印刷／出力","生産・加工","現場での施工","納品・配達","出荷準備","出荷","機械調整／メンテナンス","その他製作業務"],
+    "事務": ["経理処理","請求処理","発注","書類作成","総務業務","電話対応","来客対応","出荷対応","納品・配達","その他事務業務"],
+  };
+
+  const DEPT_STYLE = {
+    "営業": "color:#0369a1;background:#e0f2fe;border-color:#bae6fd",
+    "デザイン": "color:#6d28d9;background:#ede9fe;border-color:#ddd6fe",
+    "製作": "color:#047857;background:#d1fae5;border-color:#a7f3d0",
+    "事務": "color:#b45309;background:#fef3c7;border-color:#fde68a",
+  };
+
+  // 「従業員登録」で追加した新しい部署の設定。業務区分は共通の一覧を使い、顧客名・案件名は必須にしない。
+  const DEFAULT_CATEGORIES = ["打合せ","書類作成","電話・メール対応","現場作業","納品・配達","その他業務"];
+  const NEEDS_CLIENT_DEPTS = ["営業", "デザイン", "製作"]; // 顧客名・案件名を必須にする部署(事務と新しい部署は任意)
+  function deptNeedsClient(dept) { return NEEDS_CLIENT_DEPTS.indexOf(dept) !== -1; }
+  let DEPT_LEGEND = [["営業", "#0284c7"], ["デザイン", "#7c3aed"], ["製作", "#059669"], ["事務", "#d97706"]]; // カレンダー下の部署別の色の凡例
+  function ensureDeptDefaults(dept) {
+    if (!dept) return;
+    if (!CATEGORY_BY_DEPT[dept]) { CATEGORY_BY_DEPT[dept] = DEFAULT_CATEGORIES.slice(); }
+    if (!DEPT_STYLE[dept]) { DEPT_STYLE[dept] = "color:#475569;background:#e2e8f0;border-color:#cbd5e1"; }
+  }
+  // 部署の一覧(標準の4部署+追加した部署)を取得し、新しい部署の色(CSS)・凡例を用意する。
+  async function loadDepartments() {
+    STAFF.forEach(s => ensureDeptDefaults(s.dept));
+    let list = [];
+    try {
+      const res = await fetch(`${API_BASE}/departments`);
+      const j = res.ok ? await res.json() : [];
+      if (Array.isArray(j)) { list = j; }
+    } catch (e) { list = []; }
+    const extra = list.filter(d => !d.builtin);
+    extra.forEach(d => {
+      ensureDeptDefaults(d.name);
+      DEPT_STYLE[d.name] = `color:${d.fg};background:${d.bg};border-color:${d.bg}`;
+    });
+    DEPT_LEGEND = [["営業", "#0284c7"], ["デザイン", "#7c3aed"], ["製作", "#059669"], ["事務", "#d97706"]].concat(extra.map(d => [d.name, d.fg]));
+    const css = extra.map(d => `#nippo-app .cal-bar.${CSS.escape("dept-" + d.name)} { background: ${d.fg}; }`).join("\n");
+    let st = document.getElementById("dept-extra-style");
+    if (!st) { st = document.createElement("style"); st.id = "dept-extra-style"; document.head.appendChild(st); }
+    st.textContent = css;
+  }
+
+  const DAYS = ["today"];
+  const DAY_LABEL = { today: "今日の分", custom: "指定日" };
+
+  // 会社情報(自社の定休曜日・休日・就業時間)。ログイン後に取得する。
+  let COMPANY_INFO = null;
+  async function loadCompanyInfo() {
+    try {
+      const res = await fetch(`${API_BASE}/company-info`, { headers: authHeaders() });
+      COMPANY_INFO = res.ok ? await res.json() : null;
+    } catch (e) {
+      COMPANY_INFO = null;
+    }
+  }
+  const NIGHT_FROM = "22:00", NIGHT_TO = "05:00"; // 夜間(深夜)の時間帯
+
+  function dateStrOffset(offsetDays) {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  // "YYYY-MM-DD"同士の日数差(終了日 - 開始日)。終了日の方が前なら0にする。
+  function daysBetween(fromStr, toStr) {
+    const from = new Date(fromStr + "T00:00:00");
+    const to = new Date(toStr + "T00:00:00");
+    return Math.max(0, Math.round((to - from) / 86400000));
+  }
+
+  // 一覧での進捗表示。終了予定日があれば、保存されているtotalDaysより優先して
+  // (その案件の日付)〜(終了予定日)の日数を計算し直して表示する
+  // (途中で終了予定日だけ変更されても表示が食い違わないようにするため)。
+  // 経過日数・予定日数は手入力の値を信用せず、日付・終了予定日・本日の日付から
+  // 自動計算する(管理者画面・日報のどちらで見ても同じ数字になるようにするため)。
+  function dayCountLabel(r) {
+    // 予定日数は開始日・終了予定日の両方を含む日数(例:9/25〜9/30なら6日間)。
+    // 経過日数は開始日を1日目として数える(まだ開始日を迎えていなければ0)。
+    const total = (r.dueDate && r.date) ? daysBetween(r.date, r.dueDate) + 1 : (r.totalDays > 0 ? r.totalDays : 0);
+    if (total <= 0) return `進捗${typeof r.progress === "number" ? r.progress : 0}%`;
+    const today = dateStrOffset(0);
+    const current = r.date ? Math.min(total, today >= r.date ? daysBetween(r.date, today) + 1 : 0) : (r.currentDay || 0);
+    return `${current}/${total}日`;
+  }
+
+  // 案件カードの画像欄。完了から30日が過ぎて削除済みならその旨だけ表示し、それ以外はサムネイル(最大10枚)と
+  // アップロード欄を表示する。readOnly(全員カレンダーで他人の予定を閲覧中)の場合は
+  // サムネイルのクリック(原寸表示)だけ残し、追加・削除はできないようにする。
+  function renderTaskImages(day, r, readOnly) {
+    if (r.imagesCleared) {
+      return `<div class="record-images"><p class="images-note">完了から30日が過ぎたため画像は削除されました</p></div>`;
+    }
+    const images = r.images || [];
+    const thumbs = images.length > 0 ? `
+      <div class="image-thumbs">
+        ${images.map(img => `
+          <div class="image-thumb">
+            <img src="${img.url}" alt="" onclick="__nippo.openLightbox('${img.url}')">
+            ${readOnly ? "" : `<button type="button" class="image-thumb-del" onclick="event.stopPropagation(); __nippo.deleteTaskImage('${day}', ${r.id}, ${img.id})">×</button>`}
+          </div>
+        `).join("")}
+      </div>` : "";
+    const uploadWidget = readOnly ? "" : (images.length < 10 ? `
+      <label class="image-upload-btn">＋ 画像を追加(${images.length}/10)
+        <input type="file" accept="image/*" style="display:none;" onchange="__nippo.uploadTaskImage('${day}', ${r.id}, this)">
+      </label>` : `<p class="images-note">画像は上限(10枚)に達しています</p>`);
+    // 完了した案件の画像は、完了から30日後に自動で削除される(削除予定日はサーバーから届く)。
+    const expire = images.map(img => img.expiresAt).filter(Boolean).sort()[0] || "";
+    const notice = expire ? `<p class="images-note">※完了から30日が過ぎる ${expire} に、画像は自動的に削除されます</p>`
+      : (readOnly ? "" : `<p class="images-note">※「完了」にすると、30日後に画像は自動的に削除されます</p>`);
+    if (!thumbs && !uploadWidget) { return ""; }
+    return `<div class="record-images">${thumbs}${uploadWidget}${notice}</div>`;
+  }
+
+  function monthStrOf(dateStr) { return dateStr.slice(0, 7); } // "YYYY-MM-DD" -> "YYYY-MM"
+
+  function monthRange(monthStr) {
+    const [y, m] = monthStr.split("-").map(Number);
+    const from = `${monthStr}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const to = `${monthStr}-${String(lastDay).padStart(2,"0")}`;
+    return { from, to, lastDay };
+  }
+
+  function shiftMonth(monthStr, delta) {
+    const [y, m] = monthStr.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+
+  function dateLabel(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    const w = ["日","月","火","水","木","金","土"][d.getDay()];
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}(${w})`;
+  }
+
+  // 時刻選択肢(0:00〜23:45を15分刻みで生成。24時間のどの時刻も選べる)
+  const TIME_OPTIONS = [""];
+  for (let mins = 0; mins < 24*60; mins += 15) {
+    const h = String(Math.floor(mins/60)).padStart(2,"0");
+    const m = String(mins%60).padStart(2,"0");
+    TIME_OPTIONS.push(`${h}:${m}`);
+  }
+  function timeOptions(selected) {
+    return TIME_OPTIONS.map(t =>
+      `<option value="${t}" ${t===(selected||"")?"selected":""}>${t === "" ? "--:--" : t}</option>`
+    ).join("");
+  }
+
+  // 「今日の分」は進捗スライダーではなく、継続・完了・保留・キャンセルの4択で状態を管理する。
+  const TODAY_STATUS_OPTIONS = ["継続", "完了", "保留", "キャンセル"];
+
+  // 開始予定時刻は8:00から始まる勤務時間を想定し、最初から8:00が選ばれた状態にしておく
+  // (毎回プルダウンを一番上までスクロールして選び直す手間を省くため)。
+  const DEFAULT_START_TIME = "08:00";
+  // 終了予定時刻は、開始予定時刻の2時間後を初期値にする(開始時刻を変えると、終了時刻を自分で選ぶまでは連動して変わる)。
+  const DEFAULT_DURATION_HOURS = 2;
+  // 「終日」の予定は、開始 00:00・終了 23:59 として保存する(時刻の選択肢にない値なので、通常の予定と区別できる)。
+  const ALL_DAY_START = "00:00";
+  const ALL_DAY_END = "23:59";
+  function timeRangeText(start, end, sep) {
+    if (start === ALL_DAY_START) { if (end === ALL_DAY_END) { return "終日"; } }
+    return `${start || "--:--"}${sep}${end || "--:--"}`;
+  }
+  // 「終日」のオン・オフ。オンにすると時刻を 00:00〜23:59 にし、オフに戻すと直前の時刻に戻す。
+  function applyAllDay(f, on) {
+    if (on === f.allDay) { return; }
+    if (on) { f.savedStart = f.start; f.savedEnd = f.end; f.start = ALL_DAY_START; f.end = ALL_DAY_END; }
+    else { f.start = f.savedStart || DEFAULT_START_TIME; f.end = f.savedEnd || plusHours(f.start, DEFAULT_DURATION_HOURS); }
+    f.allDay = on;
+  }
+  // 終了予定日が開始日より後(2日以上の予定)なら、終日を自動でオンにする。自分で終日を操作したあとは自動では変えない。
+  function syncAllDay(day) {
+    const f = state.forms[day];
+    if (f.allDayManual) { return; }
+    const from = (day === "today" && f.startDate) ? f.startDate : state.dates[day];
+    const multi = !!(f.dueDate && from && f.dueDate > from);
+    applyAllDay(f, multi);
+  }
+  function plusHours(time, hours) {
+    if (!time) { return ""; }
+    const [h, m] = time.split(":").map(Number);
+    const mins = Math.min(h * 60 + m + hours * 60, 23 * 60 + 45); // 24時を超える場合は23:45まで
+    return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+  }
+
+  function emptyForm(dept, day) {
+    return {
+      category: CATEGORY_BY_DEPT[dept][0], client: "", project: "", start: DEFAULT_START_TIME, end: plusHours(DEFAULT_START_TIME, DEFAULT_DURATION_HOURS), endTouched: false, statusTouched: false, allDay: false, allDayManual: false, savedStart: "", savedEnd: "",
+      status: day === "today" ? "継続" : "予定", isOutside: false, area: "県内", prefecture: "", travelType: "直行",
+      note: "", bulkMode: false, bulkCount: "", pickedIndex: "", pickedInfo: "", progress: day === "today" ? 50 : 0,
+      currentDay: 1, totalDays: 1, overrideStaffId: state.staffId || "",
+      dueDate: "", startDate: dateStrOffset(0),
+      earlyWork: false, nightWork: false, holidayWork: false, flagsTouched: false,
+    };
+  }
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function projectPickerLabel(p) {
+    const namePart = p.client ? `${p.client} / ${p.project}` : p.project;
+    const extra = [p.status, p.detail].filter(Boolean).join("・");
+    return `${namePart}(${extra})`;
+  }
+
+  const state = {
+    auth: null, // { token, staffId, staffName, dept, expiresAt } ログイン済みの本人情報
+    staffId: null,
+    // tomorrowは入力フォームを持たず、保存済みの予定を閲覧してチェックボックスで状態を
+    // 変えられるだけの簡易プレビュー用(「今日の分」の上段に表示する)。
+    dates: { today: dateStrOffset(0), tomorrow: dateStrOffset(1), custom: null },
+    forms: { today: null, custom: null },
+    records: { today: [], tomorrow: [], custom: [] },
+    loading: { today: true, tomorrow: true, custom: false },
+    errorMsg: { today: "", tomorrow: "", custom: "" },
+    validationMsg: { today: "", custom: "" },
+    saveMsg: { today: "", custom: "" },
+    detail: null, // 案件の詳細ウィンドウ: { day, id }。day は "today" / "tomorrow" / "custom" / "calendar"
+    lightboxUrl: null, // 画像サムネイルをクリックしたときに拡大表示する画像URL(nullなら非表示)
+    saving: { today: false, custom: false },
+    unfinishedProjects: [], // 終了(完了)前の顧客名・案件名の一覧(選択用)
+    login: { staffId: "", password: "", error: "", loading: false }, // ログイン画面の入力状態
+    dm: { threads: [], withId: "", messages: [], loading: false, input: "", sending: false, error: "" }, // 従業員同士の個別チャット
+    calendar: { month: monthStrOf(dateStrOffset(0)), records: [], loading: false, sendingReport: false, reportMsg: "" }, // 月間カレンダー
+    calendarScope: "self", // "self"=自分の予定だけ / "all"=全員の予定(他の人の代理登録もできる) / "staff"=選んだ従業員1人の予定
+    companyHolidays: null, // 自社情報の定休曜日(weekly: 0=日〜6=土)と休日(dates: "YYYY-MM-DD")。取得前はnull
+    calendarStaffId: "",  // calendarScope==="staff" のときに表示する従業員のID
+    showTodayForm: false, // 「今日の分」の新規入力を専用画面として開いているか
+    selectedDate: null, // カレンダーで選んだ任意の日付(指定日パネルの表示対象)
+  };
+
+  function currentStaff() { return STAFF.find(s => s.id === state.staffId) || STAFF[0]; }
+
+  // その日・現在のスタッフの日報一覧を取得する。
+  // Firestoreのようなリアルタイム更新は無いため、取得のたびに最新化する方式にしている。
+  // (init時・保存後に加え、一定間隔でも自動更新することで、他の人の入力もある程度反映されるようにする)
+  async function loadRecords(day) {
+    state.loading[day] = true;
+    render();
+    try {
+      // 「全員カレンダー」から開いた指定日パネルだけは、自分の予定に絞らず全員分を取得する
+      // (他の人がすでに何を入れているか見えるようにするため。追加はできるが削除・編集はできない)。
+      const allScope = day === "custom" && state.calendarScope === "all";
+      const staffScope = day === "custom" && state.calendarScope === "staff" && state.calendarStaffId;
+      const url = `${API_BASE}/task-records?date=${encodeURIComponent(state.dates[day])}` +
+        (allScope ? "" : `&staffId=${encodeURIComponent(staffScope ? state.calendarStaffId : state.staffId)}`);
+      const res = await fetch(url, { headers: authHeaders() });
+      if (!res.ok) throw new Error("取得に失敗しました");
+      state.records[day] = await res.json();
+      state.errorMsg[day] = "";
+    } catch (e) {
+      state.errorMsg[day] = "データの取得に失敗しました。通信環境をご確認ください。";
+    }
+    state.loading[day] = false;
+    render();
+  }
+
+  // 「今日の分」用。今日の日付の案件に加えて、過去の日付でまだ完了・キャンセルに
+  // なっていない案件(やり残し)も一緒に表示する。
+  async function loadTodayRecords() {
+    state.loading.today = true;
+    render();
+    try {
+      const url = `${API_BASE}/task-records?staffId=${encodeURIComponent(state.staffId)}`;
+      const res = await fetch(url, { headers: authHeaders() });
+      if (!res.ok) throw new Error("取得に失敗しました");
+      const rows = await res.json();
+      const today = state.dates.today;
+      state.records.today = rows
+        .filter(r => r.date === today || (today > r.date && r.status !== "完了" && r.status !== "キャンセル"))
+        .sort((a,b) => (a.date||"").localeCompare(b.date||"") || (a.start||"99").localeCompare(b.start||"99"));
+      state.errorMsg.today = "";
+    } catch (e) {
+      state.errorMsg.today = "データの取得に失敗しました。通信環境をご確認ください。";
+    }
+    state.loading.today = false;
+    render();
+  }
+
+  // 「今日の分」の上段に出す「明日以降の予定」プレビュー用。日付をexact matchにすると、
+  // 明日より先の日付で登録された案件が出てこないため、明日以降を範囲(dateFrom)で取得する。
+  // 完了・キャンセル済みは表示しない。
+  async function loadTomorrowPreview() {
+    state.loading.tomorrow = true;
+    render();
+    try {
+      // 明日以降に日付がある案件だけでなく、今日以前に登録されていても終了予定日が
+      // 明日以降にかかる(まだ続いている)案件も含めたいため、日付では絞らず自分の
+      // 案件を全件取得し、クライアント側で判定する。
+      const url = `${API_BASE}/task-records?staffId=${encodeURIComponent(state.staffId)}`;
+      const res = await fetch(url, { headers: authHeaders() });
+      if (!res.ok) throw new Error("取得に失敗しました");
+      const rows = await res.json();
+      const tomorrow = state.dates.tomorrow;
+      state.records.tomorrow = rows
+        .filter(r => r.status !== "完了" && r.status !== "キャンセル")
+        .filter(r => (r.date && r.date >= tomorrow) || (r.dueDate && r.dueDate >= tomorrow))
+        .sort((a,b) => (a.date||"").localeCompare(b.date||"") || (a.start||"99").localeCompare(b.start||"99"));
+      state.errorMsg.tomorrow = "";
+    } catch (e) {
+      state.errorMsg.tomorrow = "データの取得に失敗しました。通信環境をご確認ください。";
+    }
+    state.loading.tomorrow = false;
+    render();
+  }
+
+  function loadAllRecords() {
+    return Promise.all([loadTodayRecords(), loadTomorrowPreview()]);
+  }
+
+  // ページを開いたときと同じ内容を取り直す(保存したあとなど、必要なときに呼ぶ)。
+  function refreshAll() {
+    if (!state.staffId) return Promise.resolve();
+    return Promise.all([
+      loadAllRecords(),
+      loadDmThreads(),
+      state.dm.withId ? loadDm(state.dm.withId) : Promise.resolve(),
+      loadMonthRecords(),
+      state.selectedDate ? loadRecords("custom") : Promise.resolve(),
+    ]);
+  }
+
+  // 自動更新はしない(表示中の画面が勝手に読み込み直されて、入力中の内容やスクロール位置が戻らないようにする)。
+  // 他の人の入力やチャットの新着は、日付を選び直す・相手を選び直す・ページを再読み込みすると反映される。
+
+  // 完了(終了)していない顧客名・案件名の組み合わせを取得する(日報 / taskRecords より)
+  // ※ 進捗ページ(schedules)との連携は、進捗ページ側のWordPress DB移行が完了してから対応します。
+  async function loadUnfinishedProjects(staffId) {
+    if (!staffId) { state.unfinishedProjects = []; render(); return; }
+    const map = new Map();
+
+    try {
+      const res = await fetch(`${API_BASE}/task-records?staffId=${encodeURIComponent(staffId)}`, { headers: authHeaders() });
+      const rows = await res.json();
+      rows.forEach(r => {
+        if (r.bulkMode) return;
+        if (r.status === "完了") return;
+        if (!r.client && !r.project) return;
+        const key = `nippo::${r.client || ""}__${r.project || ""}`;
+        const existing = map.get(key);
+        if (!existing || (r.date || "") > (existing.date || "")) {
+          map.set(key, {
+            client: r.client || "", project: r.project || "",
+            category: r.category || "", status: r.status || "予定", date: r.date || "", detail: "",
+            progressValue: typeof r.progress === "number" ? r.progress : null,
+            dueDate: r.dueDate || "",
+          });
+        }
+      });
+    } catch (e) {
+      // 取得に失敗した場合は空のまま続行する
+    }
+
+    // 直近30日以内のものだけに絞り込む(古いテストデータや放置案件が延々と溜まらないようにする)
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const p = n => String(n).padStart(2, "0");
+    const cutoffStr = `${cutoff.getFullYear()}-${p(cutoff.getMonth()+1)}-${p(cutoff.getDate())}`;
+
+    state.unfinishedProjects = Array.from(map.values())
+      .filter(item => !item.date || item.date >= cutoffStr)
+      .sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    render();
+  }
+
+  // ============================================================
+  // 従業員同士の個別チャット(DM)
+  // ============================================================
+  async function loadDmThreads() {
+    if (!state.staffId) return;
+    try {
+      const res = await fetch(`${API_BASE}/dm/threads`, { headers: authHeaders() });
+      if (!res.ok) throw new Error("取得に失敗しました");
+      state.dm.threads = await res.json();
+    } catch (e) {
+      // 一覧が取れなくてもチャット自体は使えるため、エラー表示はしない
+    }
+    render();
+  }
+
+  async function loadDm(withId) {
+    if (!withId) { state.dm.messages = []; render(); return; }
+    state.dm.loading = state.dm.messages.length === 0;
+    render();
+    try {
+      // 開いた時点で、相手から自分宛ての未読は既読になる(サーバー側で処理)
+      const res = await fetch(`${API_BASE}/dm/messages?with=${encodeURIComponent(withId)}`, { headers: authHeaders() });
+      if (res.status === 401 || res.status === 403) {
+        logout("ログインの有効期限が切れました。もう一度ログインしてください。");
+        return;
+      }
+      if (!res.ok) throw new Error("取得に失敗しました");
+      if (state.dm.withId !== withId) return; // 取得中に相手を切り替えた場合は捨てる
+      state.dm.messages = await res.json();
+      state.dm.error = "";
+      const t = state.dm.threads.find(x => x.staffId === withId);
+      if (t) t.unread = 0;
+    } catch (e) {
+      state.dm.error = "チャットの取得に失敗しました。";
+    }
+    state.dm.loading = false;
+    render();
+  }
+
+  async function sendDm() {
+    const message = state.dm.input.trim();
+    if (!message || state.dm.sending || !state.dm.withId) return;
+    state.dm.sending = true;
+    state.dm.error = "";
+    render();
+    try {
+      const res = await fetch(`${API_BASE}/dm/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ to: state.dm.withId, message }),
+      });
+      if (res.status === 401 || res.status === 403) {
+        logout("ログインの有効期限が切れました。もう一度ログインしてください。");
+        return;
+      }
+      if (!res.ok) throw new Error("送信に失敗しました");
+      state.dm.input = "";
+      await Promise.all([loadDm(state.dm.withId), loadDmThreads()]);
+    } catch (e) {
+      state.dm.error = "送信に失敗しました。もう一度お試しください。";
+    }
+    state.dm.sending = false;
+    render();
+  }
+
+  // カレンダー上部の「日報を更新」ボタン用。チャットへの送信はせず、ページ再読み込み時と
+  // 同じ内容(案件データ・月間カレンダーなど)をその場で取得し直すだけにする。
+  async function manualRefresh() {
+    if (!state.staffId || state.calendar.sendingReport) return;
+    state.calendar.sendingReport = true;
+    state.calendar.reportMsg = "";
+    render();
+    try {
+      await refreshAll();
+      state.calendar.reportMsg = "更新しました。";
+    } catch (e) {
+      state.calendar.reportMsg = "更新に失敗しました。もう一度お試しください。";
+    }
+    state.calendar.sendingReport = false;
+    render();
+    setTimeout(() => { state.calendar.reportMsg = ""; render(); }, 3000);
+  }
+
+  // ============================================================
+  // 月間カレンダー(任意日の予定・実績を一覧できるようにする)
+  // ============================================================
+  // 自社情報の「定休曜日」「休日」を取得する(カレンダーで会社休みを赤く表示するため)。取得できなければ休みなし扱い。
+  async function loadCompanyHolidays() {
+    try {
+      const res = await fetch(`${API_BASE}/company-info`, { headers: authHeaders() });
+      const data = res.ok ? await res.json() : null;
+      state.companyHolidays = {
+        weekly: ((data && data.weeklyHolidays) || []).map(Number),
+        dates: (data && data.holidayDates) || [],
+      };
+    } catch (e) {
+      state.companyHolidays = { weekly: [], dates: [] };
+    }
+  }
+
+  // 日本の祝日(2007年以降の現行ルール)。年ごとに { "YYYY-MM-DD": "祝日名" } を作って使い回す。
+  // 春分・秋分は1980〜2099年に使える近似式。2020・2021年の東京五輪に伴う祝日の移動も反映している。
+  // 日曜と重なった祝日の翌平日=振替休日、祝日にはさまれた平日=国民の休日も含める。
+  const NATIONAL_HOLIDAY_CACHE = {};
+  function nationalHolidays(year) {
+    if (NATIONAL_HOLIDAY_CACHE[year]) return NATIONAL_HOLIDAY_CACHE[year];
+    const h = {};
+    if (year < 2007 || year > 2099) { NATIONAL_HOLIDAY_CACHE[year] = h; return h; }
+    const pad = n => String(n).padStart(2, "0");
+    const keyOf = dt => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    const add = (m, d, name) => { h[`${year}-${pad(m)}-${pad(d)}`] = name; };
+    const nthMonday = (m, n) => 1 + ((8 - new Date(year, m - 1, 1).getDay()) % 7) + (n - 1) * 7;
+    const base = 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4);
+    add(1, 1, "元日");
+    add(1, nthMonday(1, 2), "成人の日");
+    add(2, 11, "建国記念の日");
+    if (year >= 2020) add(2, 23, "天皇誕生日");
+    add(3, Math.floor(20.8431 + base), "春分の日");
+    add(4, 29, "昭和の日");
+    add(5, 3, "憲法記念日");
+    add(5, 4, "みどりの日");
+    add(5, 5, "こどもの日");
+    if (year === 2020) add(7, 23, "海の日"); else if (year === 2021) add(7, 22, "海の日"); else add(7, nthMonday(7, 3), "海の日");
+    if (year === 2020) add(8, 10, "山の日"); else if (year === 2021) add(8, 8, "山の日"); else if (year >= 2016) add(8, 11, "山の日");
+    add(9, nthMonday(9, 3), "敬老の日");
+    add(9, Math.floor(23.2488 + base), "秋分の日");
+    if (year === 2020) add(7, 24, "スポーツの日"); else if (year === 2021) add(7, 23, "スポーツの日"); else if (year >= 2020) add(10, nthMonday(10, 2), "スポーツの日");
+    add(11, 3, "文化の日");
+    add(11, 23, "勤労感謝の日");
+    // 国民の休日: 前日と翌日がどちらも祝日の平日(日曜を除く)
+    for (let dt = new Date(year, 0, 2); dt.getFullYear() === year; dt.setDate(dt.getDate() + 1)) {
+      const prev = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - 1);
+      const next = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1);
+      if (!h[keyOf(dt)] && h[keyOf(prev)] && h[keyOf(next)] && dt.getDay() !== 0) { h[keyOf(dt)] = "国民の休日"; }
+    }
+    // 振替休日: 日曜にあたる祝日の次の、祝日でない日
+    Object.keys(h).forEach(k => {
+      const dt = new Date(k + "T00:00:00");
+      if (dt.getDay() !== 0) return;
+      const sub = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1);
+      while (h[keyOf(sub)]) { sub.setDate(sub.getDate() + 1); }
+      h[keyOf(sub)] = "振替休日";
+    });
+    NATIONAL_HOLIDAY_CACHE[year] = h;
+    return h;
+  }
+  function nationalHolidayName(dateStr) {
+    return nationalHolidays(Number(dateStr.slice(0, 4)))[dateStr] || "";
+  }
+
+  function isCompanyHoliday(dateStr) {
+    const h = state.companyHolidays;
+    if (!h) return false;
+    if (h.dates.includes(dateStr)) return true;
+    return h.weekly.includes(new Date(dateStr + "T00:00:00").getDay());
+  }
+
+  async function loadMonthRecords() {
+    if (!state.staffId) { state.calendar.records = []; render(); return; }
+    if (!state.companyHolidays) { await loadCompanyHolidays(); }
+    state.calendar.loading = true;
+    render();
+    try {
+      const { from, to } = monthRange(state.calendar.month);
+      // 「全員」表示のときはstaffIdを付けず、全員分のバーをカレンダーに出す。
+      const scopeStaffId = state.calendarScope === "staff" && state.calendarStaffId ? state.calendarStaffId : state.staffId;
+      const staffParam = state.calendarScope === "all" ? "" : `staffId=${encodeURIComponent(scopeStaffId)}&`;
+      const url = `${API_BASE}/task-records?${staffParam}dateFrom=${from}&dateTo=${to}`;
+      const res = await fetch(url, { headers: authHeaders() });
+      state.calendar.records = res.ok ? await res.json() : [];
+    } catch (e) {
+      state.calendar.records = [];
+    }
+    state.calendar.loading = false;
+    render();
+  }
+
+  function changeCalendarMonth(delta) {
+    state.calendar.month = shiftMonth(state.calendar.month, delta);
+    loadMonthRecords();
+  }
+
+  // 「自分」「全員」カレンダーの切り替え。
+  function setCalendarScope(scope) {
+    if (state.calendarScope === scope) return;
+    state.calendarScope = scope;
+    state.calendarStaffId = "";
+    closeCustomPanel();
+    loadMonthRecords();
+  }
+
+  // 「従業員を選ぶ」から、特定の1人の予定だけをカレンダーに出す。空に戻すと「自分」表示に戻る。
+  function setCalendarStaff(staffId) {
+    if (!staffId) { state.calendarScope = "self"; state.calendarStaffId = ""; }
+    else { state.calendarScope = "staff"; state.calendarStaffId = String(staffId); }
+    closeCustomPanel();
+    loadMonthRecords();
+  }
+
+  function selectCalendarDate(dateStr) {
+    const picked = state.calendarScope === "staff" ? STAFF.find(s => String(s.id) === String(state.calendarStaffId)) : null;
+    const dept = picked ? picked.dept : currentStaff().dept;
+    state.selectedDate = dateStr;
+    state.dates.custom = dateStr;
+    state.forms.custom = emptyForm(dept, "custom");
+    __nippo.updateAutoChecks("custom");
+    if (picked) state.forms.custom.overrideStaffId = String(picked.id);
+    state.validationMsg.custom = "";
+    state.saveMsg.custom = "";
+    render();
+    loadRecords("custom");
+  }
+
+  function closeCustomPanel() {
+    state.selectedDate = null;
+    render();
+  }
+
+  // ---- 案件の詳細ウィンドウ ----
+  function findDetailRecord() {
+    const d = state.detail;
+    if (!d) return null;
+    const list = d.day === "calendar" ? state.calendar.records : (state.records[d.day] || []);
+    return list.find(r => r.id === d.id) || null;
+  }
+
+  function openDetail(day, id, ev) {
+    // 状態のチェック・画像の追加/拡大・ボタンなど、カード内の操作部分を押したときは詳細を開かない。
+    const t = ev && ev.target;
+    if (t && t.closest && t.closest(".record-status-checks, .record-images, input, label, button, a, select, textarea")) return;
+    state.detail = { day, id };
+    render();
+  }
+
+  // 詳細ウィンドウの「この日の予定を開く」: その案件の開始日の入力欄(指定日パネル)を開く。
+  function openDetailDay() {
+    const r = findDetailRecord();
+    state.detail = null;
+    if (r && r.date) { selectCalendarDate(r.date); } else { render(); }
+  }
+
+  const FLAG_DEFS = [["earlyWork", "早出", "#0891b2"], ["nightWork", "夜間", "#7c3aed"], ["holidayWork", "休日出勤", "#dc2626"], ["isOutside", "外出", "#475569"]];
+  function flagChecksHtml(day, r) {
+    return `<div class="record-status-checks" onclick="event.stopPropagation()">${FLAG_DEFS.map(d => `
+      <label style="color:${d[2]};">
+        <input type="checkbox" ${r[d[0]] ? "checked" : ""} onchange="__nippo.toggleRecordFlag('${day}', ${r.id}, '${d[0]}', this.checked)"> ${d[1]}
+      </label>`).join("")}</div>`;
+  }
+  function flagTagsHtml(r) {
+    return FLAG_DEFS.filter(d => d[0] !== "isOutside").map(d => r[d[0]] ? `<span class="status-tag" style="color:${d[2]};border-color:${d[2]};">${d[1]}</span>` : "").join("");
+  }
+  // 保存済みの案件の早出・夜間・休日出勤のチェックを、その場で変更する。
+  async function toggleRecordFlag(day, id, key, val) {
+    const list = day === "calendar" ? state.calendar.records : state.records[day];
+    const rec = (list || []).find(x => x.id === id);
+    // 外出を付けるときは、区域・移動の種類が空なら「県内・直行」にしておく(一覧の表示が「・」だけにならないように)。
+    const payload = { [key]: val };
+    if (key === "isOutside") {
+      if (val) {
+        const area = (rec && rec.area) ? rec.area : "県内";
+        const travelType = (rec && rec.travelType) ? rec.travelType : "直行";
+        payload.area = area; payload.travelType = travelType;
+        if (rec) { rec.area = area; rec.travelType = travelType; }
+      }
+    }
+    if (rec) { rec[key] = val; render(); }
+    try {
+      const res = await fetch(`${API_BASE}/task-records/${id}/admin-update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+    } catch (e) {
+      if (rec) { rec[key] = !val; }
+      state.errorMsg[day === "calendar" ? "custom" : day] = "チェックの更新に失敗しました。通信環境をご確認ください。";
+      render();
+    }
+  }
+
+  function renderDetailModal() {
+    const r = findDetailRecord();
+    if (!r) return "";
+    const row = (k, v) => v ? `<div class="detail-row"><div class="detail-k">${k}</div><div class="detail-v">${v}</div></div>` : "";
+    const names = [r.client, r.project].filter(Boolean).map(escapeHtml);
+    const period = r.date ? (r.dueDate && r.dueDate !== r.date ? `${r.date} 〜 ${r.dueDate}` : r.date) : "";
+    const time = (!r.bulkMode && (r.start || r.end)) ? `${timeRangeText(r.start, r.end, " 〜 ")}` : "";
+    const outside = r.isOutside ? escapeHtml([r.area, r.prefecture, r.travelType].filter(Boolean).join("・")) : "";
+    const images = r.images || [];
+    const imagesHtml = r.imagesCleared ? `<div class="detail-empty">完了から30日が過ぎたため画像は削除されました</div>`
+      : images.length === 0 ? `<div class="detail-empty">画像はありません</div>`
+      : `<div class="detail-imgs">${images.map(img => `<img class="detail-img" src="${img.url}" alt="" onclick="__nippo.openLightbox('${img.url}')">`).join("")}</div>`;
+    const dayBtn = state.detail.day === "calendar" && r.date ? `<button type="button" class="primary" onclick="__nippo.openDetailDay()">この日の予定を開く</button>` : "";
+    return `
+      <div class="detail-overlay" onclick="__nippo.closeDetail()">
+        <div class="detail-modal" onclick="event.stopPropagation()">
+          <div class="detail-head">
+            <span class="detail-title">${escapeHtml(r.category || "")}</span>
+            <span class="status-tag ${r.status}">${r.status}</span>
+            ${r.staffName ? `<span class="status-tag" style="color:#334155;background:#f1f5f9;border-color:#e2e8f0;">${escapeHtml(r.staffName)}</span>` : ""}
+            <button type="button" class="detail-close-x" onclick="__nippo.closeDetail()" aria-label="閉じる">✕</button>
+          </div>
+          ${r.bulkMode ? row("まとめ入力", `${escapeHtml(String(r.bulkCount || ""))}件`) : row("顧客・案件", names.join(" / ") || "顧客・案件なし")}
+          ${row("期間", escapeHtml(period))}
+          ${row("時間", escapeHtml(time))}
+          ${row("日数", escapeHtml(dayCountLabel(r)))}
+          ${row("外出", outside)}
+          <div class="detail-row"><div class="detail-k">勤務区分</div><div class="detail-v">${flagChecksHtml(state.detail.day, r)}</div></div>
+          <div class="detail-section">
+            <div class="detail-section-title">備考</div>
+            <div class="detail-note">${escapeHtml(r.note || "") || '<span class="detail-empty">備考はありません</span>'}</div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-section-title">画像</div>
+            ${imagesHtml}
+          </div>
+          <div class="detail-meta">登録: ${escapeHtml(r.createdAt || "")}${r.updatedAt ? ` ／ 更新: ${escapeHtml(r.updatedAt)}` : ""}</div>
+          <div class="detail-foot">${dayBtn}<button type="button" onclick="__nippo.closeDetail()">閉じる</button></div>
+        </div>
+      </div>`;
+  }
+
+  // 「今日の分」の一覧上で、保存済みの案件の状態(継続・完了・保留・キャンセル)を
+  // フォームを開き直さずその場で変更する。進捗もチェック内容に応じて自動でセットする。
+  async function updateRecordStatus(day, id, status) {
+    const rec = state.records[day].find(r => r.id === id);
+    // すでに選ばれている状態をもう一度押した(チェックを外した)場合は、その状態を解除する。
+    // 明日以降の予定は「予定」に、今日の分は「継続」に戻す(「継続」を外したときは「予定」に戻す)。
+    if (rec && rec.status === status) {
+      status = day === "tomorrow" ? "予定" : (status === "継続" ? "予定" : "継続");
+    }
+    const progress = status === "完了" ? 100 : (status === "キャンセル" || status === "予定") ? 0 : 50;
+    if (rec) { rec.status = status; rec.progress = progress; render(); }
+    try {
+      const res = await fetch(`${API_BASE}/task-records/${id}/admin-update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status, progress }),
+      });
+      if (!res.ok) throw new Error();
+      // 「完了」にした場合、サーバー側で画像が自動削除されていることがあるため反映する。
+      const data = await res.json().catch(() => null);
+      if (rec && data) { rec.images = data.images || []; rec.imagesCleared = !!data.imagesCleared; }
+      render();
+    } catch (e) {
+      state.errorMsg[day] = "状態の更新に失敗しました。通信環境をご確認ください。";
+      await (day === "today" ? loadTodayRecords() : day === "tomorrow" ? loadTomorrowPreview() : loadRecords(day));
+    }
+  }
+
+  async function saveRecord(day) {
+    if (state.saving[day]) return; // 保存処理中は二重送信を防止する
+    const f = state.forms[day];
+
+    // 指定日・今日の新規入力では、選んだ担当者の名義で保存する(自分以外も選べる)。
+    const showStaffPicker = day === "custom" || day === "today";
+    let targetStaffId = state.staffId, targetStaffName = currentStaff().name, targetDept = currentStaff().dept;
+    if (showStaffPicker) {
+      const target = STAFF.find(s => String(s.id) === String(f.overrideStaffId));
+      if (!target) {
+        state.validationMsg[day] = "担当者を選択してください。";
+        render();
+        return;
+      }
+      targetStaffId = target.id; targetStaffName = target.name; targetDept = target.dept;
+    }
+    const needsClient = deptNeedsClient(targetDept);
+
+    if (!f.bulkMode && needsClient && (!f.client.trim() || !f.project.trim())) {
+      state.validationMsg[day] = "顧客名・案件名を入力してください。";
+      render();
+      return;
+    }
+    if (f.bulkMode && !f.bulkCount) {
+      state.validationMsg[day] = "件数を入力してください。";
+      render();
+      return;
+    }
+    state.validationMsg[day] = "";
+    state.errorMsg[day] = "";
+    state.saving[day] = true;
+    render();
+    try {
+      // pickedIndex/pickedInfo/overrideStaffId/startDateはフォーム内部状態なので保存データには含めない
+      // (startDateは下のdateとして送る)
+      const { pickedIndex, pickedInfo, overrideStaffId, startDate, endTouched, statusTouched, allDay, allDayManual, savedStart, savedEnd, flagsTouched, ...saveData } = f;
+
+      // 保存(新規作成 or 同じ日・顧客名/案件名があれば更新)は、サーバー側で1回のDBクエリとして
+      // アトミックに行われるため、連続保存による重複は起きない。
+      const res = await fetch(`${API_BASE}/task-records/upsert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          date: (day === "today" && f.startDate) ? f.startDate : state.dates[day], staffId: targetStaffId, staffName: targetStaffName, dept: targetDept,
+          ...saveData,
+        }),
+      });
+      if (res.status === 401 || res.status === 403) {
+        const errData = await res.json().catch(() => ({}));
+        logout(errData.error || "ログインの有効期限が切れました。もう一度ログインしてください。");
+        return;
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "保存に失敗しました。");
+      }
+
+      state.forms[day] = emptyForm(currentStaff().dept, day);
+      __nippo.updateAutoChecks(day);
+      // 続けて同じ担当者に追加しやすいよう、直前に選んでいた担当者を保持しておく。
+      if (showStaffPicker) state.forms[day].overrideStaffId = targetStaffId;
+      // 「今日の分」は保存後、新規入力画面を閉じて一覧表示に戻す。
+      if (day === "today") state.showTodayForm = false;
+      state.saveMsg[day] = "保存しました。";
+      state.saving[day] = false;
+      render();
+      await (day === "today" ? loadTodayRecords() : loadRecords(day));
+      if (day === "today") await loadTomorrowPreview(); // 終了予定日次第で明日以降の予定にも影響するため
+      await loadUnfinishedProjects(state.staffId);
+      if (monthStrOf(state.dates[day]) === state.calendar.month) {
+        loadMonthRecords();
+      }
+      setTimeout(() => { state.saveMsg[day] = ""; render(); }, 3000);
+    } catch (e) {
+      console.error("[日報] 保存に失敗しました:", e);
+      state.errorMsg[day] = `保存に失敗しました。もう一度お試しください。(詳細: ${e && e.message ? e.message : e})`;
+      state.saving[day] = false;
+      render();
+    }
+  }
+
+  // ログイン成功後、これまでの「スタッフ切替」時と同じ初期化を行う
+  function proceedAfterLogin() {
+    state.staffId = state.auth.staffId;
+    const dept = currentStaff().dept;
+    DAYS.forEach(day => { state.forms[day] = emptyForm(dept, day); state.validationMsg[day] = ""; });
+    render();
+    loadCompanyInfo().then(() => { DAYS.forEach(day => { __nippo.updateAutoChecks(day); }); render(); });
+    loadAllRecords();
+    loadUnfinishedProjects(state.staffId);
+    loadDmThreads();
+    loadMonthRecords();
+  }
+
+  function logout(message) {
+    clearAuth();
+    state.auth = null;
+    state.staffId = null;
+    state.login = { staffId: "", password: "", error: message || "", loading: false };
+    render();
+  }
+
+  async function doLogin() {
+    const staffId = state.login.staffId;
+    const password = state.login.password;
+    if (!staffId || !password) {
+      state.login.error = "従業員とパスワードを入力してください。";
+      render();
+      return;
+    }
+    state.login.loading = true;
+    state.login.error = "";
+    render();
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        state.login.error = data.error || "ログインに失敗しました。";
+        state.login.loading = false;
+        render();
+        return;
+      }
+      const auth = {
+        token: data.token, staffId: String(data.staffId),
+        staffName: data.staffName, dept: data.dept,
+        expiresAt: Date.now() + (data.expiresIn || 43200) * 1000,
+      };
+      saveAuth(auth);
+      state.auth = auth;
+      state.login.loading = false;
+      proceedAfterLogin();
+    } catch (e) {
+      state.login.error = "通信に失敗しました。もう一度お試しください。";
+      state.login.loading = false;
+      render();
+    }
+  }
+
+  function renderLogin() {
+    const staffOptions = STAFF.map(s => `<option value="${s.id}" ${s.id===state.login.staffId?"selected":""}>${s.name}(${s.dept})</option>`).join("");
+    document.getElementById("nippo-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a></div>
+      <div class="header">
+        <div class="app-title">個別スケジュール(予定・実績入力)</div>
+        <p>ご自身の名前を選び、パスワードを入力してください</p>
+      </div>
+      <div style="max-width:360px;margin:24px auto;padding:0 16px;">
+        <div class="panel">
+          <label>お名前</label>
+          <select id="f-login-staff" onchange="__nippo.setLoginField('staffId', this.value)">
+            <option value="" ${!state.login.staffId?"selected":""}>-- 選択してください --</option>
+            ${staffOptions}
+          </select>
+          <label>パスワード</label>
+          <input type="password" id="f-login-password" value="${escapeHtml(state.login.password)}"
+            oninput="__nippo.setLoginField('password', this.value)"
+            onkeydown="if(event.key==='Enter') __nippo.login();">
+          <p style="font-size:11.5px;color:var(--muted);margin:-6px 0 12px;">パスワードが分からない場合は管理者にご確認ください。</p>
+          ${state.login.error ? `<p class="msg-error">${escapeHtml(state.login.error)}</p>` : ""}
+          <button class="save-btn" onclick="__nippo.login()" ${state.login.loading?"disabled":""}>${state.login.loading?"確認中…":"ログイン"}</button>
+        </div>
+      </div>
+      <div style="text-align:center;padding:12px 16px 20px;">
+        <a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a>
+      </div>
+    `;
+  }
+
+  window.__nippo = {
+    setLoginField(key, val) { state.login[key] = val; },
+    login() { doLogin(); },
+    logout() {
+      if (!confirm("ログアウトしますか?")) return;
+      logout();
+    },
+    setDmWith(id) {
+      state.dm.withId = id;
+      state.dm.messages = [];
+      state.dm.input = "";
+      state.dm.error = "";
+      loadDm(id);
+    },
+    setDmInput(val) { state.dm.input = val; },
+    sendDm() { sendDm(); },
+    manualRefresh() { manualRefresh(); },
+    changeMonth(delta) { changeCalendarMonth(Number(delta)); },
+    setCalendarStaff(id) { setCalendarStaff(id); },
+    selectDate(dateStr) { selectCalendarDate(dateStr); },
+    closeCustomPanel() { closeCustomPanel(); },
+    setCalendarScope(scope) { setCalendarScope(scope); },
+    openTodayForm() {
+      if (state.forms.today && !state.forms.today.startDate) { state.forms.today.startDate = dateStrOffset(0); }
+      if (state.forms.today) { __nippo.updateAutoChecks("today"); }
+      state.showTodayForm = true;
+      render();
+    },
+    closeTodayForm() { state.showTodayForm = false; render(); },
+    openDetail(day, id, ev) { openDetail(day, id, ev); },
+    closeDetail() { state.detail = null; render(); },
+    openDetailDay() { openDetailDay(); },
+    openLightbox(url) { state.lightboxUrl = url; render(); },
+    closeLightbox() { state.lightboxUrl = null; render(); },
+    updateRecordStatus(day, id, status) { updateRecordStatus(day, id, status); },
+    toggleRecordFlag(day, id, key, val) { toggleRecordFlag(day, id, key, val); },
+    async uploadTaskImage(day, recordId, input) {
+      const file = input.files && input.files[0];
+      if (!file) { return; }
+      input.value = "";
+      const rec = (state.records[day] || []).find(r => r.id === recordId);
+      if (rec) { rec.imageUploading = true; render(); }
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch(`${API_BASE}/task-records/${recordId}/images`, {
+          method: "POST", headers: authHeaders(), body: fd,
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error((data && data.error) || "アップロードに失敗しました。");
+        if (rec) { rec.images = data.images; }
+      } catch (e) {
+        alert(e.message || "アップロードに失敗しました。通信環境をご確認ください。");
+      }
+      if (rec) { rec.imageUploading = false; }
+      render();
+    },
+    async deleteTaskImage(day, recordId, imageId) {
+      if (!confirm("この画像を削除しますか？")) { return; }
+      try {
+        const res = await fetch(`${API_BASE}/task-images/${imageId}`, { method: "DELETE", headers: authHeaders() });
+        if (!res.ok) throw new Error();
+        const rec = (state.records[day] || []).find(r => r.id === recordId);
+        if (rec && rec.images) { rec.images = rec.images.filter(img => img.id !== imageId); }
+        render();
+      } catch (e) {
+        alert("削除に失敗しました。通信環境をご確認ください。");
+      }
+    },
+    setField(day, key, val) { state.forms[day][key] = val; },
+    // 開始予定時刻を変えたら、終了予定時刻を自分で選んでいない間は「開始+2時間」に合わせる。
+    setStartTime(day, val) {
+      const f = state.forms[day];
+      f.start = val;
+      if (!f.endTouched) { f.end = plusHours(val, DEFAULT_DURATION_HOURS); }
+      __nippo.updateAutoChecks(day);
+      render();
+    },
+    setEndTime(day, val) {
+      const f = state.forms[day];
+      f.end = val;
+      f.endTouched = true;
+      __nippo.updateAutoChecks(day);
+      render();
+    },
+    setAllDay(day, on) { const f = state.forms[day]; f.allDayManual = true; applyAllDay(f, on); __nippo.updateAutoChecks(day); render(); },
+    // スタート日を変えたとき、状態のチェックを自分で操作していなければ、スタート日が本日なら「継続」、
+    // 別の日ならチェックなし(「予定」)にする。
+    setStartDate(day, val) {
+      const f = state.forms[day];
+      f.startDate = val;
+      if (day === "today" && !f.statusTouched) {
+        const isTodayStart = val === dateStrOffset(0);
+        f.status = isTodayStart ? "継続" : "予定";
+        f.progress = isTodayStart ? 50 : 0;
+      }
+      syncAllDay(day);
+      __nippo.updateAutoChecks(day);
+      render();
+    },
+    setBulk(day, v) { state.forms[day].bulkMode = v; render(); },
+    setStatus(day, v) { state.forms[day].status = v; render(); },
+    // 「今日の分」のチェックボックス用。進捗スライダーが無いため、選んだ状態に応じた
+    // 目安の進捗値も一緒にセットする(朝礼・集計画面での進捗表示に使われるため)。
+    setTodayStatus(day, v) {
+      const f = state.forms[day];
+      // すでにチェックされている状態をもう一度押したときはチェックを外す(一覧の案件と同じ動き):
+      // 「継続」を外すと「予定」(どれもチェックなし)、それ以外を外すと「継続」に戻る。
+      f.statusTouched = true; // 以後、スタート日を変えても状態のチェックは自動では変えない
+      if (f.status === v) { v = (v === "継続") ? "予定" : "継続"; }
+      f.status = v;
+      f.progress = v === "完了" ? 100 : (v === "キャンセル" || v === "予定") ? 0 : 50;
+      render();
+    },
+    toggleOutside(day, v) { state.forms[day].isOutside = v; render(); },
+    setArea(day, v) { state.forms[day].area = v; render(); },
+    setTravel(day, v) { state.forms[day].travelType = v; render(); },
+    // 自社情報の休日・就業時間から、早出・夜間・休日出勤のチェックを自動で付ける(自分で操作したあとは変えない)。
+    updateAutoChecks(day) {
+      const f = state.forms[day];
+      if (!f) return;
+      if (f.flagsTouched) return;
+      if (!COMPANY_INFO) return;
+      const workStart = COMPANY_INFO.workStartTime || "";
+      const dateOfForm = (day === "today" && f.startDate) ? f.startDate : state.dates[day];
+      f.holidayWork = isCompanyHoliday(dateOfForm) || nationalHolidayName(dateOfForm) !== "";
+      if (f.allDay) { f.earlyWork = false; f.nightWork = false; return; }
+      f.earlyWork = workStart ? (Math.sign(f.start.localeCompare(workStart)) === -1) : false;
+      const lateEnd = f.end.localeCompare(NIGHT_FROM) > 0;
+      const earlyStart = Math.sign(f.start.localeCompare(NIGHT_TO)) === -1;
+      f.nightWork = lateEnd ? true : earlyStart;
+    },
+    setFlag(day, key, val) { const f = state.forms[day]; f[key] = val; f.flagsTouched = true; },
+    pickProject(day, idxStr) {
+      const f = state.forms[day];
+      if (idxStr === "") {
+        f.pickedIndex = "";
+        f.pickedInfo = "";
+        render();
+        return;
+      }
+      const idx = Number(idxStr);
+      const p = state.unfinishedProjects[idx];
+      if (!p) return;
+      f.pickedIndex = idxStr;
+      if (p.client) f.client = p.client;
+      f.project = p.project;
+      if (p.category) f.category = p.category;
+      if (typeof p.progressValue === "number") f.progress = p.progressValue;
+      if (p.dueDate) f.dueDate = p.dueDate;
+      syncAllDay(day);
+      const extra = [p.status, p.detail].filter(Boolean).join("・");
+      f.pickedInfo = `進捗情報: ${extra}・最終更新日 ${p.date || "不明"}`;
+      render();
+    },
+    // 進捗を「経過日数/予定日数」で管理する(指定日で使用)。1未満にはしない。
+    setDayCount(day, key, val) {
+      state.forms[day][key] = Math.max(1, parseInt(val, 10) || 1);
+      render();
+    },
+    // 終了予定日を設定したら、その日の日付から終了予定日までの日数を自動で
+    // 「予定日数」に反映する(例: 9/25の予定で終了予定日9/30なら5日)。
+    setDueDate(day, val) {
+      const f = state.forms[day];
+      f.dueDate = val;
+      if (val && state.dates[day]) {
+        const total = daysBetween(state.dates[day], val);
+        if (total > 0) f.totalDays = total;
+      }
+      syncAllDay(day);
+      render();
+    },
+    // 「全員カレンダー」の指定日パネルで、誰の名義で登録するかを選ぶ。
+    setOverrideStaff(day, staffId) {
+      const f = state.forms[day];
+      f.overrideStaffId = staffId;
+      // 部署が変わると業務区分の選択肢も変わるため、その部署の先頭の業務区分に合わせておく。
+      const target = STAFF.find(s => String(s.id) === String(staffId));
+      if (target) f.category = CATEGORY_BY_DEPT[target.dept][0];
+      render();
+    },
+    save(day) { saveRecord(day); },
+  };
+
+  // 「今日の分」の上段に出す、明日の予定のプレビュー。新規入力フォームは持たず、
+  // 保存済みの予定を見て、状態(継続・完了・保留・キャンセル)だけその場で変えられる。
+  function renderTomorrowPreview() {
+    // 明日ちょうどの日付だけでなく、明日以降(まだ完了・キャンセルになっていない)の
+    // 案件をすべて含むため、日付が案件によって異なる。カードに日付を明示する。
+    const records = state.records.tomorrow;
+    const body = state.loading.tomorrow ? `<p style="font-size:13px;color:#8a8577;">読み込み中…</p>`
+      : records.length === 0 ? `<div class="empty">明日以降の予定はまだ登録されていません。</div>`
+      : records.map((r, i) => `
+        <div class="record-card status-${r.status}" onclick="__nippo.openDetail('tomorrow', ${r.id}, event)">
+          <div class="record-top">
+            <div class="rec-body"><div class="rec-main">
+              <span class="record-no">No.${String(i+1).padStart(3,"0")}</span>
+              <strong>${r.category}</strong>
+              <span class="status-tag ${r.status}">${r.status}</span>
+              ${r.isOutside ? `<span class="status-tag" style="color:#475569;background:#f1f5f9;border-color:#e2e8f0;">${r.area}・${r.travelType}</span>` : ""}
+              <p class="record-sub">${r.bulkMode ? `まとめ入力: ${r.bulkCount}件` : ([r.client, r.project].filter(Boolean).join(" / ") || "顧客・案件なし")}</p>
+              <p class="record-time">${r.date || ""}${(!r.bulkMode && (r.start || r.end)) ? `　${timeRangeText(r.start, r.end, " 〜 ")}` : ""}</p>
+              <p class="record-sub">${dayCountLabel(r)}${(!r.bulkMode && r.dueDate) ? ` ／ 終了予定日: ${r.dueDate}` : ""}</p>
+              </div>
+              <div class="rec-actions">
+              <div class="record-status-checks">
+                ${TODAY_STATUS_OPTIONS.map(s => `
+                  <label>
+                    <input type="checkbox" ${r.status===s?"checked":""} onchange="__nippo.updateRecordStatus('tomorrow', ${r.id}, '${s}')"> ${s}
+                  </label>`).join("")}
+              </div>
+              ${flagChecksHtml('tomorrow', r)}
+              ${!r.bulkMode ? renderTaskImages("tomorrow", r, false) : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    return `
+      <div class="tomorrow-preview">
+        <div class="list-title" style="margin-bottom:10px;">明日以降の予定(${records.length}件)</div>
+        <p class="list-hint">案件をクリックすると、備考・画像などの詳細を表示します。</p>
+        ${state.errorMsg.tomorrow ? `<p class="msg-error">${state.errorMsg.tomorrow}</p>` : ""}
+        <div class="tomorrow-scroll">${body}</div>
+      </div>
+    `;
+  }
+
+  function renderDayPanel(day, dept, needsClient, categories) {
+    const f = state.forms[day];
+    const myRecords = [...state.records[day]]
+      .sort((a,b) => (a.start||"99").localeCompare(b.start||"99"));
+
+    const isToday = day === "today";
+    // 「全員カレンダー」から開いた指定日パネルは、他の人の予定を閲覧専用で表示する特別扱い。
+    const isAllScopeCustom = day === "custom" && (state.calendarScope === "all" || state.calendarScope === "staff");
+    // 担当者の選択欄は、指定日・今日の新規入力のどちらでも出す(自分以外の名義でも登録できるように)。
+    // 業務区分・顧客名要否は、自分自身ではなく選んだ担当者の部署に合わせる。
+    const showStaffPicker = day === "custom" || isToday;
+    if (showStaffPicker) {
+      const target = STAFF.find(s => String(s.id) === String(f.overrideStaffId));
+      if (target) {
+        dept = target.dept;
+        needsClient = deptNeedsClient(dept);
+        categories = CATEGORY_BY_DEPT[dept] || categories;
+      }
+    }
+
+    const categoryOptions = categories.map(c => `<option value="${c}" ${c===f.category?"selected":""}>${c}</option>`).join("");
+
+    const staffPickerHtml = showStaffPicker ? `
+      <label>担当者(この人の名義で登録します)</label>
+      <select id="f-overrideStaff-${day}" onchange="__nippo.setOverrideStaff('${day}', this.value)">
+        <option value="">-- 選択してください --</option>
+        ${STAFF.map(s => `<option value="${s.id}" ${String(s.id)===String(f.overrideStaffId)?"selected":""}>${escapeHtml(s.name)}(${escapeHtml(s.dept)})</option>`).join("")}
+      </select>
+    ` : "";
+    const statusChips = ["予定","進行中","完了"].map(s =>
+      `<div class="chip ${f.status===s?"active":""}" id="f-status-chip-${day}-${s}" onclick="__nippo.setStatus('${day}','${s}')">${s}</div>`).join("");
+    // 「今日の分」は進捗スライダーではなく、継続・完了・保留・キャンセルのチェックボックスで状態を管理する。
+    const todayStatusCheckboxes = TODAY_STATUS_OPTIONS.map(s => `
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;">
+        <input type="checkbox" style="width:auto;margin:0;" ${f.status===s?"checked":""} onchange="__nippo.setTodayStatus('${day}','${s}')"> ${s}
+      </label>`).join("");
+
+    const outsideBox = f.isOutside ? `
+      <div class="outside-box">
+        <label>活動エリア</label>
+        <div class="btn-row">
+          ${["県内","県外","出張","夜間","休日出勤"].map(a => `<div class="chip ${f.area===a?"active":""}" onclick="__nippo.setArea('${day}','${a}')">${a}</div>`).join("")}
+        </div>
+        ${f.area === "県外" ? `<input type="text" id="f-prefecture-${day}" placeholder="訪問先の都道府県(任意)" value="${f.prefecture}" oninput="__nippo.setField('${day}','prefecture', this.value)">` : ""}
+        <label>直行・直帰</label>
+        <div class="btn-row">
+          ${["直行","直帰","直行・直帰"].map(t => `<div class="chip ${f.travelType===t?"active":""}" onclick="__nippo.setTravel('${day}','${t}')">${t}</div>`).join("")}
+        </div>
+      </div>` : "";
+
+    const bulkToggle = dept === "事務" ? `
+      <div class="btn-row">
+        <div class="chip ${!f.bulkMode?"active":""}" onclick="__nippo.setBulk('${day}',false)">1件ずつ入力</div>
+        <div class="chip ${f.bulkMode?"active":""}" onclick="__nippo.setBulk('${day}',true)">まとめて入力</div>
+      </div>` : "";
+
+    const projectPicker = !f.bulkMode ? `
+      <label>終了前(未完了)の顧客・案件から選ぶ(任意)</label>
+      <select id="f-pick-${day}" onchange="__nippo.pickProject('${day}', this.value)">
+        <option value="" ${!f.pickedIndex ? "selected" : ""}>-- 新規で入力する --</option>
+        ${state.unfinishedProjects.map((p, idx) =>
+          `<option value="${idx}" ${String(idx)===String(f.pickedIndex)?"selected":""}>${escapeHtml(projectPickerLabel(p))}</option>`
+        ).join("")}
+      </select>
+      ${state.unfinishedProjects.length === 0 ? `<div class="picked-info" style="color:#8a8577;background:#f5f4f0;border-color:#e4e2dc;">現在、終了前(未完了)の案件はありません。</div>` : ""}
+      ${f.pickedInfo ? `<div class="picked-info">${escapeHtml(f.pickedInfo)}</div>` : ""}
+    ` : "";
+
+    const clientFields = f.bulkMode ? `
+      <label>件数</label>
+      <input type="number" id="f-bulkCount-${day}" min="1" placeholder="例: 10" value="${f.bulkCount}" oninput="__nippo.setField('${day}','bulkCount', this.value)">
+    ` : `
+      ${projectPicker}
+      <label>顧客名 ${needsClient ? '<span class="required">必須</span>' : ""}</label>
+      <input type="text" id="f-client-${day}" placeholder="顧客名を入力" value="${f.client}" oninput="__nippo.setField('${day}','client', this.value)">
+      <label>案件名 ${needsClient ? '<span class="required">必須</span>' : ""}</label>
+      <input type="text" id="f-project-${day}" placeholder="案件名を入力" value="${f.project}" oninput="__nippo.setField('${day}','project', this.value)">
+      ${isToday ? `
+      <label>スタート日</label>
+      <input type="date" id="f-startDate-${day}" value="${f.startDate}" onchange="__nippo.setStartDate('${day}', this.value)">
+      ` : ""}
+      <div class="row2">
+        <div><label>開始予定時刻</label><select id="f-start-${day}" ${f.allDay ? "disabled" : ""} onchange="__nippo.setStartTime('${day}', this.value)">${timeOptions(f.allDay ? "" : f.start)}</select></div>
+        <div><label>終了予定時刻</label><select id="f-end-${day}" ${f.allDay ? "disabled" : ""} onchange="__nippo.setEndTime('${day}', this.value)">${timeOptions(f.allDay ? "" : f.end)}</select></div>
+      </div>
+      <label class="allday-check"><input type="checkbox" id="f-allday-${day}" ${f.allDay ? "checked" : ""} onchange="__nippo.setAllDay('${day}', this.checked)"> 終日(2日以上の予定は自動でチェックが入ります)</label>
+      <label>終了予定日(任意)</label>
+      <input type="date" id="f-dueDate-${day}" value="${f.dueDate}" onchange="__nippo.setDueDate('${day}', this.value)">
+    `;
+
+    const listHtml = state.loading[day] ? `<p style="font-size:13px;color:#8a8577;">読み込み中…</p>`
+      : myRecords.length === 0 ? `<div class="empty">まだ${DAY_LABEL[day]}の予定・実績が登録されていません。${isToday ? "上の「+ 予定新規入力」ボタンから入力してください。" : "左のフォームから入力してください。"}</div>`
+      : myRecords.map((r, i) => `
+        <div class="record-card status-${r.status}" onclick="__nippo.openDetail('${day}', ${r.id}, event)">
+          <div class="record-top">
+            <div class="rec-body"><div class="rec-main">
+              <span class="record-no">No.${String(i+1).padStart(3,"0")}</span>
+              ${isAllScopeCustom ? `<span class="status-tag" style="color:#334155;background:#f1f5f9;border-color:#e2e8f0;">${escapeHtml(r.staffName || "")}</span>` : ""}
+              <strong>${r.category}</strong>
+              ${isToday ? "" : `<span class="status-tag ${r.status}">${r.status}</span>`}
+              ${(isToday && r.date && r.date !== state.dates.today) ? `<span class="status-tag" style="color:#b45309;background:#fffbeb;border-color:#fde68a;">${r.date}の繰越</span>` : ""}
+              ${r.isOutside ? `<span class="status-tag" style="color:#475569;background:#f1f5f9;border-color:#e2e8f0;">${r.area}・${r.travelType}</span>` : ""}
+              <p class="record-sub">${r.bulkMode ? `まとめ入力: ${r.bulkCount}件` : ([r.client, r.project].filter(Boolean).join(" / ") || "顧客・案件なし")}</p>
+              ${(!r.bulkMode && (r.start || r.end)) ? `<p class="record-time">${timeRangeText(r.start, r.end, " 〜 ")}</p>` : ""}
+              <p class="record-sub">${dayCountLabel(r)}${(!r.bulkMode && r.dueDate) ? ` ／ 終了予定日: ${r.dueDate}` : ""}</p>
+              </div>
+              <div class="rec-actions">
+              ${isToday ? `
+              <div class="record-status-checks">
+                ${TODAY_STATUS_OPTIONS.map(s => `
+                  <label>
+                    <input type="checkbox" ${r.status===s?"checked":""} onchange="__nippo.updateRecordStatus('${day}', ${r.id}, '${s}')"> ${s}
+                  </label>`).join("")}
+              </div>` : ""}
+              ${isAllScopeCustom ? flagTagsHtml(r) : flagChecksHtml(day, r)}
+              ${!r.bulkMode ? renderTaskImages(day, r, isAllScopeCustom) : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+    // 「今日の分」だけは、新規入力フォームを常時表示せず、ボタンを押したときだけ
+    // 専用画面のように開く(一覧をすっきり見せるため)。指定日は今までどおり常時表示。
+    const hideTodayForm = isToday && !state.showTodayForm;
+
+    // 入力欄を3つのまとまりに分ける。今日の分は、一覧の上に横に広げて3列で出す(それ以外の日は、これまで通り縦に並べる)。
+    const formColA = `
+        ${staffPickerHtml}
+        ${bulkToggle}
+        <label>業務区分</label>
+        <select onchange="__nippo.setField('${day}','category', this.value)">${categoryOptions}</select>
+        ${isToday ? `
+        <label>状態</label>
+        <div class="btn-row" style="gap:14px;">${todayStatusCheckboxes}</div>
+        ` : ""}`;
+    const formColB = `
+        ${clientFields}`;
+    const formColC = `
+        ${isToday ? "" : `
+        <label>状態</label>
+        <div class="btn-row">${statusChips}</div>
+        <label>進捗(予定日数のうち何日目か)</label>
+        <div class="daycount-row">
+          <input type="number" min="1" value="${f.currentDay}" id="f-currentday-${day}" oninput="__nippo.setDayCount('${day}','currentDay', this.value)">
+          <span>/</span>
+          <input type="number" min="1" value="${f.totalDays}" id="f-totalday-${day}" oninput="__nippo.setDayCount('${day}','totalDays', this.value)">
+          <span>日</span>
+        </div>
+        `}
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;">
+          <input type="checkbox" style="width:auto;margin:0;" ${f.earlyWork?"checked":""} onchange="__nippo.setFlag('${day}','earlyWork', this.checked)"> 早出
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;">
+          <input type="checkbox" style="width:auto;margin:0;" ${f.nightWork?"checked":""} onchange="__nippo.setFlag('${day}','nightWork', this.checked)"> 夜間
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;">
+          <input type="checkbox" style="width:auto;margin:0;" ${f.holidayWork?"checked":""} onchange="__nippo.setFlag('${day}','holidayWork', this.checked)"> 休日出勤
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;">
+          <input type="checkbox" style="width:auto;margin:0;" ${f.isOutside?"checked":""} onchange="__nippo.toggleOutside('${day}', this.checked)"> 外出を伴う業務
+        </label>
+        ${outsideBox}
+        <label>備考(任意)</label>
+        <textarea rows="2" id="f-note-${day}" oninput="__nippo.setField('${day}','note', this.value)">${f.note}</textarea>
+        ${state.validationMsg[day] ? `<p class="msg-error">${state.validationMsg[day]}</p>` : ""}
+        <button class="save-btn" onclick="__nippo.save('${day}')" ${state.saving[day] ? "disabled" : ""}>${state.saving[day] ? "保存中…" : "＋ 保存する"}</button>
+        ${state.saveMsg[day] ? `<p class="msg-success">${state.saveMsg[day]}</p>` : ""}`;
+    const formBodyHtml = isToday
+      ? `<div class="wide-grid"><div>${formColA}</div><div>${formColB}</div><div>${formColC}</div></div>`
+      : formColA + formColB + formColC;
+
+    const formPanelHtml = `
+      <div class="panel${isToday ? " wide-panel" : ""}">
+        ${isToday ? `<div class="panel-close-row"><button type="button" onclick="__nippo.closeTodayForm()">閉じる</button></div>` : ""}
+        <div style="font-size:15px;font-weight:600;margin:0 0 14px;">新しい予定・実績</div>
+        ${formBodyHtml}
+      </div>
+    `;
+
+    return `
+      <div class="day-section" id="panel-${day}">
+        <div class="day-title-bar">
+          <div class="day-title">${day === "today" ? "予定入力" : `${DAY_LABEL[day]}の予定・実績`}</div>
+          <span class="day-date">${dateLabel(state.dates[day])}</span>
+        </div>
+        ${day === "today" ? renderTomorrowPreview() : ""}
+        <div class="layout${isToday ? " single" : ""}">
+          ${hideTodayForm ? `<button type="button" class="add-today-btn" onclick="__nippo.openTodayForm()">＋ 予定新規入力</button>` : formPanelHtml}
+          <div>
+            <div class="list-head">
+              <div class="list-title">${isAllScopeCustom ? "この日の全員の予定" : `${day === "today" ? `<span class="day-pill today">今日の分</span> ` : ""}${DAY_LABEL[day]}の入力`}(${myRecords.length}件)</div>
+            </div>
+            ${isAllScopeCustom ? `<p style="font-size:11.5px;color:#8a8577;margin:-4px 0 10px;">閲覧のみです。他の人の予定はここから編集・削除できません。</p>` : ""}
+            ${state.errorMsg[day] ? `<p class="msg-error">${state.errorMsg[day]}</p>` : ""}
+            ${listHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 自分が送ったメッセージの横に出す「既読/未読」
+  function readLabel(isRead) {
+    return `<span class="chat-read ${isRead ? "" : "unread"}">${isRead ? "既読" : "未読"}</span>`;
+  }
+
+  function renderDmPanel() {
+    const others = STAFF.filter(s => s.id !== state.staffId);
+    if (others.length === 0) return "";
+    const unreadOf = id => { const t = state.dm.threads.find(x => x.staffId === id); return t ? t.unread : 0; };
+    const totalUnread = state.dm.threads.reduce((sum, t) => sum + (t.unread || 0), 0);
+    const options = others.map(s => {
+      const u = unreadOf(s.id);
+      return `<option value="${s.id}" ${s.id === state.dm.withId ? "selected" : ""}>${u ? "● " : ""}${escapeHtml(s.name)}(${escapeHtml(s.dept)})${u ? ` 未読${u}` : ""}</option>`;
+    }).join("");
+    const unreadChips = others.filter(s => unreadOf(s.id) && s.id !== state.dm.withId).map(s =>
+      `<button type="button" class="dm-unread-chip" onclick="__nippo.setDmWith('${s.id}')">● ${escapeHtml(s.name)}さんから未読${unreadOf(s.id)}件</button>`).join("");
+    const withStaff = others.find(s => s.id === state.dm.withId);
+    const msgs = state.dm.messages;
+    const bodyHtml = !state.dm.withId ? `<p style="font-size:12.5px;color:#8a8577;">やり取りする相手を選んでください。</p>`
+      : state.dm.loading ? `<p style="font-size:12.5px;color:#8a8577;">読み込み中…</p>`
+      : msgs.length === 0 ? `<p style="font-size:12.5px;color:#8a8577;">まだメッセージはありません。</p>`
+      : msgs.map(m => {
+        const side = m.mine ? "staff" : "admin"; // 自分=右側、相手=左側(管理者チャットと同じ見た目)
+        return `
+        <div class="chat-bubble-row ${side}">
+          ${m.mine ? readLabel(m.isRead) : ""}
+          <div class="chat-bubble ${side}">
+            <div>${escapeHtml(m.message)}</div>
+            <div class="chat-time">${(m.createdAt||"").replace("T"," ").slice(0,16)}</div>
+          </div>
+        </div>`;
+      }).join("");
+
+    return `
+      <div class="chat-panel">
+        <div class="chat-title">従業員チャット(個別)${totalUnread ? `<span class="unread-badge">未読${totalUnread}</span>` : ""}</div>
+        ${unreadChips ? `<div class="dm-unread-list">${unreadChips}</div>` : ""}
+        <div class="dm-picker">
+          <select onchange="__nippo.setDmWith(this.value)">
+            <option value="">-- 相手を選ぶ --</option>
+            ${options}
+          </select>
+        </div>
+        <div class="chat-body" id="dm-body">${bodyHtml}</div>
+        ${state.dm.error ? `<p class="msg-error">${state.dm.error}</p>` : ""}
+        <div class="chat-input-row">
+          <input type="text" id="f-dm-input" placeholder="${withStaff ? escapeHtml(withStaff.name) + "さんにメッセージを送る" : "相手を選んでください"}" value="${escapeHtml(state.dm.input)}" ${state.dm.withId ? "" : "disabled"}
+            oninput="__nippo.setDmInput(this.value)"
+            onkeydown="if(event.key==='Enter' && !event.isComposing) __nippo.sendDm();">
+          <button type="button" onclick="__nippo.sendDm()" ${(!state.dm.withId || state.dm.sending) ? "disabled" : ""}>${state.dm.sending ? "送信中…" : "送信"}</button>
+        </div>
+      </div>
+    `;
+  }
+
+  // 案件を「開始日(record_date)〜終了予定日(dueDate)」の期間バーとして
+  // カレンダーに表示する(終了予定日が無い/開始日より前の場合は単日として扱う)。
+  function calendarEventLabel(r) {
+    // 「全員」カレンダーは帯が多いので、案件名は出さず、顧客名だけを出す(自分・従業員を選んだカレンダーは、これまで通り顧客名・案件名)。
+    const names = state.calendarScope === "all" ? [r.client] : [r.client, r.project];
+    const base = r.bulkMode
+      ? `${r.category}(まとめ${r.bulkCount}件)`
+      : `${r.category}${names.filter(Boolean).length > 0 ? " " + names.filter(Boolean).join("・") : ""}`;
+    // 「全員」カレンダーでは、誰の予定か分かるよう氏名を先頭に付ける。
+    const marked = r.status === "完了" ? `✓ ${base}` : r.status === "保留" ? `保留 ${base}` : base;
+    return state.calendarScope === "all" && r.staffName ? `${r.staffName}: ${marked}` : marked;
+  }
+
+  // カレンダーの枠の外に置く「日報を更新」ボタン。
+  function renderReportButton() {
+    return `
+      <button type="button" class="submit-report-btn" onclick="__nippo.manualRefresh()" ${state.calendar.sendingReport ? "disabled" : ""}>${state.calendar.sendingReport ? "更新中…" : "日報を更新"}</button>
+      ${state.calendar.reportMsg ? `<p class="submit-report-msg">${state.calendar.reportMsg}</p>` : ""}
+    `;
+  }
+
+  function renderCalendar() {
+    const { month } = state.calendar;
+    const [y, m] = month.split("-").map(Number);
+    const pickedStaffId = state.calendarScope === "staff" ? String(state.calendarStaffId) : "";
+    const staffOptionsHtml = STAFF.map(st => {
+      const sel = String(st.id) === pickedStaffId ? "selected" : "";
+      return `<option value="${escapeHtml(st.id)}" ${sel}>${escapeHtml(st.name)}(${escapeHtml(st.dept)})</option>`;
+    }).join("");
+    const firstWeekday = new Date(y, m - 1, 1).getDay(); // 0=日
+    const { lastDay } = monthRange(month);
+    const todayStr2 = dateStrOffset(0);
+    const monthStart = `${month}-01`;
+    const monthEnd = `${month}-${String(lastDay).padStart(2,"0")}`;
+
+    const events = state.calendar.records.map(r => {
+      const start = r.date > monthStart ? r.date : monthStart;
+      let end = (r.dueDate && r.dueDate >= r.date) ? r.dueDate : r.date;
+      if (end > monthEnd) end = monthEnd;
+      return { id: r.id, start, end, label: calendarEventLabel(r), status: r.status, dept: r.dept, holWork: !!r.holidayWork };
+    }).sort((a, b) => a.start.localeCompare(b.start) || b.end.localeCompare(a.end));
+
+    // 月全体の日付を、週(7日)ごとの配列にまとめる(前後月の余白はnull)
+    const weeks = [];
+    let week = new Array(firstWeekday).fill(null);
+    for (let d = 1; d <= lastDay; d++) {
+      week.push(d);
+      if (week.length === 7) { weeks.push(week); week = []; }
+    }
+    if (week.length > 0) {
+      while (week.length < 7) week.push(null);
+      weeks.push(week);
+    }
+
+    const weeksHtml = weeks.map(weekDays => {
+      const weekDates = weekDays.map(d => d === null ? null : `${month}-${String(d).padStart(2,"0")}`);
+      const validDates = weekDates.filter(Boolean);
+      const weekStart = validDates[0];
+      const weekEnd = validDates[validDates.length - 1];
+
+      const weekEvents = events.filter(e => e.end >= weekStart && e.start <= weekEnd);
+
+      // レーン割り当て: 期間が重ならない限り同じ行(レーン)にまとめて表示する
+      const laneEndDates = [];
+      const placed = weekEvents.map(e => {
+        let lane = laneEndDates.findIndex(endDate => endDate < e.start);
+        if (lane === -1) { lane = laneEndDates.length; laneEndDates.push(e.end); }
+        else { laneEndDates[lane] = e.end; }
+        const clipStart = e.start < weekStart ? weekStart : e.start;
+        const clipEnd = e.end > weekEnd ? weekEnd : e.end;
+        const colStart = weekDates.indexOf(clipStart) + 1;
+        const colEnd = weekDates.indexOf(clipEnd) + 1;
+        return { ...e, lane, colStart, colEnd };
+      });
+
+      const dayCellsHtml = weekDays.map((d, idx) => {
+        if (d === null) return `<div class="cal-daycell empty" style="grid-column:${idx+1};grid-row:1;"></div>`;
+        const dateStr = weekDates[idx];
+        const classes = ["cal-daycell"];
+        const holidayName = nationalHolidayName(dateStr);
+        if (holidayName || isCompanyHoliday(dateStr)) classes.push("holiday");
+        else if (idx === 6) classes.push("sat");
+        if (holidayName) classes.push("has-name");
+        if (dateStr === todayStr2) classes.push("today");
+        if (dateStr === state.selectedDate) classes.push("selected");
+        const nameHtml = holidayName ? `<span class="cal-hname">${holidayName}</span>` : "";
+        return `<div class="${classes.join(" ")}" style="grid-column:${idx+1};grid-row:1;" title="${holidayName}" onclick="__nippo.selectDate('${dateStr}')">${d}${nameHtml}</div>`;
+      }).join("");
+
+      // 休みの日(会社休み・祝日)にかかる部分は、帯を薄くする(休日出勤の案件は薄くしない)。休みをはさむ帯は、休みの日の前後で区切って出す。
+      const barsHtml = placed.map(p => {
+        const segs = [];
+        for (let col = p.colStart; col <= p.colEnd; col++) {
+          const dateOfCol = weekDates[col - 1];
+          const hol = p.holWork ? false : (isCompanyHoliday(dateOfCol) || nationalHolidayName(dateOfCol) !== "");
+          const last = segs[segs.length - 1];
+          if (last) { if (last.hol === hol) { last.end = col; continue; } }
+          segs.push({ start: col, end: col, hol });
+        }
+        return segs.map(sg => `
+        <div class="cal-bar dept-${escapeHtml(p.dept || "")} status-${p.status}${sg.hol ? " holiday-dim" : ""}" style="grid-column:${sg.start} / ${sg.end + 1};grid-row:${p.lane + 2};"
+          title="${escapeHtml(p.label)}" onclick="__nippo.openDetail('calendar', ${p.id}, event)">${escapeHtml(p.label)}</div>
+      `).join("");
+      }).join("");
+
+      return `<div class="cal-week">${dayCellsHtml}${barsHtml}</div>`;
+    }).join("");
+
+    const weeklyOff = state.companyHolidays ? state.companyHolidays.weekly : [];
+    const weekdaysHtml = ["日","月","火","水","木","金","土"]
+      .map((w, i) => `<div class="cal-weekday${weeklyOff.includes(i) ? " holiday" : i === 6 ? " sat" : ""}">${w}</div>`).join("");
+
+    return `
+      <div class="calendar-panel">
+        <div class="cal-title-row">
+          <div class="calendar-title">月間カレンダー</div>
+          <div class="cal-scope-toggle">
+            <div class="chip ${state.calendarScope==="self"?"active":""}" onclick="__nippo.setCalendarScope('self')">自分</div>
+            <div class="chip ${state.calendarScope==="all"?"active":""}" onclick="__nippo.setCalendarScope('all')">全員</div>
+            <select aria-label="従業員を選ぶ" onchange="__nippo.setCalendarStaff(this.value)">
+              <option value="">従業員を選ぶ</option>
+              ${staffOptionsHtml}
+            </select>
+          </div>
+        </div>
+        <div class="cal-nav">
+          <button type="button" onclick="__nippo.changeMonth(-1)">‹ 前月</button>
+          <div class="cal-month-label">${y}年${m}月</div>
+          <button type="button" onclick="__nippo.changeMonth(1)">次月 ›</button>
+        </div>
+        <div class="cal-weekdays-header">${weekdaysHtml}</div>
+        ${weeksHtml}
+        ${state.calendar.loading ? `<p style="font-size:11.5px;color:#8a8577;margin-top:6px;">読み込み中…</p>` : ""}
+        <div class="cal-legend">
+          ${DEPT_LEGEND.map(l => `<span><i style="background:${l[1]}"></i>${escapeHtml(l[0])}</span>`).join("")}
+          <span><i style="background:#fee2e2;border:1px solid #fca5a5"></i>赤＝会社休み・祝日</span><span><i style="background:#dbeafe;border:1px solid #93c5fd"></i>青＝土曜</span><span>薄い色＝完了(✓)</span><span>点線＝保留</span><span>取り消し線＝キャンセル</span>
+        </div>
+        ${state.calendarScope === "staff"
+          ? `<p class="cal-hint">選んだ従業員の予定だけを表示しています。日付をクリックすると、その人の名義で予定を追加できます(他の人の予定の編集・削除はできません)。案件のバーをクリックすると詳細を表示します。</p>`
+          : state.calendarScope === "all"
+          ? `<p class="cal-hint">全員カレンダーです。日付をクリックすると、担当者を選んで代理で予定を追加できます(他の人の予定の編集・削除はできません)。案件のバーをクリックすると詳細を表示します。</p>`
+          : `<p class="cal-hint">日付をクリックすると、その日の予定・実績を入力できます。案件のバーをクリックすると、備考・画像などの詳細を表示します。</p>`}
+      </div>
+    `;
+  }
+
+  function render() {
+    if (!state.auth) { renderLogin(); return; }
+    const activeEl = document.activeElement;
+    const activeId = (activeEl && activeEl.id && activeEl.closest("#nippo-app")) ? activeEl.id : null;
+    const selStart = activeEl ? activeEl.selectionStart : null;
+    const selEnd = activeEl ? activeEl.selectionEnd : null;
+
+    const staff = currentStaff();
+    const dept = staff.dept;
+    const needsClient = deptNeedsClient(dept);
+    const categories = CATEGORY_BY_DEPT[dept];
+
+    const panelsHtml = DAYS.map((day, i) =>
+      renderDayPanel(day, dept, needsClient, categories) + (i < DAYS.length - 1 ? '<div class="divider"></div>' : '')
+    ).join("");
+
+    const customPanelHtml = state.selectedDate ? `
+      <div class="divider"></div>
+      <div style="padding:10px 16px 0;display:flex;justify-content:flex-end;">
+        <button type="button" onclick="__nippo.closeCustomPanel()" class="reset-link">閉じる</button>
+      </div>
+      ${renderDayPanel("custom", dept, needsClient, categories)}
+    ` : "";
+
+    document.getElementById("nippo-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a></div>
+      <div class="header">
+        <div class="header-row">
+          <div><div class="app-title">個別スケジュール(予定・実績入力)</div><p>今日の分に加え、カレンダーから任意の日も入力できます</p></div>
+          <button type="button" onclick="__nippo.logout()" style="background:#334155;color:#f8fafc;border:1px solid #475569;border-radius:3px;padding:6px 10px;font-size:12.5px;cursor:pointer;">ログアウト</button>
+        </div>
+        <div style="margin-top:10px;">
+          <span class="dept-badge" style="${DEPT_STYLE[dept]}">${dept}</span>
+          <span style="font-size:13px;color:#94a3b8;">${staff.name} さんとしてログイン中</span>
+        </div>
+      </div>
+      <div style="padding:0 16px;">${renderDmPanel()}</div>
+      ${panelsHtml}
+      <div class="divider"></div>
+      <div style="padding:0 16px;">${renderReportButton()}</div>
+      <div style="padding:0 16px;">${renderCalendar()}</div>
+      ${customPanelHtml}
+      <div style="text-align:center;padding:12px 16px 20px;">
+        <a href="${getSiteBasePath()}/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a>
+      </div>
+      ${renderDetailModal()}
+      ${state.lightboxUrl ? `
+        <div class="lightbox-overlay" onclick="__nippo.closeLightbox()">
+          <img src="${state.lightboxUrl}" alt="">
+          <button type="button" class="lightbox-close" onclick="__nippo.closeLightbox()">✕</button>
+        </div>
+      ` : ""}
+    `;
+
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el) {
+        el.focus();
+        if (typeof selStart === "number" && typeof el.setSelectionRange === "function") {
+          try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
+        }
+      }
+    }
+    // type="date"は、value属性をinnerHTML文字列で埋め込むだけだと一部のブラウザ(特にiOS Safari)で
+    // 表示に反映されないことがあるため、再描画のたびにvalueプロパティとして改めて設定し直す。
+    const startDateEl = document.getElementById("f-startDate-today");
+    if (startDateEl && state.forms.today) {
+      startDateEl.value = state.forms.today.startDate || "";
+    }
+    const dmBody = document.getElementById("dm-body");
+    if (dmBody) dmBody.scrollTop = dmBody.scrollHeight;
+  }
+
+  // Escキーで案件の詳細ウィンドウを閉じる。
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && state.detail && !state.lightboxUrl) { state.detail = null; render(); }
+  });
+
+  async function init() {
+    await loadStaffList();
+    await loadDepartments();
+    if (STAFF.length === 0) {
+      document.getElementById("nippo-app").innerHTML =
+        '<p style="padding:16px;color:#ea580c;font-size:13px;">従業員登録がまだありません。先に従業員登録画面から登録してください。</p>';
+      return;
+    }
+    const auth = loadAuth();
+    if (auth && STAFF.some(s => s.id === auth.staffId)) {
+      state.auth = auth;
+      proceedAfterLogin();
+    } else {
+      clearAuth();
+      renderLogin();
+    }
+  }
+  init();
+</script>

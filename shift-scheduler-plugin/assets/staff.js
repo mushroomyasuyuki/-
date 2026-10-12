@@ -170,6 +170,85 @@
     document.getElementById('ss-cancel').addEventListener('click', endEdit);
   }
 
+  // ---- 名簿のCSV ----
+  function parseCsv(text) {
+    var rows = [], row = [], cell = '', q = false;
+    text = text.replace(/^\uFEFF/, '');
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else { q = false; } }
+        else { cell += c; }
+      } else if (c === '"') { q = true; }
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') { i++; }
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else { cell += c; }
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(function (r) { return r.join('') !== ''; }).map(function (r) {
+      return r.map(function (v) { return v.replace(/^'(?=[=+\-@])/, ''); }); // 書き出し時に付けた「'」を外す
+    });
+  }
+
+  function decode(buf) {
+    // Excelの「CSV（コンマ区切り）」は Shift_JIS で保存されるため、UTF-8で読めなければ Shift_JIS として読む
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch (e) { return new TextDecoder('shift_jis').decode(buf); }
+  }
+
+  var resultBox = document.getElementById('ss-import-result');
+  function showResult(html, ok) {
+    resultBox.hidden = false;
+    resultBox.className = 'ss-alert ' + (ok ? 'ss-alert-ok' : 'ss-alert-error');
+    resultBox.textContent = '';
+    html.forEach(function (line) { var p = document.createElement('div'); p.textContent = line; resultBox.appendChild(p); });
+  }
+
+  var exportBtn = document.getElementById('ss-export');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', function () {
+      api('GET', 'staff/export').then(function (d) {
+        var blob = new Blob(['\uFEFF' + d.csv], { type: 'text/csv;charset=utf-8' }); // BOM付きにすると、Excelで文字化けしない
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = d.filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+      }).catch(function (e) { say(e.message); });
+    });
+  }
+
+  var importInput = document.getElementById('ss-import');
+  if (importInput) {
+    importInput.addEventListener('change', function () {
+      var file = importInput.files && importInput.files[0];
+      importInput.value = '';
+      if (!file) { return; }
+      file.arrayBuffer().then(function (buf) {
+        var rows = parseCsv(decode(buf));
+        return api('POST', 'staff/import', { rows: rows, dry_run: true }).then(function (r) {
+          if (r.errors && r.errors.length) {
+            showResult(['取り込めませんでした。CSVを直して、もう一度お試しください（何も変更していません）。'].concat(r.errors.map(function (e) {
+              return (e.line ? e.line + '行目：' : '') + e.message;
+            })), false);
+            return;
+          }
+          if (!window.confirm('「' + file.name + '」を取り込みます。\n追加：' + r.created + '人　更新：' + r.updated + '人\nよろしいですか？')) {
+            showResult(['取り込みを中止しました。'], true);
+            return;
+          }
+          return api('POST', 'staff/import', { rows: rows }).then(function (r2) {
+            showResult(['取り込みました。追加：' + r2.created + '人　更新：' + r2.updated + '人'], true);
+            return load();
+          });
+        });
+      }).catch(function (e) { showResult([e.message], false); });
+    });
+  }
+
   var copyBtn = document.getElementById('ss-copy-url');
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {

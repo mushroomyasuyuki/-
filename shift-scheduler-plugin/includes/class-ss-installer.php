@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '6';
+    const DB_VERSION = '7';
 
     public static function activate() {
         self::create_tables();
@@ -240,6 +240,90 @@ final class SS_Installer {
   PRIMARY KEY  (id),
   UNIQUE KEY uniq_entry (tenant_id, schedule_id, staff_id, date),
   KEY by_schedule (tenant_id, schedule_id, date)
+) $c;";
+
+        // ---- 日報（予定・実績）・予定進捗・操作ログ（マッシュオフィスシステムから移植） ----
+        $sql[] = "CREATE TABLE {$p}task_records (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  record_date varchar(10) NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  department varchar(50) NOT NULL DEFAULT '',
+  category varchar(100) NOT NULL DEFAULT '',
+  client varchar(191) NULL,
+  project varchar(191) NULL,
+  start_time varchar(5) NOT NULL DEFAULT '',
+  end_time varchar(5) NOT NULL DEFAULT '',
+  status varchar(20) NOT NULL DEFAULT '予定',
+  is_outside tinyint(1) NOT NULL DEFAULT 0,
+  area varchar(20) NOT NULL DEFAULT '',
+  prefecture varchar(50) NOT NULL DEFAULT '',
+  travel_type varchar(20) NOT NULL DEFAULT '',
+  note text NULL,
+  bulk_mode tinyint(1) NOT NULL DEFAULT 0,
+  bulk_count varchar(10) NOT NULL DEFAULT '',
+  progress int(11) NOT NULL DEFAULT 0,
+  current_day int(11) NOT NULL DEFAULT 0,
+  total_days int(11) NOT NULL DEFAULT 0,
+  due_date varchar(10) NOT NULL DEFAULT '',
+  holiday_work tinyint(1) NOT NULL DEFAULT 0,
+  early_work tinyint(1) NOT NULL DEFAULT 0,
+  night_work tinyint(1) NOT NULL DEFAULT 0,
+  images_cleared tinyint(1) NOT NULL DEFAULT 0,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_task (tenant_id,record_date,staff_id,client(150),project(150)),
+  KEY tenant_date (tenant_id,record_date),
+  KEY tenant_staff (tenant_id,staff_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}task_images (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  task_record_id bigint(20) unsigned NOT NULL,
+  file_path varchar(255) NOT NULL DEFAULT '',
+  file_name varchar(255) NOT NULL DEFAULT '',
+  mime varchar(50) NOT NULL DEFAULT '',
+  uploaded_by varchar(191) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  expires_at datetime NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_task (tenant_id,task_record_id),
+  KEY expires_at (expires_at)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}schedule_tasks (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  record_date varchar(10) NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  department varchar(50) NOT NULL DEFAULT '',
+  name varchar(191) NOT NULL DEFAULT '',
+  start_time varchar(5) NOT NULL DEFAULT '',
+  end_time varchar(5) NOT NULL DEFAULT '',
+  due_date varchar(10) NOT NULL DEFAULT '',
+  memo text NULL,
+  progress int(11) NOT NULL DEFAULT 0,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_date (tenant_id,record_date),
+  KEY tenant_staff (tenant_id,staff_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}activity_log (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  occurred_at datetime NOT NULL,
+  actor_name varchar(191) NOT NULL DEFAULT '',
+  action varchar(50) NOT NULL DEFAULT '',
+  target_label varchar(191) NOT NULL DEFAULT '',
+  detail varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY  (id),
+  KEY tenant_id (tenant_id,id)
 ) $c;";
 
         foreach ($sql as $statement) {

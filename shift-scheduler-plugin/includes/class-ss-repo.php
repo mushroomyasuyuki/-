@@ -18,7 +18,8 @@ class SS_Repo_Exception extends Exception {
 
 final class SS_Repo {
     /** お客様ごとに分離するテーブル（`shift_` 接頭辞を除いた名前） */
-    const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries');
+    const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries',
+        'task_records', 'task_images', 'schedule_tasks', 'activity_log');
 
     private $tenant_id;
 
@@ -52,14 +53,20 @@ final class SS_Repo {
         ), ARRAY_A);
     }
 
-    /** 条件は「列=値」の一致のみ。 */
+    /**
+     * 条件の書き方：
+     *   'col' => 値          一致（値が null なら IS NULL）
+     *   'col >=' => 値       比較（=, !=, >=, <=, >, <）
+     *   'col IN' => 配列     いずれかに一致（空の配列なら、何も一致しない）
+     * どの書き方でも、お客様IDの条件は必ず付く。
+     */
     public function all($table, array $where = array(), $order_by = 'id', $dir = 'ASC', $limit = 200, $offset = 0) {
         global $wpdb;
         $t = $this->table($table);
         list($sql, $args) = $this->where($where);
         $order_by = $this->column($order_by);
         $dir = strtoupper($dir) === 'DESC' ? 'DESC' : 'ASC';
-        $args[] = max(1, min(1000, (int) $limit));
+        $args[] = max(1, min(10000, (int) $limit));
         $args[] = max(0, (int) $offset);
         return $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM {$t} WHERE tenant_id = %d{$sql} ORDER BY {$order_by} {$dir} LIMIT %d OFFSET %d",
@@ -190,19 +197,74 @@ final class SS_Repo {
     private function where(array $where) {
         $sql = '';
         $args = array();
-        foreach ($where as $col => $val) {
-            $this->column($col);
+        foreach ($where as $key => $val) {
+            if (!is_string($key) || !preg_match('/^([a-z][a-z0-9_]*)(?:\s*(=|!=|>=|<=|>|<|IN))?$/', $key, $m)) {
+                throw new SS_Repo_Exception('invalid condition');
+            }
+            $col = $this->column($m[1]);
+            $op = isset($m[2]) && $m[2] !== '' ? $m[2] : '=';
             if ($col === 'tenant_id') {
                 continue; // 呼び出し側から tenant_id は指定させない
             }
+            if ($op === 'IN') {
+                $vals = array_values((array) $val);
+                if (!$vals) {
+                    $sql .= ' AND 1 = 0';
+                    continue;
+                }
+                $ph = array();
+                foreach ($vals as $v) {
+                    $ph[] = (is_int($v) || is_bool($v)) ? '%d' : '%s';
+                    $args[] = (is_int($v) || is_bool($v)) ? (int) $v : (string) $v;
+                }
+                $sql .= " AND {$col} IN (" . implode(',', $ph) . ')';
+                continue;
+            }
+            if ($val === null) {
+                if ($op !== '=' && $op !== '!=') {
+                    throw new SS_Repo_Exception('invalid condition');
+                }
+                $sql .= $op === '=' ? " AND {$col} IS NULL" : " AND {$col} IS NOT NULL";
+                continue;
+            }
             if (is_int($val) || is_bool($val)) {
-                $sql .= " AND {$col} = %d";
+                $sql .= " AND {$col} {$op} %d";
                 $args[] = (int) $val;
             } else {
-                $sql .= " AND {$col} = %s";
+                $sql .= " AND {$col} {$op} %s";
                 $args[] = (string) $val;
             }
         }
         return array($sql, $args);
+    }
+
+    /** 条件に合う行を、まとめて更新する（必ずお客様IDで絞り込み。条件が空の呼び出しは不可）。 */
+    public function update_where($table, array $where, array $data) {
+        global $wpdb;
+        $t = $this->table($table);
+        unset($where['tenant_id'], $data['id'], $data['tenant_id']);
+        if (!$where || !$data) {
+            throw new SS_Repo_Exception('update_where requires a condition and data');
+        }
+        $set = array();
+        $args = array();
+        foreach ($data as $col => $v) {
+            $this->column($col);
+            if ($v === null) {
+                $set[] = "{$col} = NULL";
+            } elseif (is_int($v) || is_bool($v)) {
+                $set[] = "{$col} = %d";
+                $args[] = (int) $v;
+            } else {
+                $set[] = "{$col} = %s";
+                $args[] = (string) $v;
+            }
+        }
+        list($wsql, $wargs) = $this->where($where);
+        $n = $wpdb->query($wpdb->prepare(
+            "UPDATE {$t} SET " . implode(', ', $set) . " WHERE tenant_id = %d{$wsql}",
+            array_merge($args, array($this->tenant_id), $wargs)
+        ));
+        return $n === false ? 0 : (int) $n;
     }
 }
