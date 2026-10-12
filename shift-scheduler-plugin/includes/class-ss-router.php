@@ -123,6 +123,9 @@ final class SS_Router {
         if ($path === 'login') {
             self::render_staff_login($requested);
         }
+        if ($path === 'punch') {
+            self::render_punch($requested);
+        }
         if (!is_user_logged_in()) {
             wp_safe_redirect(SS_Router::url('login'));
             exit;
@@ -251,7 +254,7 @@ final class SS_Router {
             array('color' => 'nippo', 'icon' => '📝', 'label' => '日報', 'desc' => '本日の予定・実績を入力します', 'url' => $u('nippo')),
             array('color' => 'chorei', 'icon' => '☀️', 'label' => '朝礼', 'desc' => '本日の全体予定・未提出者を確認します', 'url' => $u('chorei')),
             array('color' => 'keiri', 'icon' => '🧾', 'label' => '経理', 'desc' => '見積もり・請求書・顧客一覧・商品一覧', 'url' => ''),
-            array('color' => 'timecard', 'icon' => '⏱️', 'label' => 'タイムカード', 'desc' => '出勤・退勤を打刻します', 'url' => ''),
+            array('color' => 'timecard', 'icon' => '⏱️', 'label' => 'タイムカード', 'desc' => '出勤・退勤を打刻します', 'url' => $u('timecard')),
             array('color' => 'myleave', 'icon' => '🌴', 'label' => '給与照会', 'desc' => '自分の給与明細・有給休暇の残日数を確認します', 'url' => ''),
             array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト', 'desc' => '公開されたシフトの確認・希望休の提出', 'url' => $u(!empty($user['staff_id']) && current_user_can('shift_submit_requests') ? 'me/requests' : 'me/schedule')),
         );
@@ -262,7 +265,7 @@ final class SS_Router {
                 array('color' => 'shukei', 'icon' => '📈', 'label' => '管理者集計', 'desc' => '部署別・担当者別の実績を集計します', 'url' => $u('shukei')),
                 array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト作成', 'desc' => '勤務区分・ルール・希望休の収集・シフト表の自動作成', 'url' => current_user_can('shift_manage_schedule') ? $u('schedules') : ''),
                 array('color' => 'kyuyo', 'icon' => '💰', 'label' => '給与計算', 'desc' => '給与明細・賞与・年末調整', 'url' => ''),
-                array('color' => 'qr', 'icon' => '🔳', 'label' => 'QRコード生成', 'desc' => 'タイムカード用QRコードの発行', 'url' => ''),
+                array('color' => 'qr', 'icon' => '🔳', 'label' => 'QRコード生成', 'desc' => 'タイムカード用QRコードの発行', 'url' => $u('qr')),
                 array('color' => 'jisha', 'icon' => '🏢', 'label' => '自社情報', 'desc' => '会社情報・振込先・印影・書類の保管', 'url' => ''),
             );
             if (current_user_can('shift_manage_billing')) {
@@ -302,6 +305,8 @@ final class SS_Router {
             'yotei'  => array('cap' => 'shift_view', 'office' => 'yotei-jisseki-input.html', 'title' => '予定・進捗', 'label' => '予定進捗'),
             'chorei' => array('cap' => 'shift_view', 'office' => 'chorei-fixed.html', 'title' => '朝礼（全体スケジュール）', 'label' => '朝礼'),
             'shukei' => array('cap' => 'shift_manage_staff', 'office' => 'kanri-shukei.html', 'title' => '管理者集計', 'label' => '管理者集計'),
+            'timecard' => array('cap' => 'shift_view', 'office' => 'timecard.html', 'title' => 'タイムカード', 'label' => 'タイムカード'),
+            'qr'     => array('cap' => 'shift_manage_staff', 'office' => 'qr-generate.html', 'title' => 'タイムカード QRコード', 'label' => 'QRコード', 'menu' => false, 'scripts' => array('qrcode.js')),
         );
     }
 
@@ -310,12 +315,17 @@ final class SS_Router {
         $staff = !empty($user['staff_id']) ? $repo->find('staff', (int) $user['staff_id']) : null;
         $pid = $tenant['public_id'];
         $links = array('トップ' => SS_View::app_url($pid));
-        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計');
+        // 画面内のリンク（「/日報/」など、マッシュオフィスシステムの固定ページ名）を、このサービスのURLへ向け直すための対応表
+        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計', 'timecard' => 'タイムカード', 'qr' => 'QRコード');
         $menu = array(array('url' => SS_View::app_url($pid), 'label' => 'トップ', 'current' => false));
         foreach (self::office_pages() as $key => $p) {
             if (current_user_can($p['cap'])) {
-                $links[$labels[$key]] = SS_View::app_url($pid, $key);
-                $menu[] = array('url' => SS_View::app_url($pid, $key), 'label' => $p['label'], 'current' => $key === $path);
+                if (isset($labels[$key])) {
+                    $links[$labels[$key]] = SS_View::app_url($pid, $key);
+                }
+                if (!isset($p['menu']) || $p['menu'] || $key === $path) {
+                    $menu[] = array('url' => SS_View::app_url($pid, $key), 'label' => $p['label'], 'current' => $key === $path);
+                }
             }
         }
         $menu[] = array('url' => SS_View::app_url($pid, current_user_can('shift_manage_schedule') ? 'schedules' : 'me/schedule'), 'label' => 'シフト', 'current' => false);
@@ -326,8 +336,9 @@ final class SS_Router {
             'menu'        => $menu,
             'logout'      => $common['logout'],
             'readonly'    => !SS_Tenants::is_writable($tenant),
-            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && $path !== 'shukei',
+            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && !in_array($path, array('shukei', 'qr'), true),
             'office_html' => SS_View::office_html($def['office']),
+            'scripts'     => isset($def['scripts']) ? array_map(function ($f) { return SS_URL . 'assets/' . $f . '?ver=' . SS_VERSION; }, $def['scripts']) : array(),
             'mo_config'   => array(
                 'tenant'   => $pid,
                 'base'     => esc_url_raw(rest_url(SS_Rest_Office::NS)),
@@ -338,7 +349,39 @@ final class SS_Router {
                     'staff' => $staff && (int) $staff['active'] === 1 ? array('staffId' => (string) $staff['id'], 'staffName' => $staff['name'], 'dept' => (string) $staff['department']) : null,
                     'admin' => current_user_can('shift_manage_staff'),
                 ),
-            ),
+            ) + ($path === 'qr' ? array('qr' => self::qr_list($tenant)) : array()),
+        ));
+    }
+
+    /** QRコード画面に渡す、スタッフごとの打刻用URL（署名つき） */
+    private static function qr_list(array $tenant) {
+        $staff = SS_Repo::current()->all('staff', array('active' => 1), 'sort_order', 'ASC', 1000);
+        usort($staff, function ($a, $b) {
+            return strnatcmp((string) $a['employee_number'], (string) $b['employee_number']) ?: ((int) $a['id'] - (int) $b['id']);
+        });
+        $out = array();
+        foreach ($staff as $s) {
+            $out[] = array('id' => (string) $s['id'], 'name' => $s['name'], 'dept' => (string) $s['department'], 'url' => SS_Rest_Kintai::punch_url($tenant, $s));
+        }
+        return $out;
+    }
+
+    /**
+     * QRコードから開く打刻ページ（ログイン不要）。URLの署名が正しくなければ、どのお客様でも同じ「使えません」を出す。
+     */
+    private static function render_punch($public_id) {
+        $sid = isset($_GET['s']) ? (int) $_GET['s'] : 0;
+        $sig = isset($_GET['k']) ? sanitize_text_field(wp_unslash($_GET['k'])) : '';
+        $ok = SS_Rest_Kintai::resolve_punch($public_id, $sid, $sig);
+        if (!$ok) {
+            SS_View::message('このQRコードは使えません', 'QRコードが古いか、正しくありません。管理者に、新しいQRコードをもらってください。', 404);
+        }
+        nocache_headers();
+        SS_View::render_standalone('punch-page', array(
+            'title'       => 'タイムカード',
+            'tenant_name' => $ok['tenant']['name'],
+            'office_html' => SS_View::office_html('timecard.html'),
+            'punch'       => array('api' => esc_url_raw(rest_url(SS_Rest_Office::NS)), 't' => $public_id, 's' => (string) $sid, 'k' => $sig),
         ));
     }
 

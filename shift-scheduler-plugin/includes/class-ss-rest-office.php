@@ -50,13 +50,11 @@ final class SS_Rest_Office {
         $r('/schedule-tasks/(?P<id>\d+)/duplicate', 'POST', 'duplicate_schedule_task', 'can_admin_write');
         $r('/activity-log', 'GET', 'get_activity_log', 'can_admin');
         $r('/activity-log', 'POST', 'post_activity_log', 'can_use');
-        // まだ移していない機能（連絡・タイムカード・バックアップ）：画面が止まらないよう、空の結果を返す
+        // まだ移していない機能（連絡・バックアップ）：画面が止まらないよう、空の結果を返す
         $r('/dm/threads', 'GET', 'empty_list', 'can_use');
         $r('/dm/messages', 'GET', 'empty_list', 'can_use');
         $r('/dm/messages', 'POST', 'not_yet', 'can_use');
         $r('/chat-messages/unread-staff-ids', 'GET', 'empty_list', 'can_use');
-        $r('/time-cards', 'GET', 'empty_list', 'can_use');
-        $r('/time-cards/upsert', 'POST', 'not_yet', 'can_use');
         $r('/backup/status', 'GET', 'backup_status', 'can_admin');
         foreach (array('/backup/export', '/backup/restore', '/backup/delete-all', '/backup/mark-downloaded') as $p) {
             register_rest_route(self::NS, $p, array(array('methods' => 'GET,POST', 'callback' => array($c, 'not_yet'), 'permission_callback' => array($c, 'can_admin'))));
@@ -85,22 +83,22 @@ final class SS_Rest_Office {
         return self::can_write() && current_user_can('shift_manage_staff');
     }
 
-    private static function is_admin() {
+    public static function is_admin() {
         return current_user_can('shift_manage_staff');
     }
 
     /* ---------- 共通 ---------- */
 
     /** マッシュオフィスシステムの画面は、エラーを { error: "…" } で受け取る */
-    private static function err($message, $status) {
+    public static function err($message, $status) {
         return new WP_REST_Response(array('error' => $message, 'message' => $message), $status);
     }
 
-    private static function ok($data, $status = 200) {
+    public static function ok($data, $status = 200) {
         return new WP_REST_Response($data, $status);
     }
 
-    private static function params(WP_REST_Request $req) {
+    public static function params(WP_REST_Request $req) {
         $p = $req->get_json_params();
         if (!is_array($p) || !$p) {
             $p = $req->get_params();
@@ -108,26 +106,26 @@ final class SS_Rest_Office {
         return is_array($p) ? $p : array();
     }
 
-    private static function now() {
+    public static function now() {
         return current_time('mysql');
     }
 
-    private static function text($v, $max) {
+    public static function text($v, $max) {
         return mb_substr(sanitize_text_field((string) $v), 0, $max);
     }
 
-    private static function date_or_empty($v) {
+    public static function date_or_empty($v) {
         $v = sanitize_text_field((string) $v);
         return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '';
     }
 
-    private static function time_or_empty($v) {
+    public static function time_or_empty($v) {
         $v = sanitize_text_field((string) $v);
         return preg_match('/^\d{1,2}:\d{2}$/', $v) ? $v : '';
     }
 
     /** ログイン中の人に紐づくスタッフ（いなければ null） */
-    private static function me_staff() {
+    public static function me_staff() {
         $me = SS_Context::user();
         if (!$me || empty($me['staff_id'])) {
             return null;
@@ -136,7 +134,7 @@ final class SS_Rest_Office {
         return $s && (int) $s['active'] === 1 ? $s : null;
     }
 
-    private static function actor_name() {
+    public static function actor_name() {
         $s = self::me_staff();
         if ($s) {
             return $s['name'];
@@ -146,7 +144,7 @@ final class SS_Rest_Office {
     }
 
     /** 名簿の、有効なスタッフ（お客様の中だけ）。いなければ null */
-    private static function staff_in_tenant($id) {
+    public static function staff_in_tenant($id) {
         $s = SS_Repo::current()->find('staff', (int) $id);
         return $s && (int) $s['active'] === 1 ? $s : null;
     }
@@ -254,6 +252,11 @@ final class SS_Rest_Office {
     }
 
     public static function company_info(WP_REST_Request $req) {
+        return self::ok(self::company_info_array());
+    }
+
+    /** 自社情報（初期値に、保存した値を重ねたもの） */
+    public static function company_info_array() {
         $tenant = SS_Context::tenant();
         $defaults = array(
             'name' => $tenant ? $tenant['name'] : '', 'repName' => '', 'postalCode' => '', 'address' => '', 'phone' => '', 'fax' => '', 'website' => '',
@@ -268,7 +271,7 @@ final class SS_Rest_Office {
         $settings = $tenant ? SS_Tenants::settings($tenant) : array();
         $saved = isset($settings['company_info']) && is_array($settings['company_info']) ? $settings['company_info'] : array();
         unset($saved['sealImageUrl']); // 印影は、経理の移植（P5）で、非公開ファイルとして扱う
-        return self::ok(array_merge($defaults, $saved));
+        return array_merge($defaults, $saved);
     }
 
     public static function company_name(WP_REST_Request $req) {

@@ -376,7 +376,7 @@ final class SS_Auth {
     }
 
     /** 一定時間あたりの回数制限（超えたら false） */
-    private static function rate_ok($bucket, $limit, $window) {
+    public static function rate_ok($bucket, $limit, $window) {
         $ip = isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : '';
         $key = 'ss_rl_' . md5($bucket . '|' . $ip);
         $count = (int) get_transient($key);

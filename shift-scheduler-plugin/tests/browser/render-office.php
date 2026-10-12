@@ -19,4 +19,12 @@ $readonly = !empty($argv[3]);
 $office_html = SS_View::office_html($file);
 $mo_config = array('tenant' => 'abcdefghjkmn', 'base' => '/wp-json/mo/v1', 'nonce' => 'nonce-123', 'readonly' => $readonly, 'links' => $links,
     'auth' => array('staff' => array('staffId' => '2', 'staffName' => '佐藤', 'dept' => '製作'), 'admin' => $admin));
+$scripts = array();
+if (!empty($argv[4]) && $argv[4] === 'qr') { // QRコード画面：スタッフごとの打刻用URLと、QRを作る部品
+    $scripts = array('/assets/qrcode.js');
+    $mo_config['qr'] = array(
+        array('id' => '1', 'name' => '山田', 'dept' => '営業', 'url' => 'https://example.test/s/abcdefghjkmn/punch/?s=1&k=' . str_repeat('a', 32)),
+        array('id' => '2', 'name' => '<b>佐藤</b>', 'dept' => '製作', 'url' => 'https://example.test/s/abcdefghjkmn/punch/?s=2&k=' . str_repeat('b', 32)),
+    );
+}
 include SS_DIR . 'templates/office-page.php';

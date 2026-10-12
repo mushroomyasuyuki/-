@@ -19,7 +19,8 @@ class SS_Repo_Exception extends Exception {
 final class SS_Repo {
     /** お客様ごとに分離するテーブル（`shift_` 接頭辞を除いた名前） */
     const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries',
-        'task_records', 'task_images', 'schedule_tasks', 'activity_log');
+        'task_records', 'task_images', 'schedule_tasks', 'activity_log',
+        'time_cards', 'attendance_days', 'leave_grants');
 
     private $tenant_id;
 

@@ -40,6 +40,9 @@ if ($mo_msg === '' && !empty($need_staff_link)) {
 <p id="mo-notice" role="alert"<?php echo $mo_msg !== '' ? '' : ' hidden'; ?>><?php echo esc_html($mo_msg); ?></p>
 <script>window.MO_CONFIG = <?php echo wp_json_encode($mo_config); ?>;</script>
 <script src="<?php echo esc_url(SS_URL . 'assets/office-shim.js?ver=' . SS_VERSION); ?>"></script>
+<?php foreach ((isset($scripts) ? $scripts : array()) as $src) : ?>
+<script src="<?php echo esc_url($src); ?>"></script>
+<?php endforeach; ?>
 <?php echo $office_html; // マッシュオフィスシステムの画面（同梱の固定ファイル） ?>
 </body>
 </html>

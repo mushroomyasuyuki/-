@@ -126,7 +126,8 @@ final class SS_System {
         }
         $users = self::table('users');
         $wp_ids = $wpdb->get_col($wpdb->prepare("SELECT wp_user_id FROM {$users} WHERE tenant_id = %d", $tenant_id));
-        foreach (array('entries', 'schedules', 'request_submissions', 'requests', 'request_periods', 'rules', 'patterns', 'task_images', 'task_records', 'schedule_tasks', 'activity_log', 'staff', 'users', 'tokens') as $name) {
+        // お客様ごとの表（SS_Repo::TABLES）を、すべて消す。表を追加したら、自動で対象になる
+        foreach (array_merge(SS_Repo::TABLES, array('tokens')) as $name) {
             $t = self::table($name);
             $wpdb->query($wpdb->prepare("DELETE FROM {$t} WHERE tenant_id = %d", $tenant_id));
         }

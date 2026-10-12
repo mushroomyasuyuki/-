@@ -57,7 +57,7 @@ class FakeWpdb {
     function get_results($sql, $o = null) { return $this->pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC); }
     function get_var($sql) { $r = $this->pdo->query($sql)->fetch(PDO::FETCH_NUM); return $r ? $r[0] : null; }
     function get_col($sql) { return $this->pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN); }
-    function query($sql) { return $this->pdo->exec($sql); }
+    function query($sql) { try { return $this->pdo->exec($sql); } catch (PDOException $e) { if (strpos($sql, 'DELETE') === 0 && strpos($e->getMessage(), 'no such table') !== false) { return 0; } throw $e; } } // 決済のテストに関係しない表の削除は、無視する
     private function lit($v) { return $v === null ? 'NULL' : (is_int($v) ? (string) $v : $this->pdo->quote((string) $v)); }
     function insert($t, $d) { $this->pdo->exec("INSERT INTO {$t} (" . implode(',', array_keys($d)) . ') VALUES (' . implode(',', array_map(array($this, 'lit'), array_values($d))) . ')'); $this->insert_id = (int) $this->pdo->lastInsertId(); return 1; }
     function update($t, $d, $w) { $s = array(); foreach ($d as $k => $v) { $s[] = "{$k} = " . $this->lit($v); } $c = array(); foreach ($w as $k => $v) { $c[] = "{$k} = " . $this->lit($v); } return $this->pdo->exec("UPDATE {$t} SET " . implode(', ', $s) . ' WHERE ' . implode(' AND ', $c)); }

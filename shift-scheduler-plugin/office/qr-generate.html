@@ -1,0 +1,107 @@
+<!--
+  タイムカード用QRコードの発行画面（管理者用）。マッシュオフィスシステムの qr-generate.html の見た目を使い、
+  このサービス用に書き換えたもの。
+   - QRの中身は、お客様・スタッフに結びついた署名つきURL（推測できない）。サーバーが作って渡す
+   - QR画像は、このページの中で作る（外部のサービスにURLを送らない）
+   - 「作り直す」と、古いQRコードは使えなくなる（紛失したとき用）
+-->
+<div id="qr-app"></div>
+
+<style>
+  #qr-app {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: #1f2937; max-width: 900px; margin: 0 auto;
+  }
+  #qr-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+  }
+  #qr-app .header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  #qr-app .header .sub { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  #qr-app .print-btn {
+    background: #f8fafc; color: #1e293b; border: none; border-radius: 4px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  #qr-app .grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 16px; background: #f0efe9;
+  }
+  @media (min-width: 700px) { #qr-app .grid { grid-template-columns: repeat(4, 1fr); } }
+  #qr-app .qr-card {
+    background: #fff; border: 1px solid #d6d3cb; border-radius: 6px; padding: 16px; text-align: center;
+  }
+  #qr-app .qr-card .dept-pill {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; margin-bottom: 8px;
+  }
+  #qr-app .qr-box { display: flex; justify-content: center; margin: 6px 0 10px; }
+  #qr-app .staff-name { font-size: 15px; font-weight: 700; }
+  #qr-app .qr-box a { display: inline-flex; }
+  #qr-app .back-link { text-align: center; padding: 16px; }
+  #qr-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  @media print {
+    #qr-app .header, #qr-app .back-link, #qr-app .print-btn { display: none !important; }
+    #qr-app .grid { background: #fff; grid-template-columns: repeat(2, 1fr); }
+    #qr-app .qr-card { break-inside: avoid; border: 1px solid #ccc; }
+  }
+  #qr-app .dept-pill { background: #eef0f4; color: #374151; }
+  #qr-app .qr-box img, #qr-app .qr-box svg { width: 150px; height: 150px; image-rendering: pixelated; }
+  #qr-app .reissue { margin-top: 8px; background: none; border: 1px solid #d6d3cb; border-radius: 4px; padding: 3px 8px; font-size: 11px; color: #6b7280; cursor: pointer; }
+  #qr-app .tools { display: flex; gap: 8px; align-items: center; }
+  #qr-app .note { font-size: 12px; color: #6b7280; padding: 10px 16px 0; background: #f0efe9; margin: 0; line-height: 1.6; }
+  @media print { #qr-app .reissue, #qr-app .note { display: none !important; } }
+</style>
+
+<script>
+(function () {
+  'use strict';
+  var C = window.MO_CONFIG || {};
+  var STAFF = (C.qr || []).slice();
+  var app = document.getElementById('qr-app');
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function qrImg(text) {
+    var q = qrcode(0, 'M');
+    q.addData(text);
+    q.make();
+    return q.createDataURL(4, 0);
+  }
+  function reissue(staffId) {
+    var msg = staffId ? 'この人のQRコードを作り直します。古いQRコードは使えなくなります。よろしいですか？'
+                      : '全員のQRコードを作り直します。古いQRコードは、すべて使えなくなります。よろしいですか？';
+    if (!confirm(msg)) { return; }
+    fetch(C.base + '/punch-keys/reissue', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': C.nonce },
+      body: JSON.stringify(staffId ? { staffId: staffId } : {})
+    }).then(function (res) {
+      return res.json().then(function (d) { if (!res.ok) { throw new Error((d && (d.error || d.message)) || '作り直せませんでした。'); } return d; });
+    }).then(function (list) {
+      list.forEach(function (r) { STAFF.forEach(function (s) { if (s.id === r.id) { s.url = r.url; } }); });
+      render();
+      alert('QRコードを作り直しました。新しいQRコードを印刷して、渡してください。');
+    }).catch(function (e) { alert(e.message || '作り直せませんでした。'); });
+  }
+  window.__qr = { reissue: reissue };
+
+  function render() {
+    if (STAFF.length === 0) {
+      app.innerHTML = '<div class="header"><div><h1>タイムカード QRコード</h1></div></div>' +
+        '<div class="grid"><p style="padding:16px;color:#ea580c;">従業員登録がまだありません。先に従業員登録画面から登録してください。</p></div>';
+      return;
+    }
+    app.innerHTML =
+      '<div class="header"><div><h1>タイムカード QRコード</h1><div class="sub">各自のQRコードを印刷して、出退勤の打刻に使用してください</div></div>' +
+      '<div class="tools">' + (C.readonly ? '' : '<button class="print-btn" type="button" onclick="__qr.reissue(0)">全員分を作り直す</button>') +
+      '<button class="print-btn" type="button" onclick="window.print()">🖨 印刷する</button></div></div>' +
+      '<p class="note">QRコードを読み取ると、ログインなしで、その人の出勤・退勤を打刻できます。QRコードをなくしたときや、退職した人のQRコードを使えなくしたいときは「作り直す」を押してください。</p>' +
+      '<div class="grid">' + STAFF.map(function (s) {
+        return '<div class="qr-card">' +
+          (s.dept ? '<span class="dept-pill">' + esc(s.dept) + '</span>' : '') +
+          '<div class="qr-box"><img src="' + qrImg(s.url) + '" width="150" height="150" alt="' + esc(s.name) + 'さんのQRコード"></div>' +
+          '<div class="staff-name">' + esc(s.name) + '</div>' +
+          (C.readonly ? '' : '<button class="reissue" type="button" onclick="__qr.reissue(' + Number(s.id) + ')">作り直す</button>') +
+        '</div>';
+      }).join('') + '</div>';
+  }
+  render();
+})();
+</script>

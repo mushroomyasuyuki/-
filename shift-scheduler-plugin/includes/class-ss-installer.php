@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) {
 }
 
 final class SS_Installer {
-    const DB_VERSION = '7';
+    const DB_VERSION = '8';
 
     public static function activate() {
         self::create_tables();
@@ -100,6 +100,8 @@ final class SS_Installer {
   night_ok tinyint(1) NOT NULL DEFAULT 1,
   active tinyint(1) NOT NULL DEFAULT 1,
   sort_order int(11) NOT NULL DEFAULT 0,
+  hire_date varchar(10) NOT NULL DEFAULT '',
+  punch_ver int(11) unsigned NOT NULL DEFAULT 0,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY tenant_active (tenant_id, active, sort_order),
@@ -156,6 +158,8 @@ final class SS_Installer {
   color varchar(7) NOT NULL DEFAULT '#6aa84f',
   active tinyint(1) NOT NULL DEFAULT 1,
   sort_order int(11) NOT NULL DEFAULT 0,
+  hire_date varchar(10) NOT NULL DEFAULT '',
+  punch_ver int(11) unsigned NOT NULL DEFAULT 0,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY tenant_active (tenant_id, active, sort_order)
@@ -324,6 +328,58 @@ final class SS_Installer {
   detail varchar(255) NOT NULL DEFAULT '',
   PRIMARY KEY  (id),
   KEY tenant_id (tenant_id,id)
+) $c;";
+
+        // ---- 勤怠（タイムカード・勤怠区分・有給休暇の付与）（マッシュオフィスシステムから移植） ----
+        $sql[] = "CREATE TABLE {$p}time_cards (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  record_date varchar(10) NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  department varchar(50) NOT NULL DEFAULT '',
+  clock_in varchar(5) NOT NULL DEFAULT '',
+  clock_out varchar(5) NOT NULL DEFAULT '',
+  clock_in_lat decimal(10,7) NULL,
+  clock_in_lng decimal(10,7) NULL,
+  clock_in_accuracy int(11) NULL,
+  clock_out_lat decimal(10,7) NULL,
+  clock_out_lng decimal(10,7) NULL,
+  clock_out_accuracy int(11) NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_timecard (tenant_id,record_date,staff_id),
+  KEY tenant_staff (tenant_id,staff_id)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}attendance_days (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  record_date varchar(10) NOT NULL,
+  day_type varchar(10) NOT NULL DEFAULT '通常',
+  clock_in varchar(5) NOT NULL DEFAULT '',
+  clock_out varchar(5) NOT NULL DEFAULT '',
+  early_minutes int(11) NULL,
+  overtime_minutes int(11) NULL,
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_attendance (tenant_id,staff_id,record_date),
+  KEY tenant_date (tenant_id,record_date)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}leave_grants (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  grant_date varchar(10) NOT NULL,
+  days decimal(4,1) NOT NULL DEFAULT 0,
+  note varchar(255) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_staff (tenant_id,staff_id)
 ) $c;";
 
         foreach ($sql as $statement) {

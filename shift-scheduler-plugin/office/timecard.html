@@ -1,0 +1,177 @@
+<!--
+  タイムカード（出勤・退勤の打刻）画面。マッシュオフィスシステムの timecard.html の見た目をそのまま使い、
+  データの取り方だけを、このサービス用に書き換えたもの。
+   - QRコードから開いたとき：URLの署名（t, s, k）で本人を確かめる（ログイン不要。打刻と直近の記録の確認だけ）
+   - ログインして開いたとき：ログイン中のスタッフ本人
+   - 打刻の時刻は、サーバーの時計で決まる
+-->
+<div id="timecard-app">読み込み中…</div>
+
+<style>
+  #timecard-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    --done: #10b981; --done-bg: #ecfdf5;
+    --carry: #f97316; --carry-bg: #fff7ed;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 480px; margin: 0 auto;
+  }
+  #timecard-app * { box-sizing: border-box; }
+  #timecard-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0; text-align: center;
+  }
+  #timecard-app .header h1 { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  #timecard-app .header .sub { font-size: 12px; color: #94a3b8; }
+  #timecard-app .clock-panel { background: #fff; border: 1px solid var(--border); padding: 24px 20px; text-align: center; }
+  #timecard-app .now-time { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  #timecard-app .now-date { font-size: 13px; color: var(--muted); margin-top: 2px; margin-bottom: 20px; }
+  #timecard-app .status-row { display: flex; justify-content: center; gap: 24px; margin-bottom: 20px; font-size: 13px; }
+  #timecard-app .status-item .label { color: var(--muted); font-size: 11px; }
+  #timecard-app .status-item .val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #timecard-app .status-item .val.empty { color: #c7c3b8; font-weight: 400; font-size: 14px; }
+  #timecard-app .punch-btn {
+    width: 100%; padding: 20px; font-size: 18px; font-weight: 700; border: none; border-radius: 8px;
+    color: #fff; cursor: pointer;
+  }
+  #timecard-app .punch-btn.in { background: var(--done); }
+  #timecard-app .punch-btn.out { background: var(--carry); }
+  #timecard-app .punch-btn:disabled { background: #d6d3cb; color: #8a8577; cursor: default; }
+  #timecard-app .msg { font-size: 13px; margin-top: 14px; }
+  #timecard-app .msg.error { color: #ea580c; }
+  #timecard-app .msg.ok { color: var(--done); }
+  #timecard-app .gps-note { font-size: 11.5px; color: #8a8577; margin-top: 12px; line-height: 1.6; }
+  #timecard-app .history-panel { background: #fff; border: 1px solid var(--border); border-top: none; padding: 14px 18px; }
+  #timecard-app .history-panel h3 { font-size: 13px; margin: 0 0 10px; }
+  #timecard-app .history-row {
+    display: flex; justify-content: space-between; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid #f1f0eb;
+  }
+  #timecard-app .history-row:last-child { border-bottom: none; }
+  #timecard-app .history-row .d { color: var(--muted); }
+  #timecard-app .no-history { font-size: 12.5px; color: var(--muted); padding: 6px 0; }
+  #timecard-app .back-link { text-align: center; padding: 16px; }
+  #timecard-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  #timecard-app .auto-panel { padding: 40px 20px; }
+  #timecard-app .auto-icon {
+    width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 18px; display: flex; align-items: center;
+    justify-content: center; font-size: 32px; font-weight: 700; color: #fff;
+  }
+  #timecard-app .auto-icon.in { background: var(--done); }
+  #timecard-app .auto-icon.out { background: var(--carry); }
+  #timecard-app .auto-icon.done { background: #94a3b8; }
+  #timecard-app .auto-icon.error { background: #ea580c; }
+  #timecard-app .auto-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  #timecard-app .auto-time { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); margin-bottom: 6px; }
+  #timecard-app .auto-sub { font-size: 13px; color: var(--muted); }
+</style>
+
+<script>
+(function () {
+  'use strict';
+  var P = window.MO_PUNCH || {};
+  var C = window.MO_CONFIG || {};
+  var API = P.api || C.base;
+  var HOME = P.home || (C.links && C.links['トップ']) || '';
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function call(method, body) {
+    var url = API + '/punch';
+    var opt = { method: method, credentials: 'same-origin', headers: {} };
+    if (P.k) {
+      url += '?t=' + encodeURIComponent(P.t) + '&s=' + encodeURIComponent(P.s) + '&k=' + encodeURIComponent(P.k);
+    } else if (C.nonce) {
+      opt.headers['X-WP-Nonce'] = C.nonce;
+    }
+    if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+    return fetch(url, opt).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (d) {
+        if (!res.ok) { var e = new Error((d && (d.error || d.message)) || '通信に失敗しました。'); e.status = res.status; throw e; }
+        return d;
+      });
+    });
+  }
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function nowFullStr() { var d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); }
+  function dateLabel() {
+    var d = new Date(); var w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+    return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + '(' + w + ')';
+  }
+
+  var state = { staff: null, today: null, history: [], writable: true, loading: true, busy: false, msg: '', msgType: '', fatal: '' };
+  var app = document.getElementById('timecard-app');
+
+  function getPunchLocation() {
+    return new Promise(function (resolve) {
+      if (!navigator.geolocation || !window.isSecureContext) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        function (pos) { resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) }); },
+        function () { resolve(null); },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }
+  function locationNote(located) { return located ? '(打刻場所も記録しました)' : '(位置情報は取得できませんでした)'; }
+
+  function load() {
+    state.loading = true; render();
+    return call('GET').then(function (d) {
+      state.staff = d.staff; state.today = d.today; state.history = d.history || []; state.writable = d.writable !== false;
+    }).catch(function (e) {
+      if (e.status === 403 || e.status === 401) { state.fatal = e.message; } else { state.msg = 'データの取得に失敗しました。通信環境をご確認ください。'; state.msgType = 'error'; }
+    }).then(function () { state.loading = false; render(); });
+  }
+
+  function doPunch(kind) {
+    if (state.busy) { return; }
+    state.busy = true; state.msg = ''; render();
+    getPunchLocation().then(function (loc) {
+      return call('POST', { kind: kind, location: loc });
+    }).then(function (r) {
+      var located = r.locationSaved && r.locationSaved.length > 0;
+      state.msg = (kind === 'in' ? '出勤を記録しました（' + r.time + '）。' : '退勤を記録しました（' + r.time + '）。お疲れさまでした。') + locationNote(located);
+      state.msgType = 'ok';
+    }).catch(function (e) {
+      state.msg = e.message || '打刻に失敗しました。もう一度お試しください。'; state.msgType = 'error';
+    }).then(function () { state.busy = false; return load(); });
+  }
+  window.__timecard = { clockIn: function () { doPunch('in'); }, clockOut: function () { doPunch('out'); } };
+
+  function backLink() { return HOME ? '<div class="back-link"><a href="' + esc(HOME) + '">← トップに戻る</a></div>' : ''; }
+
+  function render() {
+    if (state.fatal) {
+      app.innerHTML = '<div class="header"><h1>タイムカード</h1></div><div class="clock-panel"><p style="font-size:13px;color:#ea580c;">' + esc(state.fatal) + '</p></div>' + backLink();
+      return;
+    }
+    var staff = state.staff || { name: '', dept: '' };
+    var clockIn = (state.today && state.today.clockIn) || '';
+    var clockOut = (state.today && state.today.clockOut) || '';
+    var btn;
+    if (state.busy) { btn = '<button class="punch-btn" disabled>位置情報を取得して打刻しています…</button>'; }
+    else if (state.loading && !state.staff) { btn = '<button class="punch-btn" disabled>読み込み中…</button>'; }
+    else if (!state.writable) { btn = '<button class="punch-btn" disabled>現在は打刻できません</button>'; }
+    else if (!clockIn) { btn = '<button class="punch-btn in" onclick="__timecard.clockIn()">出勤する</button>'; }
+    else if (!clockOut) { btn = '<button class="punch-btn out" onclick="__timecard.clockOut()">退勤する</button>'; }
+    else { btn = '<button class="punch-btn" disabled>本日の打刻は完了しています</button>'; }
+    var hist = state.history.length === 0 ? '<div class="no-history">記録がありません</div>' : state.history.map(function (h) {
+      return '<div class="history-row"><span class="d">' + esc(h.date) + '</span><span>' + esc(h.clockIn || '--:--') + ' 〜 ' + esc(h.clockOut || '--:--') + '</span></div>';
+    }).join('');
+    app.innerHTML =
+      '<div class="header"><h1>タイムカード</h1><div class="sub">' + esc(staff.name) + 'さん' + (staff.dept ? '(' + esc(staff.dept) + ')' : '') + '</div></div>' +
+      '<div class="clock-panel">' +
+        '<div class="now-time" id="nowTime">' + nowFullStr() + '</div>' +
+        '<div class="now-date">' + dateLabel() + ' ・ ' + esc(staff.name) + 'さん</div>' +
+        '<div class="status-row">' +
+          '<div class="status-item"><div class="label">出勤</div><div class="val ' + (clockIn ? '' : 'empty') + '">' + esc(clockIn || '未打刻') + '</div></div>' +
+          '<div class="status-item"><div class="label">退勤</div><div class="val ' + (clockOut ? '' : 'empty') + '">' + esc(clockOut || '未打刻') + '</div></div>' +
+        '</div>' + btn +
+        (state.msg ? '<div class="msg ' + state.msgType + '" role="status">' + esc(state.msg) + '</div>' : '') +
+        '<div class="gps-note">📍 打刻時に位置情報(GPS)も記録します。確認が表示されたら「許可」を選んでください。</div>' +
+      '</div>' +
+      '<div class="history-panel"><h3>直近の記録</h3>' + hist + '</div>' + backLink();
+  }
+
+  setInterval(function () { var el = document.getElementById('nowTime'); if (el) { el.textContent = nowFullStr(); } }, 1000);
+  load();
+})();
+</script>
