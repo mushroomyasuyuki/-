@@ -2,7 +2,7 @@
 /**
  * Plugin Name: マッシュオフィス 経理・管理・勤怠
  * Description: シフト作成・日報・勤怠などを、お客様ごとの専用URLで提供する月額サービス（mush-office.com 用）。お客様ごとにデータを分離します。
- * Version: 0.7.1
+ * Version: 0.8.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: shift-scheduler
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('SS_VERSION', '0.7.1');
+define('SS_VERSION', '0.8.0');
 define('SS_PRODUCT_NAME', 'マッシュオフィス 経理・管理・勤怠');
 define('SS_DIR', plugin_dir_path(__FILE__));
 define('SS_URL', plugin_dir_url(__FILE__));
@@ -47,6 +47,7 @@ require_once SS_DIR . 'includes/class-ss-files.php';
 require_once SS_DIR . 'includes/class-ss-rest-office.php';
 require_once SS_DIR . 'includes/class-ss-rest-kintai.php';
 require_once SS_DIR . 'includes/class-ss-rest-keiri.php';
+require_once SS_DIR . 'includes/class-ss-rest-kyuyo.php';
 require_once SS_DIR . 'includes/class-ss-cron.php';
 require_once SS_DIR . 'includes/class-ss-stats.php';
 require_once SS_DIR . 'includes/class-ss-admin.php';
@@ -67,6 +68,7 @@ add_action('plugins_loaded', function () {
     SS_Rest_Office::init();
     SS_Rest_Kintai::init();
     SS_Rest_Keiri::init();
+    SS_Rest_Kyuyo::init();
     SS_Cron::init();
     SS_Admin::init();
 });

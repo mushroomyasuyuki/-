@@ -102,6 +102,7 @@ final class SS_Installer {
   sort_order int(11) NOT NULL DEFAULT 0,
   hire_date varchar(10) NOT NULL DEFAULT '',
   punch_ver int(11) unsigned NOT NULL DEFAULT 0,
+  profile longtext NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY tenant_active (tenant_id, active, sort_order),
@@ -160,6 +161,7 @@ final class SS_Installer {
   sort_order int(11) NOT NULL DEFAULT 0,
   hire_date varchar(10) NOT NULL DEFAULT '',
   punch_ver int(11) unsigned NOT NULL DEFAULT 0,
+  profile longtext NULL,
   created_at datetime NOT NULL,
   PRIMARY KEY  (id),
   KEY tenant_active (tenant_id, active, sort_order)
@@ -505,6 +507,90 @@ final class SS_Installer {
   UNIQUE KEY uniq_report_no (tenant_id,report_no),
   KEY tenant_quote (tenant_id,quote_no),
   KEY tenant_invoice (tenant_id,invoice_no)
+) $c;";
+
+        // ---- 給与（給与明細・保存履歴・年末調整・本人の申告・税額表／保険料額表）（マッシュオフィスシステムから移植） ----
+        // 税額表・保険料額表（pay_tables）は、お客様ごとの表に加え、tenant_id = 0 の行を「運営者が用意した共通の表」として全お客様が読める
+        $sql[] = "CREATE TABLE {$p}pay_tables (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  kind varchar(20) NOT NULL,
+  fiscal_year int(11) NOT NULL,
+  region varchar(20) NOT NULL DEFAULT '',
+  title varchar(191) NOT NULL DEFAULT '',
+  file_name varchar(255) NOT NULL DEFAULT '',
+  file_path varchar(255) NOT NULL DEFAULT '',
+  mime varchar(100) NOT NULL DEFAULT '',
+  data_json longtext NULL,
+  uploaded_by varchar(191) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  PRIMARY KEY  (id),
+  KEY tenant_kind (tenant_id,kind,fiscal_year)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}payslips (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  department varchar(50) NOT NULL DEFAULT '',
+  employee_number varchar(20) NOT NULL DEFAULT '',
+  pay_year int(11) NOT NULL,
+  pay_month int(11) NOT NULL,
+  period_start varchar(10) NOT NULL DEFAULT '',
+  period_end varchar(10) NOT NULL DEFAULT '',
+  data_json longtext NULL,
+  created_by varchar(191) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_payslip (tenant_id,staff_id,pay_year,pay_month)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}payslip_history (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  payslip_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  pay_year int(11) NOT NULL,
+  pay_month int(11) NOT NULL,
+  data_json longtext NULL,
+  saved_at datetime NULL,
+  replaced_at datetime NOT NULL,
+  replaced_by varchar(191) NOT NULL DEFAULT '',
+  reason varchar(20) NOT NULL DEFAULT '',
+  PRIMARY KEY  (id),
+  KEY tenant_staff_month (tenant_id,staff_id,pay_year,pay_month)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}year_end (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  adjust_year int(11) NOT NULL,
+  apply_month int(11) NOT NULL DEFAULT 12,
+  adjustment int(11) NOT NULL DEFAULT 0,
+  data_json longtext NULL,
+  updated_by varchar(191) NOT NULL DEFAULT '',
+  created_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_year_end (tenant_id,staff_id,adjust_year)
+) $c;";
+
+        $sql[] = "CREATE TABLE {$p}year_end_decl (
+  id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  tenant_id bigint(20) unsigned NOT NULL,
+  staff_id bigint(20) unsigned NOT NULL,
+  staff_name varchar(191) NOT NULL DEFAULT '',
+  decl_year int(11) NOT NULL,
+  data_json longtext NULL,
+  submitted_at datetime NOT NULL,
+  updated_at datetime NULL,
+  PRIMARY KEY  (id),
+  UNIQUE KEY uniq_decl (tenant_id,staff_id,decl_year)
 ) $c;";
 
         foreach ($sql as $statement) {

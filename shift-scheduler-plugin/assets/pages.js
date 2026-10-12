@@ -542,11 +542,14 @@
         el('h2', { class: 'ss-h2', text: 'スタッフが見られるシフトの範囲' }),
         el('label', { class: 'ss-inline' }, [el('input', { type: 'radio', name: 'staff_view', value: 'all', checked: d.staff_view === 'all' }), '全員のシフトを見られる（交代の相談がしやすい）']),
         el('label', { class: 'ss-inline' }, [el('input', { type: 'radio', name: 'staff_view', value: 'self', checked: d.staff_view === 'self' }), '自分のシフトだけ見られる（他のスタッフのシフトは表示されません）']),
+        el('h2', { class: 'ss-h2', text: '副管理者の権限' }),
+        el('label', { class: 'ss-inline' }, [el('input', { type: 'checkbox', name: 'manager_payroll', checked: !!d.manager_payroll }), '副管理者も、給与計算（給与明細・年末調整・税額表）と、従業員の給与設定を扱える']),
+        el('p', { class: 'ss-muted', text: 'チェックしない場合、給与を扱えるのは、契約者（管理者）だけです。' }),
         cfg.writable ? el('div', { class: 'ss-actions' }, [el('button', { type: 'submit', class: 'ss-btn', text: '保存' })]) : null
       ]);
       f.addEventListener('submit', function (ev) {
         ev.preventDefault();
-        api('PUT', 'settings', { staff_view: f.elements.staff_view.value }).then(function () { say('保存しました。', true); }).catch(fail);
+        api('PUT', 'settings', { staff_view: f.elements.staff_view.value, manager_payroll: f.elements.manager_payroll.checked }).then(function () { say('保存しました。', true); }).catch(fail);
       });
       root.appendChild(f);
     }).catch(fail);

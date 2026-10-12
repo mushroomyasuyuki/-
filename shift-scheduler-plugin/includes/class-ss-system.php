@@ -44,6 +44,46 @@ final class SS_System {
         return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id = %d", (int) $id), ARRAY_A);
     }
 
+    /** 署名つきURLの確認用：税額表などの元のファイルの行を、お客様を問わずIDで探す（呼び出し側で、必ず署名を確かめること） */
+    public static function pay_table_by_id($id) {
+        global $wpdb;
+        $t = self::table('pay_tables');
+        return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$t} WHERE id = %d AND tenant_id > 0", (int) $id), ARRAY_A);
+    }
+
+    /** 運営者が用意した、全お客様に共通の税額表・保険料額表（tenant_id = 0。お客様からは読むだけ） */
+    public static function shared_pay_tables($kind) {
+        global $wpdb;
+        $t = self::table('pay_tables');
+        return $wpdb->get_results($wpdb->prepare("SELECT * FROM {$t} WHERE tenant_id = 0 AND kind = %s ORDER BY fiscal_year DESC, id DESC LIMIT 200", (string) $kind), ARRAY_A);
+    }
+
+    /**
+     * 運営者の操作：あるお客様が登録した税額表・保険料額表を、全お客様の共通の表として写す（元のファイルは写さない）。
+     * 同じ種類・年度・地域・題名の共通の表は、置き換える。写した件数を返す。
+     */
+    public static function share_pay_tables($tenant_id) {
+        global $wpdb;
+        $t = self::table('pay_tables');
+        $rows = $wpdb->get_results($wpdb->prepare("SELECT * FROM {$t} WHERE tenant_id = %d", (int) $tenant_id), ARRAY_A);
+        $n = 0;
+        foreach ((array) $rows as $r) {
+            if ((int) $tenant_id <= 0) {
+                break;
+            }
+            $wpdb->query($wpdb->prepare("DELETE FROM {$t} WHERE tenant_id = 0 AND kind = %s AND fiscal_year = %d AND region = %s AND title = %s", $r['kind'], (int) $r['fiscal_year'], $r['region'], $r['title']));
+            $wpdb->insert($t, array('tenant_id' => 0, 'kind' => $r['kind'], 'fiscal_year' => (int) $r['fiscal_year'], 'region' => $r['region'], 'title' => $r['title'],
+                'file_name' => '', 'file_path' => '', 'mime' => '', 'data_json' => $r['data_json'], 'uploaded_by' => '運営者', 'created_at' => self::now()));
+            $n++;
+        }
+        return $n;
+    }
+
+    public static function delete_shared_pay_table($id) {
+        global $wpdb;
+        return (bool) $wpdb->delete(self::table('pay_tables'), array('id' => (int) $id, 'tenant_id' => 0));
+    }
+
     /** 署名つきURLの確認用：自社情報の書類・印影の行を、お客様を問わずIDで探す（呼び出し側で、必ず署名を確かめること） */
     public static function company_document_by_id($id) {
         global $wpdb;

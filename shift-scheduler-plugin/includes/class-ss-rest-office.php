@@ -217,6 +217,7 @@ final class SS_Rest_Office {
                 $row['employment'] = $s['employment'];
                 $row['is_admin'] = $u && in_array($u['role'], array('owner', 'manager'), true) ? '1' : '0';
                 $row['has_login_password'] = $u && $u['status'] === 'active';
+                $row = array_merge(SS_Rest_Kyuyo::employee_extra($s), $row); // 生年月日・住所・口座・給与設定など（給与の項目は、給与を扱える人だけ）
             }
             $out[] = $row;
         }

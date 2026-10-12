@@ -294,17 +294,28 @@ final class SS_Rest_Schedule {
 
     public static function get_settings() {
         $tenant = SS_Context::tenant();
-        return rest_ensure_response(array('staff_view' => SS_Tenants::staff_view($tenant)));
+        return rest_ensure_response(array('staff_view' => SS_Tenants::staff_view($tenant), 'manager_payroll' => SS_Tenants::manager_payroll($tenant)));
     }
 
     public static function save_settings(WP_REST_Request $req) {
         $p = $req->get_json_params();
-        $view = is_array($p) && isset($p['staff_view']) ? (string) $p['staff_view'] : '';
-        if (!in_array($view, array('all', 'self'), true)) {
+        $p = is_array($p) ? $p : array();
+        $changes = array();
+        if (isset($p['staff_view'])) {
+            if (!in_array($p['staff_view'], array('all', 'self'), true)) {
+                return new WP_Error('invalid', '設定が正しくありません。', array('status' => 400));
+            }
+            $changes['staff_view'] = (string) $p['staff_view'];
+        }
+        if (isset($p['manager_payroll'])) {
+            $changes['manager_payroll'] = (bool) $p['manager_payroll']; // 副管理者にも給与を扱わせるか
+        }
+        if (!$changes) {
             return new WP_Error('invalid', '設定が正しくありません。', array('status' => 400));
         }
-        SS_Tenants::save_settings(SS_Context::tenant_id(), array('staff_view' => $view));
-        return rest_ensure_response(array('ok' => true, 'staff_view' => $view));
+        SS_Tenants::save_settings(SS_Context::tenant_id(), $changes);
+        $tenant = SS_System::tenant_by_id(SS_Context::tenant_id());
+        return rest_ensure_response(array('ok' => true, 'staff_view' => SS_Tenants::staff_view($tenant), 'manager_payroll' => SS_Tenants::manager_payroll($tenant)));
     }
 
     /* ---------- 補助 ---------- */

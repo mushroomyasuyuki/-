@@ -32,12 +32,16 @@ function api(method, p, body, res, json) {
   if (method === 'GET' && ['clients', 'products', 'quotes', 'invoices', 'costs'].includes(p)) return json(p === 'clients' ? [{ id: 1, name: '顧客X', rep1: '', rep2: '', postalCode: '', address: '', phone: '', projects: '案件1', memo: '' }] : []);
   if (method === 'GET' && p === 'company-documents') return json([{ id: 5, title: '契約書', fileName: '契約書.pdf', fileUrl: '/?ss_file=company_doc&id=5&exp=1&sig=x', uploadedBy: '山田', createdAt: '2026-10-01 10:00:00' }]);
   if (method === 'POST' && p === 'company-info') return json(Object.assign({ name: 'テスト株式会社', weeklyHolidays: [0], holidayDates: [] }, body));
+  if (method === 'GET' && ['insurance-tables', 'tax-tables', 'bonus-tax-tables', 'daily-tax-tables', 'leave-five-day-warnings', 'year-end', 'year-end-decl', 'payslips', 'leave-grants', 'my-payslips'].includes(p)) return json([]);
+  if (method === 'GET' && /^(leave-balance|leave-five-day-check)\/\d+$/.test(p)) return json(p.startsWith('leave-balance') ? { granted: 10, used: 1, usedDetails: [], expired: 0, remaining: 9, nextExpiry: null, standardGrantDays: 10, hireDate: '2020-04-01' } : []);
+  if (method === 'GET' && p === 'my-leave-balance') return json({ granted: 10, used: 1, usedDetails: [], expired: 0, remaining: 9, nextExpiry: null, hireDate: '2020-04-01', staffName: '佐藤', department: '製作', grants: [], fiveDayCheck: [] });
+  if (method === 'GET' && /^(my-year-end\/\d+|payslips\/\d+\/\d+\/\d+|year-end\/\d+\/\d+|attendance-month)$/.test(p)) return json(p === 'attendance-month' ? [] : false);
   if (method === 'GET' && p === 'backup/status') return json({ lastDownloadAt: '2026-10-12 09:00:00', managed: true });
   missing.push(method + ' ' + p);
   return json({ error: 'not found' }, 404);
 }
-const PAGES = { nippo: 'nippo1-fixed.html', yotei: 'yotei-jisseki-input.html', chorei: 'chorei-fixed.html', shukei: 'kanri-shukei.html', keiri: 'kanri-keiri.html', jisha: 'kanri-jisha.html' };
-const ADMIN_PAGES = ['shukei', 'jisha'];
+const PAGES = { nippo: 'nippo1-fixed.html', yotei: 'yotei-jisseki-input.html', chorei: 'chorei-fixed.html', shukei: 'kanri-shukei.html', keiri: 'kanri-keiri.html', jisha: 'kanri-jisha.html', kyuyo: 'kanri-kyuyo.html', myleave: 'my-leave.html', meibo: 'employee-register.html' };
+const ADMIN_PAGES = ['shukei', 'jisha', 'kyuyo', 'meibo'];
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname.startsWith('/assets/')) {
@@ -95,6 +99,16 @@ const server = http.createServer((req, res) => {
       const t = await page.innerText('body');
       check('jisha: company info form and documents are shown; the shared admin password panel is not', t.includes('契約書') && !t.includes('管理者共通パスワード'));
       check('jisha: no call for the shared admin password', !calls.some(c => c.p.startsWith('admin/password') || c.p.startsWith('admin/set-password')));
+    }
+    if (key === 'meibo') {
+      const v = await page.evaluate(() => { const vis = el => !!el && el.offsetParent !== null; return { add: vis(document.getElementById('addBtn')), dept: vis(document.getElementById('deptPanel')), imp: vis(document.getElementById('importPanel')), del: Array.from(document.querySelectorAll('.del-link,.pw-link,.admin-toggle-link')).some(vis), edit: Array.from(document.querySelectorAll('.name-edit-link')).some(vis) }; });
+      check('meibo: only detail editing is offered (no add/delete/department/import/password/admin)', !v.add && !v.dept && !v.imp && !v.del && v.edit, JSON.stringify(v));
+    }
+    if (key === 'myleave') {
+      check('myleave: own leave balance and payslips are requested', calls.some(c => c.p === 'my-leave-balance') && calls.some(c => c.p === 'my-payslips'), calls.map(c => c.p).join(','));
+    }
+    if (key === 'kyuyo') {
+      check('kyuyo: tax/insurance tables are requested', ['insurance-tables', 'tax-tables'].every(n => calls.some(c => c.p === n)), calls.map(c => c.p).join(','));
     }
     if (key === 'keiri') {
       check('keiri: accounting data is loaded (clients, quotes, …)', ['clients', 'products', 'quotes', 'invoices', 'costs'].every(n => calls.some(c => c.p === n)), calls.map(c => c.p).join(','));

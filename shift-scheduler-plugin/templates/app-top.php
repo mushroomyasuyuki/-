@@ -2,12 +2,12 @@
 /**
  * お客様（会社）のトップページ。マッシュオフィスシステムの「業務システム」トップと同じ見た目のカード。
  * 従業員ページは全員、管理者ページは管理者（副管理者を含む）にだけ出す（ログインで判定するので、パスワードの入力は不要）。
- * まだ移していない機能は「準備中」として、押せないカードで出す。
+ * 使えない機能は、押せないカードで出す（badge：理由。なければ「準備中」）。
  */
 if (!defined('ABSPATH')) { exit; }
 $card = function ($c) {
     $cls = 'nav-card c-' . $c['color'] . (empty($c['url']) ? ' is-soon' : '');
-    $inner = '<span class="icon" aria-hidden="true">' . $c['icon'] . '</span><div class="label">' . esc_html($c['label']) . (empty($c['url']) ? '<span class="soon">準備中</span>' : '') . '</div><div class="desc">' . esc_html($c['desc']) . '</div>';
+    $inner = '<span class="icon" aria-hidden="true">' . $c['icon'] . '</span><div class="label">' . esc_html($c['label']) . (empty($c['url']) ? '<span class="soon">' . esc_html(isset($c['badge']) ? $c['badge'] : '準備中') . '</span>' : '') . '</div><div class="desc">' . esc_html($c['desc']) . '</div>';
     if (empty($c['url'])) {
         return '<div class="' . esc_attr($cls) . '" aria-disabled="true">' . $inner . '</div>';
     }

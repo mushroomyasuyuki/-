@@ -73,6 +73,12 @@ final class SS_Tenants {
         return isset($s['staff_view']) && $s['staff_view'] === 'self' ? 'self' : 'all';
     }
 
+    /** 副管理者にも、給与（給与計算・給与明細・税額表）を扱わせるか（初期値：扱わせない） */
+    public static function manager_payroll(array $tenant) {
+        $s = self::settings($tenant);
+        return !empty($s['manager_payroll']);
+    }
+
     public static function save_settings($tenant_id, array $changes) {
         global $wpdb;
         $tenant = SS_System::tenant_by_id($tenant_id);

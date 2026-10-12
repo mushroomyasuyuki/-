@@ -1,0 +1,768 @@
+<!--
+  ============================================================
+  有給休暇照会画面(従業員本人用/WordPress DB版・Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「マッシュオフィスシステム(WordPress DB版)」プラグインを有効化しておく必要があります。
+
+  従業員が自分自身の有給休暇の残日数・次回失効予定・付与履歴・年5日取得義務の状況を
+  確認できる画面です(自分の分だけを見られ、他人の分は見られません)。
+  ログイン状態(mush_nippo_auth)は日報・タイムカードのページと共通です。
+  ============================================================
+-->
+<!-- ============================================================
+     従業員ログインゲート(日報・タイムカードと共通のログイン状態を使う)
+     ============================================================ -->
+<div id="mushNippoGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">ご自身のお名前とパスワードでログインしてください。</p>
+    <select id="mushNippoStaff" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="">-- 読み込み中… --</option>
+    </select>
+    <input type="password" id="mushNippoPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushNippoErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushNippoSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var STORAGE_KEY = 'mush_nippo_auth';
+
+  function loadAuth(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(auth){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushNippoGate');
+  if(loadAuth()){
+    gate.style.display = 'none';
+  } else {
+    var pwInput = document.getElementById('mushNippoPw');
+    var errEl = document.getElementById('mushNippoErr');
+    var btn = document.getElementById('mushNippoSubmit');
+    var staffSelect = document.getElementById('mushNippoStaff');
+    var DEPTS = ['営業', 'デザイン', '製作', '事務'];
+
+    function loadStaffOptions(){
+      fetch(API_BASE + '/employees').then(function(res){
+        return res.json();
+      }).then(function(rows){
+        if(!Array.isArray(rows)) rows = [];
+        // 「従業員登録」で追加した新しい部署の従業員も選べるよう、所属している部署を一覧に加える。
+        for(var x=0; x<rows.length; x++){ var dn = rows[x].department; if(dn){ if(DEPTS.indexOf(dn) === -1){ DEPTS.push(dn); } } }
+        var html = '<option value="">-- 選択してください --</option>';
+        for(var d=0; d<DEPTS.length; d++){
+          var dept = DEPTS[d];
+          var opts = '';
+          for(var i=0; i<rows.length; i++){
+            var r = rows[i];
+            if(r.department === dept){
+              opts += '<option value="' + r.id + '">' + String(r.name).replace(/[&<>"]/g, function(c){
+                return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+              }) + '</option>';
+            }
+          }
+          if(opts){ html += '<optgroup label="' + dept + '">' + opts + '</optgroup>'; }
+        }
+        staffSelect.innerHTML = html;
+      }).catch(function(e){
+        staffSelect.innerHTML = '<option value="">-- 選択してください --</option>';
+      });
+    }
+    loadStaffOptions();
+
+    function tryLogin(){
+      var password = pwInput.value;
+      if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+      var staffId = staffSelect.value;
+      if(!staffId){ errEl.textContent = 'ご自身のお名前を選択してください。'; return; }
+      btn.disabled = true; btn.textContent = '確認中…';
+      fetch(API_BASE + '/auth/login', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ staffId: staffId, password: password }),
+      }).then(function(res){
+        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+      }).then(function(result){
+        if(!result.ok){
+          var msg = 'ログインに失敗しました。';
+          if(result.data){ if(result.data.error){ msg = result.data.error; } }
+          throw new Error(msg);
+        }
+        saveAuth({ token: result.data.token, expiresAt: Date.now() + (result.data.expiresIn * 1000) });
+        gate.style.display = 'none';
+        try{ window.dispatchEvent(new Event('mushNippoAuthed')); }catch(e){}
+      }).catch(function(e){
+        var msg = '';
+        if(e){ if(e.message){ msg = e.message; } }
+        errEl.textContent = msg || 'ログインに失敗しました。';
+      }).then(function(){
+        btn.disabled = false; btn.textContent = 'ログイン';
+      });
+    }
+
+    btn.addEventListener('click', tryLogin);
+    pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+    pwInput.focus();
+  }
+})();
+</script>
+
+<div id="myleave-app">読み込み中…</div>
+<div id="myleave-print-root"></div>
+
+<style>
+  #myleave-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    --navy: #1E2A4A; --navy-light: #2C3B63; --orange: #E4572E; --green: #3F8F6B;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 720px; margin: 0 auto;
+  }
+  #myleave-app * { box-sizing: border-box; }
+  #myleave-app .header { background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0; }
+  #myleave-app .header h1 { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  #myleave-app .header p { margin: 0; font-size: 13px; color: #94a3b8; }
+  #myleave-app .panel { margin: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 16px 18px; }
+  #myleave-app .panel-title { font-size: 14px; font-weight: 700; color: var(--navy); margin: 0 0 10px; }
+  #myleave-app .decl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 14px; margin: 6px 0 14px; }
+  #myleave-app .decl-grid label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 3px; }
+  #myleave-app .decl-grid input[type=text], #myleave-app .decl-grid select, #myleave-app .decl-memo { width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; box-sizing: border-box; font-family: inherit; }
+  #myleave-app .decl-grid .decl-check label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink); }
+  #myleave-app .decl-group { font-size: 12.5px; font-weight: 700; color: var(--navy); margin: 12px 0 2px; }
+  #myleave-app .decl-msg { font-size: 12.5px; margin: 8px 0 0; }
+  #myleave-app .decl-msg.ok { color: #047857; }
+  #myleave-app .decl-msg.err { color: #ea580c; }
+  #myleave-app .panel-sub { font-size: 12px; color: var(--muted); margin: 0 0 12px; line-height: 1.6; }
+  #myleave-app .balance-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  #myleave-app .balance-card { background: #f7f6f3; border-radius: 6px; padding: 12px 10px; text-align: center; }
+  #myleave-app .balance-card .label { font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+  #myleave-app .balance-card .value { font-size: 22px; font-weight: 700; color: var(--navy); }
+  #myleave-app .balance-card .value.warn { color: var(--orange); }
+  #myleave-app .expiry-note { margin-top: 12px; font-size: 12.5px; color: var(--ink); background: #fff7f2; border: 1px solid #fde0d0; border-radius: 4px; padding: 8px 12px; }
+  #myleave-app table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #myleave-app th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  #myleave-app td { padding: 6px 8px; border-bottom: 1px solid #f1f0eb; white-space: nowrap; }
+  #myleave-app .status-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  #myleave-app .status-badge.ok { background: #e7f3ed; color: var(--green); }
+  #myleave-app .status-badge.warning { background: #fef3e7; color: #b45309; }
+  #myleave-app .status-badge.violated { background: #fdecea; color: var(--orange); }
+  #myleave-app .empty-note { font-size: 12.5px; color: var(--muted); text-align: center; padding: 16px 0; }
+  #myleave-app .back-link { text-align: center; padding: 16px; }
+  #myleave-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+  #myleave-app .payslip-month-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  #myleave-app .payslip-month-btn {
+    background: #f7f6f3; border: 1px solid var(--border); border-radius: 4px; padding: 8px 14px;
+    font-size: 13px; cursor: pointer; font-family: inherit; color: var(--ink);
+  }
+  #myleave-app .payslip-month-btn.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+  #myleave-app .btn-primary {
+    background: var(--navy); color: #fff; border: none; border-radius: 4px; padding: 9px 18px;
+    font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; margin-top: 12px;
+  }
+  #myleave-app .btn-primary:hover { background: var(--navy-light); }
+
+  /* 給与明細書の表示・印刷(給与計算ページの明細書テンプレートと同じデザイン) */
+  #myleave-app .ps-wrap { --ps-teal: #3bb6ac; --ps-teal-light: #e4f7f5; margin-top: 14px; border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; background: #fff; }
+  #myleave-app .ps-title { text-align: center; font-size: 18px; font-weight: 700; margin: 0 0 12px; color: var(--ink); }
+  #myleave-app .ps-period { font-size: 12px; color: #444; margin-bottom: 4px; }
+  #myleave-app .ps-top-row { display: flex; justify-content: space-between; align-items: flex-end; margin: 8px 0 12px; }
+  #myleave-app .ps-company { font-size: 14px; font-weight: 700; }
+  #myleave-app .ps-company-row, #myleave-print-root .ps-company-row { display: flex; align-items: center; gap: 10px; }
+  #myleave-app .ps-seal, #myleave-print-root .ps-seal { object-fit: contain; flex: none; }
+  #myleave-app .ps-net-box { text-align: right; }
+  #myleave-app .ps-net-label { font-size: 12px; color: #444; margin-bottom: 2px; }
+  #myleave-app .ps-net-amount { font-size: 22px; font-weight: 700; color: var(--ink); }
+  #myleave-app .ps-staffline { font-size: 13px; margin-bottom: 12px; }
+  #myleave-app .ps-section { display: flex; border: 1px solid var(--ps-teal); margin-bottom: 8px; }
+  #myleave-app .ps-section-label {
+    flex: 0 0 56px; background: var(--ps-teal); color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; text-align: center;
+  }
+  #myleave-app .ps-section-body { flex: 1; }
+  #myleave-app .ps-grid-row { display: grid; grid-template-columns: repeat(6, 1fr); }
+  #myleave-app .ps-grid-row + .ps-grid-row { border-top: 1px solid var(--ps-teal); }
+  #myleave-app .ps-cell { border-left: 1px solid var(--ps-teal); padding: 4px 5px; min-height: 34px; }
+  #myleave-app .ps-cell:first-child { border-left: none; }
+  #myleave-app .ps-cell-label { font-size: 9.5px; color: #333; background: var(--ps-teal-light); padding: 1px 3px; margin: -4px -5px 3px; }
+  #myleave-app .ps-cell-value { font-size: 12px; text-align: right; font-weight: 600; padding-right: 2px; }
+  #myleave-app .ps-remarks { font-size: 11px; margin-top: 6px; border: 1px solid #ccc; padding: 6px 10px; }
+  #myleave-app .ps-remarks div { margin: 2px 0; }
+
+  #myleave-print-root { display: none; }
+  @page { size: A4; margin: 0; }
+  @media print {
+    /* visibility:hiddenだけだと#myleave-app(残日数・付与履歴・給与明細一覧など)が
+       画面には映らないまま高さだけ残ってしまい、そのぶん余分な空白ページが増える。
+       display:noneでレイアウト自体を無くしてから、印刷用ビューだけを表示する。 */
+    #myleave-app { display: none !important; }
+    body * { visibility: hidden; }
+    #myleave-print-root, #myleave-print-root * { visibility: visible; }
+    #myleave-print-root, #myleave-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #myleave-print-root { display: block; position: absolute; top: 0; left: 0; width: 210mm; }
+  }
+  #myleave-print-root {
+    --ps-teal: #3bb6ac; --ps-teal-light: #e4f7f5;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif; color: #222;
+  }
+  /* min-height:297mmは丸め誤差で1ページ分をわずかに超え、空白ページが増える原因になるため使わない。 */
+  #myleave-print-root .ps-page { width: 210mm; padding: 14mm 16mm; box-sizing: border-box; }
+  #myleave-print-root .ps-title { text-align: center; font-size: 22px; font-weight: 700; margin: 0 0 14px; }
+  #myleave-print-root .ps-period { font-size: 12px; color: #444; margin-bottom: 4px; }
+  #myleave-print-root .ps-top-row { display: flex; justify-content: space-between; align-items: flex-end; margin: 10px 0 14px; }
+  #myleave-print-root .ps-company { font-size: 16px; font-weight: 700; }
+  #myleave-print-root .ps-net-box { text-align: right; }
+  #myleave-print-root .ps-net-label { font-size: 12px; color: #444; margin-bottom: 2px; }
+  #myleave-print-root .ps-net-amount { font-size: 26px; font-weight: 700; color: #222; }
+  #myleave-print-root .ps-staffline { font-size: 13px; margin-bottom: 14px; }
+  #myleave-print-root .ps-section { display: flex; border: 1px solid var(--ps-teal); margin-bottom: 10px; }
+  #myleave-print-root .ps-section-label {
+    flex: 0 0 70px; background: var(--ps-teal); color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; letter-spacing: .1em;
+  }
+  #myleave-print-root .ps-section-body { flex: 1; }
+  #myleave-print-root .ps-grid-row { display: grid; grid-template-columns: repeat(6, 1fr); }
+  #myleave-print-root .ps-grid-row + .ps-grid-row { border-top: 1px solid var(--ps-teal); }
+  #myleave-print-root .ps-cell { border-left: 1px solid var(--ps-teal); padding: 5px 6px; min-height: 40px; }
+  #myleave-print-root .ps-cell:first-child { border-left: none; }
+  #myleave-print-root .ps-cell-label { font-size: 10.5px; color: #333; background: var(--ps-teal-light); padding: 2px 4px; margin: -5px -6px 4px; }
+  #myleave-print-root .ps-cell-value { font-size: 13px; text-align: right; font-weight: 600; padding-right: 2px; }
+  #myleave-print-root .ps-remarks { font-size: 11.5px; margin-top: 8px; border: 1px solid #ccc; padding: 8px 12px; }
+  #myleave-print-root .ps-remarks div { margin: 3px 0; }
+</style>
+
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+
+  function apiFetch(url, opts){
+    var o = Object.assign({}, opts || {});
+    var a = null;
+    try{ a = JSON.parse(localStorage.getItem('mush_nippo_auth') || 'null'); }catch(e){ a = null; }
+    if(!(a && a.token && a.expiresAt > Date.now())) a = null;
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: 'Bearer ' + a.token } : {});
+    return fetch(url, o);
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+    });
+  }
+
+  var state = {
+    data: null, loading: true, errorMsg: '',
+    payslips: [], payslipsLoading: false, payslipsErrorMsg: '',
+    selectedPayslip: null, selectedKey: '', selectedLoading: false, selectedErrorMsg: '',
+    // 年末調整の申告(本人が入力して提出する)。formは入力中の値(入力のたびに再描画はしない)。
+    decl: { year: new Date().getFullYear(), loaded: false, loading: false, form: null, submittedAt: '', msg: '', ok: false, saving: false },
+  };
+
+  function statusLabel(status){
+    if (status === 'ok') { return 'クリア'; }
+    if (status === 'warning') { return '未達(期限内)'; }
+    return '未達(期限超過)';
+  }
+
+  // 年末調整の過不足額(徴収はプラス、還付はマイナス)。0円のときは空欄にする。
+  function yearEndCell(p){
+    var v = Math.round(Number(p.yearEndAdjustment) || 0);
+    if (v === 0) { return psCell('', ''); }
+    return psCell('年末調整', (v < 0 ? '-' : '') + yen(Math.abs(v)));
+  }
+  function yen(n){
+    var v = Number(n) || 0;
+    return '¥' + v.toLocaleString('ja-JP');
+  }
+  function minutesToHM(mins){
+    if (mins === null || mins === undefined || isNaN(mins)) { return '0:00'; }
+    var neg = mins < 0;
+    var abs = Math.round(Math.abs(mins));
+    var h = Math.floor(abs / 60);
+    var m = abs % 60;
+    var label = h + ':' + String(m).padStart(2, '0');
+    return neg ? ('-' + label) : label;
+  }
+  // 支給・控除の内訳から、総支給額・課税対象額(当月分)・総控除額・差引支給額を計算する
+  // (給与計算ページの計算ロジックと同じ。保存済みの明細書データを表示用に集計するだけ)。
+  function derivePayslipTotals(p){
+    var paymentItems = [
+      { amount: p.basicPay, taxable: true },
+      { amount: p.overtimePay, taxable: true },
+      { amount: p.holidayPay, taxable: true },
+      { amount: p.nightPay, taxable: true },
+      { amount: p.commuteAllowance, taxable: p.commuteTaxable },
+      { amount: p.qualificationAllowance, taxable: p.qualificationTaxable },
+      { amount: p.positionAllowance, taxable: p.positionTaxable },
+      { amount: p.housingAllowance, taxable: p.housingTaxable },
+      { amount: p.familyAllowance, taxable: p.familyTaxable },
+      { amount: p.other1Amount, taxable: p.other1Taxable },
+      { amount: p.other2Amount, taxable: p.other2Taxable },
+      { amount: p.other3Amount, taxable: p.other3Taxable },
+    ];
+    var grossPay = 0;
+    var taxableThisMonth = 0;
+    paymentItems.forEach(function(it){
+      var amt = Number(it.amount) || 0;
+      grossPay += amt;
+      if (it.taxable) { taxableThisMonth += amt; }
+    });
+    var deductionItems = [
+      p.employmentInsurance, p.healthInsurance, p.careInsurance, p.pensionInsurance, p.childSupport,
+      p.incomeTax, p.residentTax, p.lifeInsurance, p.wageSavings, p.stockOwnership, p.yearEndAdjustment,
+    ];
+    var totalDeduction = 0;
+    deductionItems.forEach(function(v){ totalDeduction += Number(v) || 0; });
+    var netPay = grossPay - totalDeduction;
+    return { grossPay: grossPay, taxableThisMonth: taxableThisMonth, totalDeduction: totalDeduction, netPay: netPay };
+  }
+
+  // 自社情報に登録した社印(給与明細書の会社名の横に出す)。未登録・取得できないときは何も出さない。
+  function sealImgHtml(){
+    var c = state.company;
+    if(!c){ return ''; }
+    if(!c.sealImageUrl){ return ''; }
+    var size = Math.max(30, Math.min(70, Number(c.sealSize) || 44));
+    return '<img class="ps-seal" src="' + c.sealImageUrl + '" alt="社印" style="width:' + size + 'px;height:' + size + 'px;">';
+  }
+  async function ensureCompanySeal(){
+    if(state.company !== undefined){ return; }
+    try{
+      var res = await apiFetch(API_BASE + '/company-info');
+      state.company = res.ok ? await res.json() : null;
+    }catch(e){ state.company = null; }
+  }
+
+  function renderPayslipView(p){
+    var totals = derivePayslipTotals(p);
+    return '' +
+      '<div class="ps-wrap">' +
+        '<div class="ps-title">' + (p.periodStart ? p.periodStart.slice(0,4) : '') + '年' + (p.periodStart ? Number(p.periodStart.slice(5,7)) : '') + '月分 給与支払明細書</div>' +
+        '<div class="ps-period">給与計算期間: ' + escapeHtml(p.periodStart) + '〜' + escapeHtml(p.periodEnd) + (p.paymentDate ? ' ／ 支払日: ' + escapeHtml(p.paymentDate) : '') + '</div>' +
+        '<div class="ps-top-row">' +
+          '<div class="ps-company-row"><div class="ps-company">' + escapeHtml(p.companyName) + '</div>' + sealImgHtml() + '</div>' +
+          '<div class="ps-net-box"><div class="ps-net-label">差引支給額</div><div class="ps-net-amount">' + yen(totals.netPay) + '</div></div>' +
+        '</div>' +
+        '<div class="ps-staffline">氏名: ' + escapeHtml(p.staffName) + '(社員番号: ' + escapeHtml(p.employeeNumber == null || p.employeeNumber === '' ? '' : String(p.employeeNumber).padStart(3, '0')) + ')</div>' +
+        renderPayslipSections(p, totals) +
+        '<button type="button" class="btn-primary" onclick="__myleave.printPayslip()">印刷する</button>' +
+      '</div>';
+  }
+
+  function psCell(label, value){
+    return '<div class="ps-cell"><div class="ps-cell-label">' + escapeHtml(label) + '</div><div class="ps-cell-value">' + escapeHtml(value) + '</div></div>';
+  }
+
+  function renderPayslipSections(p, totals){
+    return '' +
+      '<div class="ps-section"><div class="ps-section-label">勤怠</div><div class="ps-section-body">' +
+        '<div class="ps-grid-row">' + psCell('所定就労日', p.scheduledDays) + psCell('出勤日数', p.workedDays) + psCell('欠勤日数', p.absentDays) + psCell('特休日数', p.specialLeaveDays) + psCell('有休日数', p.paidLeaveDays) + psCell('有休残日数', p.paidLeaveRemaining) + '</div>' +
+        '<div class="ps-grid-row">' + psCell('所定労働時間', minutesToHM(p.scheduledMinutes)) + psCell('遅刻早退時間', minutesToHM(p.lateEarlyMinutes)) + psCell('実働時間', minutesToHM(p.actualMinutes)) + psCell('残業時間', minutesToHM(p.overtimeMinutes)) + psCell('休日勤務時間', minutesToHM(p.holidayMinutes)) + psCell('深夜勤務時間', minutesToHM(p.nightMinutes)) + '</div>' +
+      '</div></div>' +
+      '<div class="ps-section"><div class="ps-section-label">支給</div><div class="ps-section-body">' +
+        '<div class="ps-grid-row">' + psCell('基本給', yen(p.basicPay)) + psCell('残業手当', yen(p.overtimePay)) + psCell('休日手当', yen(p.holidayPay)) + psCell('夜勤手当', yen(p.nightPay)) + psCell(p.other1Label || '', p.other1Label ? yen(p.other1Amount) : '') + psCell(p.other2Label || '', p.other2Label ? yen(p.other2Amount) : '') + '</div>' +
+        '<div class="ps-grid-row">' + psCell('通勤手当', yen(p.commuteAllowance)) + psCell('資格手当', yen(p.qualificationAllowance)) + psCell('役職手当', yen(p.positionAllowance)) + psCell('住宅手当', yen(p.housingAllowance)) + psCell('家族手当', yen(p.familyAllowance)) + psCell(p.other3Label || '', p.other3Label ? yen(p.other3Amount) : '') + '</div>' +
+      '</div></div>' +
+      '<div class="ps-section"><div class="ps-section-label">控除</div><div class="ps-section-body">' +
+        '<div class="ps-grid-row">' + psCell('雇用保険', yen(p.employmentInsurance)) + psCell('健康保険', yen(p.healthInsurance)) + psCell('介護保険', yen(p.careInsurance)) + psCell('厚生年金', yen(p.pensionInsurance)) + psCell('所得税', yen(p.incomeTax)) + psCell('住民税', yen(p.residentTax)) + '</div>' +
+        '<div class="ps-grid-row">' + psCell('生命保険', yen(p.lifeInsurance)) + psCell('財形貯蓄', yen(p.wageSavings)) + psCell('従業員持株会', yen(p.stockOwnership)) + psCell('子ども・子育て支援金', yen(p.childSupport)) + yearEndCell(p) + psCell('', '') + '</div>' +
+      '</div></div>' +
+      '<div class="ps-section"><div class="ps-section-label">合計</div><div class="ps-section-body">' +
+        '<div class="ps-grid-row">' + psCell('', '') + psCell('', '') + psCell('', '') + psCell('総支給額', yen(totals.grossPay)) + psCell('総控除額', yen(totals.totalDeduction)) + psCell('差引支給額', yen(totals.netPay)) + '</div>' +
+      '</div></div>' +
+      '<div class="ps-remarks">' +
+        '<div>&lt;備考&gt; 課税対象累計額: ' + yen(Number(p.taxableCumulativePrev || 0) + totals.taxableThisMonth) + '</div>' +
+        '<div>総支給累計額: ' + yen(Number(p.grossCumulativePrev || 0) + totals.grossPay) + '</div>' +
+      '</div>';
+  }
+
+  function renderPayslipPrintRoot(){
+    var root = document.getElementById('myleave-print-root');
+    if (!state.selectedPayslip) { root.innerHTML = ''; return; }
+    var p = state.selectedPayslip;
+    var totals = derivePayslipTotals(p);
+    root.innerHTML =
+      '<div class="ps-page">' +
+        '<div class="ps-title">' + (p.periodStart ? p.periodStart.slice(0,4) : '') + '年' + (p.periodStart ? Number(p.periodStart.slice(5,7)) : '') + '月分 給与支払明細書</div>' +
+        '<div class="ps-period">給与計算期間: ' + escapeHtml(p.periodStart) + '〜' + escapeHtml(p.periodEnd) + (p.paymentDate ? ' ／ 支払日: ' + escapeHtml(p.paymentDate) : '') + '</div>' +
+        '<div class="ps-top-row">' +
+          '<div class="ps-company-row"><div class="ps-company">' + escapeHtml(p.companyName) + '</div>' + sealImgHtml() + '</div>' +
+          '<div class="ps-net-box"><div class="ps-net-label">差引支給額</div><div class="ps-net-amount">' + yen(totals.netPay) + '</div></div>' +
+        '</div>' +
+        '<div class="ps-staffline">氏名: ' + escapeHtml(p.staffName) + '(社員番号: ' + escapeHtml(p.employeeNumber == null || p.employeeNumber === '' ? '' : String(p.employeeNumber).padStart(3, '0')) + ')</div>' +
+        renderPayslipSections(p, totals) +
+      '</div>';
+  }
+
+  function render(){
+    var app = document.getElementById('myleave-app');
+    if (state.loading) {
+      app.innerHTML = '<p style="padding:24px;text-align:center;color:#8a8577;font-size:13px;">読み込み中…</p>';
+      return;
+    }
+    if (state.errorMsg) {
+      app.innerHTML = '<p style="padding:24px;text-align:center;color:#E4572E;font-size:13px;">' + escapeHtml(state.errorMsg) + '</p>';
+      return;
+    }
+    var d = state.data;
+    var remaining = d.remaining;
+    var expiryHtml = '';
+    if (d.nextExpiry) {
+      expiryHtml = '<div class="expiry-note">' + d.nextExpiry.days + '日分が ' + escapeHtml(d.nextExpiry.date) + ' に失効予定です(2年間で時効消滅します)。早めの取得をご検討ください。</div>';
+    }
+
+    var grantRows = (d.grants || []).map(function(g){
+      return '<tr><td>' + escapeHtml(g.grantDate) + '</td><td>' + g.days + '日</td><td>' + escapeHtml(g.expiry) + '</td><td>' + escapeHtml(g.note || '') + '</td></tr>';
+    }).join('');
+
+    var fiveDayRows = (d.fiveDayCheck || []).map(function(c){
+      return '<tr><td>' + escapeHtml(c.grantDate) + '</td><td>' + c.days + '日</td><td>' + escapeHtml(c.deadline) + '</td><td>' + c.used + '日</td>' +
+        '<td><span class="status-badge ' + c.status + '">' + statusLabel(c.status) + '</span></td></tr>';
+    }).join('');
+
+    app.innerHTML =
+      '<div style="text-align:center;padding:10px 16px 0;"><a href="' + getSiteBasePath() + '/トップ/" style="color:#8a8577;font-size:13px;text-decoration:underline;">← トップに戻る</a></div>' +
+      '<div class="header"><h1>給与・有給休暇照会</h1><p>' + escapeHtml(d.staffName || '') + 'さん(' + escapeHtml(d.department || '') + ')の給与明細・有給休暇の残日数・失効予定・取得状況を確認できます</p></div>' +
+      '<div class="panel">' +
+        '<div class="panel-title">残日数</div>' +
+        '<div class="balance-cards">' +
+          '<div class="balance-card"><div class="label">残日数</div><div class="value">' + remaining + '日</div></div>' +
+          '<div class="balance-card"><div class="label">付与日数の合計</div><div class="value">' + d.granted + '日</div></div>' +
+          '<div class="balance-card"><div class="label">時効消滅した日数</div><div class="value ' + (d.expired > 0 ? 'warn' : '') + '">' + d.expired + '日</div></div>' +
+        '</div>' +
+        expiryHtml +
+      '</div>' +
+      '<div class="panel">' +
+        '<div class="panel-title">付与履歴</div>' +
+        (grantRows ? '<table><thead><tr><th>付与日</th><th>日数</th><th>失効日</th><th>メモ</th></tr></thead><tbody>' + grantRows + '</tbody></table>' : '<p class="empty-note">付与記録はまだありません</p>') +
+      '</div>' +
+      '<div class="panel">' +
+        '<div class="panel-title">年5日取得義務の状況</div>' +
+        '<p class="panel-sub">10日以上付与された分は、付与日から1年以内に5日以上取得する必要があります。</p>' +
+        (fiveDayRows ? '<table><thead><tr><th>付与日</th><th>付与日数</th><th>期限</th><th>取得済み</th><th>状況</th></tr></thead><tbody>' + fiveDayRows + '</tbody></table>' : '<p class="empty-note">対象の付与(10日以上)はありません</p>') +
+      '</div>' +
+      renderPayslipPanelHtml() +
+      renderDeclPanelHtml() +
+      '<div class="back-link"><a href="' + getSiteBasePath() + '/トップ/">← トップに戻る</a></div>';
+
+    renderPayslipPrintRoot();
+  }
+
+  // ---- 年末調整の申告 ----
+  function declEmptyForm(){
+    return {
+      spouse: 'none', spouseIncome: '', spouseElderly: false,
+      depGeneral: '', depSpecial: '', depElderly: '', depElderlyLive: '', depUnder16: '', depSpecialRelative: '',
+      depDisabled: '', depSpecialDisabled: '', depLiveSpecialDisabled: '',
+      selfDisability: 'none', single: 'none', student: false,
+      lifeNewGeneral: '', lifeNewCare: '', lifeNewPension: '', lifeOldGeneral: '', lifeOldPension: '',
+      quake: '', quakeOld: '', smallBiz: '', extraSocial: '', housingLoan: '',
+      prevWages: '', prevSocial: '', prevWithheld: '', memo: ''
+    };
+  }
+  function declText(key, label, placeholder){
+    return '<div><label>' + label + '</label><input type="text" inputmode="numeric" placeholder="' + escapeHtml(placeholder || '0') + '" value="' + escapeHtml(state.decl.form[key]) + '" oninput="__myleave.setDecl(\'' + key + '\', this.value)"></div>';
+  }
+  function declSelect(key, label, options){
+    var html = '';
+    for(var i = 0; i < options.length; i++){
+      html += '<option value="' + options[i][0] + '"' + (state.decl.form[key] === options[i][0] ? ' selected' : '') + '>' + escapeHtml(options[i][1]) + '</option>';
+    }
+    return '<div><label>' + label + '</label><select onchange="__myleave.setDecl(\'' + key + '\', this.value)">' + html + '</select></div>';
+  }
+  function declCheck(key, label){
+    return '<div class="decl-check"><label><input type="checkbox"' + (state.decl.form[key] ? ' checked' : '') + ' onchange="__myleave.setDecl(\'' + key + '\', this.checked)">' + label + '</label></div>';
+  }
+  function renderDeclPanelHtml(){
+    var d = state.decl;
+    if(!d.loaded){
+      if(!d.loading){ window.__myleave.loadDecl(); }
+      return '<div class="panel"><div class="panel-title">年末調整の申告</div><p class="empty-note">読み込み中…</p></div>';
+    }
+    var yearOptions = '';
+    var thisYear = new Date().getFullYear();
+    for(var y = thisYear; y >= thisYear - 1; y--){
+      yearOptions += '<option value="' + y + '"' + (d.year === y ? ' selected' : '') + '>' + y + '年分</option>';
+    }
+    return '<div class="panel">' +
+      '<div class="panel-title">年末調整の申告</div>' +
+      '<p class="panel-sub">扶養家族や保険料など、年末調整に必要な内容を入力して提出してください(提出したあとも、年内なら修正して出し直せます)。入力した内容は会社の担当者が確認して年末調整に使います。保険料などは、証明書(控除証明書)の金額を入力してください。金額は年間の合計(円)です。</p>' +
+      '<div class="decl-grid"><div><label>対象の年</label><select onchange="__myleave.setDeclYear(this.value)">' + yearOptions + '</select></div></div>' +
+      (d.submittedAt ? '<p class="panel-sub" style="color:#047857;">提出済み(最終提出: ' + escapeHtml(d.submittedAt) + ')</p>' : '<p class="panel-sub">まだ提出していません。</p>') +
+      '<div class="decl-group">配偶者</div><div class="decl-grid">' +
+        declSelect('spouse', '配偶者', [['none', 'いない・控除を受けない'], ['yes', '配偶者控除(配偶者特別控除)を受ける']]) +
+        declText('spouseIncome', '配偶者の今年の合計所得(見込み・円)', '例: 0') +
+        declCheck('spouseElderly', '配偶者が70歳以上') +
+      '</div>' +
+      '<div class="decl-group">扶養している家族(人数)</div><div class="decl-grid">' +
+        declText('depGeneral', '一般の扶養親族(16歳以上・19〜22歳と70歳以上を除く)') +
+        declText('depSpecial', '特定扶養親族(19〜22歳)') +
+        declText('depElderly', '老人扶養親族(70歳以上・同居の老親等を除く)') +
+        declText('depElderlyLive', '同居の老親等(70歳以上)') +
+        declText('depUnder16', '16歳未満の扶養親族') +
+        declText('depDisabled', '障害者である家族') +
+        declText('depSpecialDisabled', '特別障害者である家族') +
+        declText('depLiveSpecialDisabled', '同居の特別障害者である家族') +
+        declText('depSpecialRelative', '特定親族特別控除の金額(該当する場合・円)') +
+      '</div>' +
+      '<div class="decl-group">ご本人について</div><div class="decl-grid">' +
+        declSelect('selfDisability', '本人の障害', [['none', 'なし'], ['general', '障害者'], ['special', '特別障害者']]) +
+        declSelect('single', 'ひとり親・寡婦', [['none', 'なし'], ['singleParent', 'ひとり親'], ['widow', '寡婦']]) +
+        declCheck('student', '勤労学生') +
+      '</div>' +
+      '<div class="decl-group">保険料など(年間に支払った金額・円)</div><div class="decl-grid">' +
+        declText('lifeNewGeneral', '生命保険料(新制度・一般)') +
+        declText('lifeNewCare', '介護医療保険料(新制度)') +
+        declText('lifeNewPension', '個人年金保険料(新制度)') +
+        declText('lifeOldGeneral', '生命保険料(旧制度・一般)') +
+        declText('lifeOldPension', '個人年金保険料(旧制度)') +
+        declText('quake', '地震保険料') +
+        declText('quakeOld', '旧長期損害保険料') +
+        declText('smallBiz', '小規模企業共済等掛金(iDeCoなど)') +
+        declText('extraSocial', '給与から引かれていない社会保険料(国民年金など)') +
+        declText('housingLoan', '住宅ローン控除の額(年末調整用の証明書の金額)') +
+      '</div>' +
+      '<div class="decl-group">今年、前の会社に勤めていた場合(源泉徴収票の金額)</div><div class="decl-grid">' +
+        declText('prevWages', '前の会社の給与の合計(円)') +
+        declText('prevSocial', '前の会社の社会保険料(円)') +
+        declText('prevWithheld', '前の会社で引かれた所得税(円)') +
+      '</div>' +
+      '<div class="decl-group">連絡事項(家族の氏名・生年月日など、担当者に伝えたいこと)</div>' +
+      '<textarea class="decl-memo" rows="3" oninput="__myleave.setDecl(\'memo\', this.value)">' + escapeHtml(d.form.memo) + '</textarea>' +
+      '<div style="margin-top:12px;"><button type="button" class="btn-primary" ' + (d.saving ? 'disabled' : '') + ' onclick="__myleave.submitDecl()">' + (d.saving ? '提出中…' : '提出する') + '</button></div>' +
+      (d.msg ? '<p class="decl-msg ' + (d.ok ? 'ok' : 'err') + '">' + escapeHtml(d.msg) + '</p>' : '') +
+    '</div>';
+  }
+
+  function renderPayslipPanelHtml(){
+    var monthButtons = state.payslips.map(function(row){
+      var key = row.payYear + '-' + row.payMonth;
+      var active = state.selectedKey === key;
+      return '<button type="button" class="payslip-month-btn' + (active ? ' active' : '') + '" onclick="__myleave.selectPayslip(' + row.payYear + ',' + row.payMonth + ')">' + row.payYear + '年' + row.payMonth + '月分</button>';
+    }).join('');
+
+    var body = '';
+    if (state.payslipsLoading) {
+      body = '<p class="empty-note">読み込み中…</p>';
+    } else if (state.payslipsErrorMsg) {
+      body = '<p style="color:#E4572E;font-size:12.5px;">' + escapeHtml(state.payslipsErrorMsg) + '</p>';
+    } else if (state.payslips.length === 0) {
+      body = '<p class="empty-note">まだ給与明細書はありません</p>';
+    } else {
+      body = '<div class="payslip-month-list">' + monthButtons + '</div>';
+    }
+
+    var detail = '';
+    if (state.selectedLoading) {
+      detail = '<p class="empty-note">読み込み中…</p>';
+    } else if (state.selectedErrorMsg) {
+      detail = '<p style="color:#E4572E;font-size:12.5px;">' + escapeHtml(state.selectedErrorMsg) + '</p>';
+    } else if (state.selectedPayslip) {
+      detail = renderPayslipView(state.selectedPayslip);
+    }
+
+    return '' +
+      '<div class="panel">' +
+        '<div class="panel-title">過去の給与明細</div>' +
+        '<p class="panel-sub">確認したい月を選んでください。</p>' +
+        body +
+        detail +
+      '</div>';
+  }
+
+  window.__myleave = {
+    // 年末調整の申告: 入力中の値は状態にだけ保存し、再描画はしない(入力中にカーソルが外れないように)。
+    setDecl: function(key, val){ state.decl.form[key] = val; },
+    setDeclYear: function(v){
+      state.decl.year = Number(v) || new Date().getFullYear();
+      state.decl.loaded = false; state.decl.msg = '';
+      render();
+    },
+    loadDecl: async function(){
+      var d = state.decl;
+      d.loading = true;
+      var year = d.year;
+      var form = declEmptyForm();
+      var submittedAt = '';
+      try {
+        var res = await apiFetch(API_BASE + '/my-year-end/' + year);
+        var rec = res.ok ? await res.json() : false;
+        if(rec){
+          if(rec.data){ for(var k in rec.data){ if(Object.prototype.hasOwnProperty.call(form, k)){ form[k] = rec.data[k]; } } }
+          submittedAt = rec.submittedAt || '';
+        }
+      } catch(e) { /* 取得できなければ空の入力欄 */ }
+      if(d.year !== year){ d.loading = false; return; }
+      d.form = form; d.submittedAt = submittedAt; d.loaded = true; d.loading = false;
+      render();
+    },
+    submitDecl: async function(){
+      var d = state.decl;
+      if(d.saving){ return; }
+      d.saving = true; d.msg = ''; render();
+      try {
+        var res = await apiFetch(API_BASE + '/my-year-end/' + d.year, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: d.form })
+        });
+        var data = await res.json().catch(function(){ return null; });
+        if(!res.ok){ throw new Error((data ? data.error : '') || '提出に失敗しました。'); }
+        d.submittedAt = data.submittedAt || '';
+        d.msg = '提出しました。会社の担当者が内容を確認します。'; d.ok = true;
+      } catch(e) {
+        d.msg = e.message || '提出に失敗しました。通信環境をご確認ください。'; d.ok = false;
+      }
+      d.saving = false; render();
+    },
+    selectPayslip: async function(year, month){
+      state.selectedKey = year + '-' + month;
+      state.selectedLoading = true;
+      state.selectedErrorMsg = '';
+      state.selectedPayslip = null;
+      render();
+      try {
+        await ensureCompanySeal();
+        var res = await apiFetch(API_BASE + '/my-payslips/' + year + '/' + month);
+        var data = await res.json().catch(function(){ return null; });
+        if (!res.ok) { throw new Error((data && data.error) || '取得に失敗しました。'); }
+        state.selectedPayslip = data ? data.data : null;
+        if (!state.selectedPayslip) { state.selectedErrorMsg = 'この月の給与明細書はまだ作成されていません。'; }
+      } catch (e) {
+        state.selectedErrorMsg = e.message || '取得に失敗しました。通信環境をご確認ください。';
+      }
+      state.selectedLoading = false;
+      render();
+    },
+    printPayslip: function(){
+      if (!state.selectedPayslip) { return; }
+      window.print();
+    },
+  };
+
+  async function loadMyPayslips(){
+    state.payslipsLoading = true; render();
+    try {
+      var res = await apiFetch(API_BASE + '/my-payslips');
+      var data = await res.json();
+      if (!res.ok) { throw new Error((data && data.error) || '取得に失敗しました。'); }
+      state.payslips = data || [];
+    } catch (e) {
+      state.payslips = [];
+      state.payslipsErrorMsg = e.message || '取得に失敗しました。通信環境をご確認ください。';
+    }
+    state.payslipsLoading = false; render();
+  }
+
+  async function init(){
+    state.loading = true; render();
+    try {
+      var res = await apiFetch(API_BASE + '/my-leave-balance');
+      var data = await res.json();
+      if (!res.ok) { throw new Error((data && data.error) || '取得に失敗しました。'); }
+      state.data = data;
+    } catch (e) {
+      state.errorMsg = e.message || '取得に失敗しました。通信環境をご確認ください。';
+    }
+    state.loading = false;
+    render();
+    loadMyPayslips();
+  }
+  window.addEventListener('mushNippoAuthed', function(){ init(); });
+  init();
+})();
+</script>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

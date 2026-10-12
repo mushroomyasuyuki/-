@@ -21,7 +21,8 @@ final class SS_Repo {
     const TABLES = array('staff', 'users', 'patterns', 'rules', 'request_periods', 'requests', 'request_submissions', 'schedules', 'entries',
         'task_records', 'task_images', 'schedule_tasks', 'activity_log',
         'time_cards', 'attendance_days', 'leave_grants',
-        'company_documents', 'clients', 'products', 'quotes', 'invoices', 'costs');
+        'company_documents', 'clients', 'products', 'quotes', 'invoices', 'costs',
+        'pay_tables', 'payslips', 'payslip_history', 'year_end', 'year_end_decl');
 
     private $tenant_id;
 

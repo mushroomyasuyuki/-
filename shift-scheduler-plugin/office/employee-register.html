@@ -1,0 +1,2136 @@
+<!--
+  ※ マッシュオフィス 経理・管理・勤怠 用：マッシュオフィスシステムの「従業員登録」画面を、従業員の詳細（給与・連絡先・口座）の編集にだけ使う。
+    従業員の追加・削除・部署・取り込み・パスワード・管理者権限の欄は、下のスタイルで隠す（これらは、このサービスの「従業員登録」で行う）。
+-->
+<style>.mo-hide,.pw-link,.admin-toggle-link,.del-link{display:none!important}</style>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>従業員登録(管理者用)</title>
+<style>
+  :root{
+    --navy:#1E2A4A;
+    --navy-light:#2C3B63;
+    --paper:#F7F6F3;
+    --card:#FFFFFF;
+    --ink:#20242E;
+    --ink-soft:#6B7280;
+    --line:#E4E2DC;
+    --orange:#E4572E;
+    --dept-sales:#3B5BA5;
+    --dept-design:#7A5CB0;
+    --dept-make:#3F8F6B;
+    --dept-office:#C08A1E;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    padding:18px 24px;
+  }
+  .topbar h1{
+    font-size:18px;
+    font-weight:600;
+    margin:0;
+  }
+  .topbar .sub{
+    font-size:12px;
+    color:#B7C0D8;
+    margin-top:2px;
+  }
+  .container{
+    max-width:760px;
+    margin:0 auto;
+    padding:24px 20px 60px;
+  }
+  .panel{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:20px 22px;
+    margin-bottom:22px;
+  }
+  .panel .panel-title{
+    font-size:14px;
+    font-weight:600;
+    color:var(--navy);
+    margin:0 0 16px;
+  }
+  .form-row{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .field{
+    flex:1;
+    min-width:150px;
+  }
+  .field label{
+    display:block;
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-bottom:5px;
+  }
+  .field input, .field select{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    font-size:14px;
+    font-family:inherit;
+    color:var(--ink);
+  }
+  .field .hint{
+    font-size:11px;
+    color:#9AA0AC;
+    margin-top:4px;
+  }
+  .field label{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .taxable-check{
+    display:inline-flex;
+    align-items:center;
+    gap:3px;
+    font-size:11px;
+    font-weight:normal;
+    color:var(--ink-soft);
+    white-space:nowrap;
+    cursor:pointer;
+  }
+  .taxable-check input{
+    width:auto !important;
+    padding:0 !important;
+    margin:0;
+    cursor:pointer;
+  }
+  .number-preview{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    background:#F1F0EC;
+    padding:8px 12px;
+    border-radius:7px;
+    font-size:13px;
+    color:var(--ink-soft);
+    margin-bottom:14px;
+  }
+  .number-preview b{
+    color:var(--navy);
+    font-size:16px;
+  }
+  .submit-btn{
+    background:var(--navy);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    padding:11px 24px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .submit-btn:hover{background:var(--navy-light);}
+  .form-msg{
+    font-size:12px;
+    margin-top:10px;
+    min-height:16px;
+  }
+  .form-msg.ok{color:var(--dept-make);}
+  .form-msg.err{color:var(--orange);}
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  th{
+    text-align:left;
+    font-size:11px;
+    color:var(--ink-soft);
+    font-weight:600;
+    padding:8px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  td{
+    padding:10px;
+    border-bottom:1px solid #EFEEEA;
+    vertical-align:middle;
+  }
+  .num-cell{
+    font-variant-numeric:tabular-nums;
+    font-weight:700;
+    color:var(--navy);
+  }
+  .login-status{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+  .login-status.set{background:#E7F3ED;color:#3F8F6B;}
+  .login-status.unset{background:#EEEFF2;color:#6B7280;}
+  .admin-badge{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+  .admin-badge.on{background:#FEF3E7;color:#B45309;}
+  .admin-badge.off{background:#EEEFF2;color:#6B7280;}
+  .admin-toggle-link{
+    background:none;
+    border:none;
+    color:var(--dept-sales);
+    cursor:pointer;
+    font-size:12px;
+    text-decoration:underline;
+    font-family:inherit;
+    white-space:nowrap;
+  }
+  .admin-toggle-link:hover{color:var(--navy);}
+  .wage-check-row{
+    display:flex;
+    gap:16px;
+    align-items:center;
+    height:38px;
+  }
+  .wage-check-row label{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-size:13px;
+    color:var(--ink);
+    font-weight:normal;
+    margin-bottom:0;
+    cursor:pointer;
+  }
+  .wage-tag{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:999px;
+    background:#EEF2FF;
+    color:#4338CA;
+    white-space:nowrap;
+  }
+  .dept-tag{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:3px 10px;
+    border-radius:999px;
+    color:#fff;
+  }
+  .key-cell{
+    color:var(--ink-soft);
+    font-family:monospace;
+    font-size:12px;
+  }
+  .del-link{
+    background:none;
+    border:none;
+    color:#C7C9D1;
+    cursor:pointer;
+    font-size:13px;
+    font-family:inherit;
+  }
+  .del-link:hover{color:var(--orange);}
+  .pw-link{
+    background:none;
+    border:none;
+    color:var(--dept-sales);
+    cursor:pointer;
+    font-size:12px;
+    text-decoration:underline;
+    font-family:inherit;
+    white-space:nowrap;
+  }
+  .pw-link:hover{color:var(--navy);}
+  .wage-edit-link{
+    background:none;
+    border:none;
+    color:var(--dept-sales);
+    cursor:pointer;
+    font-size:12px;
+    text-decoration:underline;
+    font-family:inherit;
+    white-space:nowrap;
+  }
+  .wage-edit-link:hover{color:var(--navy);}
+  .allow-tag{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:999px;
+    background:#F1EEFA;
+    color:#7A5CB0;
+    white-space:nowrap;
+  }
+  .allow-edit-link{
+    background:none;
+    border:none;
+    color:var(--dept-sales);
+    cursor:pointer;
+    font-size:12px;
+    text-decoration:underline;
+    font-family:inherit;
+    white-space:nowrap;
+  }
+  .allow-edit-link:hover{color:var(--navy);}
+  .name-edit-link{
+    background:none;
+    border:none;
+    color:var(--navy);
+    cursor:pointer;
+    font-size:13px;
+    font-weight:600;
+    font-family:inherit;
+    text-align:left;
+    padding:0;
+    text-decoration:underline;
+    text-decoration-color:transparent;
+  }
+  .name-edit-link:hover{text-decoration-color:var(--navy);}
+  .allow-modal-overlay{
+    position:fixed;
+    inset:0;
+    z-index:99998;
+    background:rgba(30,42,74,.45);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .allow-modal{
+    background:#fff;
+    border-radius:var(--radius);
+    padding:22px 24px;
+    max-width:480px;
+    width:100%;
+    max-height:88vh;
+    overflow-y:auto;
+    box-shadow:0 4px 20px rgba(0,0,0,.15);
+  }
+  .allow-modal h3{
+    margin:0 0 14px;
+    font-size:15px;
+    color:var(--navy);
+  }
+  .allow-modal .modal-sec{
+    margin:18px 0 10px;
+    padding-top:14px;
+    border-top:1px solid var(--line, #E4E2DC);
+    font-size:13px;
+    font-weight:700;
+    color:var(--navy);
+  }
+  .allow-modal .check-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    margin:4px 0 10px;
+  }
+  .allow-modal .modal-btns{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    margin-top:16px;
+  }
+  .allow-modal .modal-cancel{
+    background:none;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:9px 18px;
+    font-size:13px;
+    cursor:pointer;
+    font-family:inherit;
+    color:var(--ink-soft);
+  }
+  /* 登録済み従業員一覧: 表がはみ出すときは左右にスライドして見る(上下にスクロールバー) */
+  .emp-scroll-top{overflow-x:scroll;overflow-y:hidden;height:18px;margin-bottom:4px;}
+  .emp-scroll-top > div{height:1px;}
+  .emp-scroll-body{overflow-x:scroll;overflow-y:hidden;border:1px solid var(--line);border-radius:7px;}
+  .emp-scroll-body table{min-width:1700px;}
+  .emp-scroll-top::-webkit-scrollbar,.emp-scroll-body::-webkit-scrollbar,.imp-scroll::-webkit-scrollbar{height:14px;}
+  .emp-scroll-top::-webkit-scrollbar-track,.emp-scroll-body::-webkit-scrollbar-track,.imp-scroll::-webkit-scrollbar-track{background:#E8E6DF;border-radius:7px;}
+  .emp-scroll-top::-webkit-scrollbar-thumb,.emp-scroll-body::-webkit-scrollbar-thumb,.imp-scroll::-webkit-scrollbar-thumb{background:#9AA0AC;border-radius:7px;border:2px solid #E8E6DF;}
+  .emp-scroll-hint{font-size:11.5px;color:var(--ink-soft);margin:0 0 6px;}
+  .emp-scroll-body th,.emp-scroll-body td{white-space:nowrap;}
+  /* 従業員データ取り込み */
+  .imp-help{font-size:12.5px;color:var(--ink-soft);line-height:1.7;margin:0 0 12px;}
+  .imp-row-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+  .imp-btn{background:#fff;color:var(--navy);border:1px solid var(--line);border-radius:7px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .imp-btn:disabled{opacity:.5;cursor:not-allowed;}
+  .imp-btn-primary{background:var(--dept-make);color:#fff;border-color:var(--dept-make);}
+  .imp-file-name{font-size:12.5px;color:var(--ink-soft);}
+  .imp-summary{font-size:13px;font-weight:600;color:var(--navy);margin:6px 0;}
+  .imp-hint{display:block;font-size:11.5px;font-weight:400;color:var(--ink-soft);margin-top:2px;}
+  .imp-scroll{overflow-x:scroll;border:1px solid var(--line);border-radius:7px;max-height:420px;overflow-y:auto;}
+  .imp-table{min-width:900px;}
+  .imp-table th{position:sticky;top:0;background:#F6F5F1;white-space:nowrap;}
+  .imp-table td{white-space:nowrap;padding:7px 10px;}
+  .imp-table td:last-child{white-space:normal;min-width:240px;}
+  .imp-table tr.imp-err td{background:#FDECEC;}
+  .imp-table tr.imp-warn td{background:#FFF7E0;}
+  .imp-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;}
+  .imp-badge-ok{background:#E7F3ED;color:#3F8F6B;}
+  .imp-badge-warn{background:#FEF3E7;color:#B45309;}
+  .imp-badge-err{background:#FBE1E1;color:#B91C1C;}
+  .imp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center;}
+  .imp-result{font-size:13.5px;margin-top:10px;color:var(--navy);}
+  /* 部署の管理 */
+  .dept-summary{font-size:14px;font-weight:600;color:var(--navy);cursor:pointer;}
+  .dept-list{display:flex;flex-direction:column;gap:6px;}
+  .dept-item{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-radius:7px;padding:7px 10px;font-size:13px;}
+  .dept-item .dept-tag{flex:none;}
+  .dept-item .dept-meta{color:var(--ink-soft);font-size:12px;}
+  .dept-item .dept-del{margin-left:auto;background:none;border:none;color:var(--orange);cursor:pointer;font-size:12px;text-decoration:underline;font-family:inherit;}
+  .empty-row{
+    text-align:center;
+    color:var(--ink-soft);
+    padding:24px 0;
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- ============================================================
+     管理者ログインゲート(共通)
+     WordPressのパスワード保護は使わず、日報ページの従業員ログインと
+     同じ「パスワード入力→トークン発行」の仕組みで管理者だけを通す。
+     従業員登録・管理者チャット・管理者集計の3ページで共通のログイン状態
+     (localStorageのmush_admin_auth)を共有するので、1回ログインすれば
+     3ページとも入れるようになる。
+     ============================================================ -->
+<div id="mushAdminGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">管理者ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">このページは管理者のみ閲覧できます。<br>ご自身のお名前とパスワードでログインしてください。</p>
+    <select id="mushAdminStaff" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="">-- 読み込み中… --</option>
+    </select>
+    <input type="password" id="mushAdminPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushAdminErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushAdminSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var STORAGE_KEY = 'mush_admin_auth';
+
+  // 見出しに、自社情報に登録した会社名を差し込む(未設定なら社名なしの表記のまま)。
+  fetch(API_BASE + '/company-name').then(function(res){
+    return res.ok ? res.json() : null;
+  }).then(function(data){
+    var name = (data || {}).name || '';
+    if(!name) return;
+    var subEl = document.querySelector('.topbar .sub');
+    if(subEl) subEl.textContent = name + ' 管理者用画面(このページのURLは社外に共有しないでください)';
+  }).catch(function(e){ /* 取得できなくても既定の表記のままでよい */ });
+
+  function loadAuth(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(auth){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushAdminGate');
+  if(loadAuth()){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var pwInput = document.getElementById('mushAdminPw');
+  var errEl = document.getElementById('mushAdminErr');
+  var btn = document.getElementById('mushAdminSubmit');
+  var staffSelect = document.getElementById('mushAdminStaff');
+  var DEPTS = ['営業', 'デザイン', '製作', '事務'];
+
+  function loadStaffOptions(){
+    fetch(API_BASE + '/employees').then(function(res){
+      return res.json();
+    }).then(function(rows){
+      if(!Array.isArray(rows)) rows = [];
+      // 「従業員登録」で追加した新しい部署の従業員も選べるよう、所属している部署を一覧に加える。
+      for(var x=0; x<rows.length; x++){ var dn = rows[x].department; if(dn){ if(DEPTS.indexOf(dn) === -1){ DEPTS.push(dn); } } }
+      var html = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+      for(var d=0; d<DEPTS.length; d++){
+        var dept = DEPTS[d];
+        var opts = '';
+        for(var i=0; i<rows.length; i++){
+          var r = rows[i];
+          if(r.department === dept){
+            opts += '<option value="' + r.id + '">' + String(r.name).replace(/[&<>"]/g, function(c){
+              return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+            }) + '</option>';
+          }
+        }
+        if(opts){ html += '<optgroup label="' + dept + '">' + opts + '</optgroup>'; }
+      }
+      staffSelect.innerHTML = html;
+    }).catch(function(e){
+      staffSelect.innerHTML = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+    });
+  }
+  loadStaffOptions();
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var staffId = staffSelect.value;
+    var isStaffLogin = !!staffId;
+    var url = isStaffLogin ? (API_BASE + '/auth/login') : (API_BASE + '/admin/login');
+    var body = isStaffLogin ? { staffId: staffId, password: password } : { password: password };
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(url, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){
+        var msg = 'ログインに失敗しました。';
+        if(result.data){ if(result.data.error){ msg = result.data.error; } }
+        throw new Error(msg);
+      }
+      if(isStaffLogin){
+        if(!result.data.isAdmin){ throw new Error('このアカウントには管理者権限がありません。'); }
+      }
+      saveAuth({ token: result.data.token, expiresAt: Date.now() + (result.data.expiresIn * 1000) });
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushAdminAuthed')); }catch(e){}
+    }).catch(function(e){
+      var msg = '';
+      if(e){ if(e.message){ msg = e.message; } }
+      errEl.textContent = msg || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+
+<div style="text-align:center;padding:10px 16px 0;">
+  <a id="topLinkTop" href="#" style="color:var(--ink-soft);font-size:13px;text-decoration:underline;">← トップに戻る</a>
+</div>
+
+<div class="topbar">
+  <div>
+    <h1>従業員の詳細(給与・連絡先・口座)</h1>
+    <div class="sub">名前を押すと、生年月日・住所・口座・給与・手当・控除を編集できます。従業員の追加・削除・社員番号・パスワードは「従業員登録」で行います。</div>
+  </div>
+</div>
+
+<div class="container">
+  <p style="margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:13px;line-height:1.6;">氏名を押すと、生年月日・入社日・住所・口座・給与・手当・固定控除を編集できます。従業員の追加・削除・社員番号・パスワード・管理者権限は「従業員登録」で行います。</p>
+
+  <div class="panel mo-hide" id="deptPanel">
+    <details>
+      <summary class="dept-summary">部署の管理(新しい部署の登録・削除)</summary>
+      <p class="imp-help" style="margin-top:10px;">
+        標準の4部署(営業・デザイン・製作・事務)に加えて、新しい部署を登録できます。登録した部署は、従業員の登録・取り込み・
+        日報・朝礼・集計などで選べるようになります。従業員Noは、新しい部署ごとに 500番台・600番台… と自動で付きます。
+        部署名に空白と &amp; &lt; &gt; " ' / \ は使えません(20文字まで)。
+      </p>
+      <div id="deptList" class="dept-list"></div>
+      <div class="imp-row-actions" style="margin-top:12px;">
+        <input type="text" id="deptNewName" placeholder="新しい部署名(例: 総務)" maxlength="20" style="padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;font-family:inherit;min-width:200px;">
+        <button type="button" class="imp-btn imp-btn-primary" id="deptAddBtn">＋ 部署を追加</button>
+      </div>
+      <div class="form-msg" id="deptMsg"></div>
+    </details>
+  </div>
+
+  <div class="panel mo-hide" id="newPanel">
+    <div class="panel-title">新規登録</div>
+    <div class="form-row">
+      <div class="field">
+        <label>氏名</label>
+        <input type="text" id="inName" placeholder="例: 高橋 大輔">
+      </div>
+      <div class="field">
+        <label>部署</label>
+        <select id="inDept">
+          <option value="営業">営業(100番台)</option>
+          <option value="デザイン">デザイン(200番台)</option>
+          <option value="製作">製作(300番台)</option>
+          <option value="事務">事務(400番台)</option>
+        </select>
+      </div>
+    </div>
+    <div class="number-preview">
+      割り当てられる従業員ナンバー(識別キーとして使用): <b id="numberPreview">-</b>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>生年月日</label>
+        <input type="date" id="inBirthdate">
+      </div>
+      <div class="field">
+        <label>郵便番号</label>
+        <input type="text" id="inZip" placeholder="例: 1234567(ハイフンなし)" maxlength="7">
+        <div class="hint">7桁入力すると住所を自動で補完します(登録時に自動でハイフンが入ります)</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>住所</label>
+        <input type="text" id="inAddress" placeholder="例: 栃木県宇都宮市〇〇町1-2-3">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>電話番号</label>
+        <input type="tel" id="inPhone" placeholder="例: 0281234567(ハイフンなし)" maxlength="15">
+        <div class="hint">ハイフンなしで入力してください(登録時に自動でハイフンが入ります)</div>
+      </div>
+      <div class="field">
+        <label>携帯番号</label>
+        <input type="tel" id="inMobile" placeholder="例: 09012345678(ハイフンなし)" maxlength="15">
+        <div class="hint">ハイフンなしで入力してください(登録時に自動でハイフンが入ります)</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>ログインパスワード</label>
+        <input type="password" id="inPassword" placeholder="日報ページ等のログインに使用するパスワード" autocomplete="new-password">
+        <div class="hint">登録後は表示されません(忘れた場合は一覧の「変更」から再設定できます)</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label style="display:flex;align-items:center;justify-content:flex-start;gap:8px;font-size:13px;font-weight:700;cursor:pointer;"><input type="checkbox" id="inIsAdmin" style="width:auto;margin:0;">管理者権限を付与する</label>
+        <div class="hint">チェックすると、このパスワードで管理者ページ(従業員登録・集計・経理など)にもログインできます。管理者にする場合は、上のログインパスワードも必ず設定してください。</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>給与形態</label>
+        <div class="wage-check-row">
+          <label><input type="checkbox" id="inWageHourly"> 時給</label>
+          <label><input type="checkbox" id="inWageDaily"> 日給</label>
+          <label><input type="checkbox" id="inWageMonthly"> 月給</label>
+        </div>
+      </div>
+      <div class="field">
+        <label>単価(円)</label>
+        <input type="text" id="inWageRate" placeholder="例: 1200">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>手当(月額・任意)</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>住宅手当(円)<span class="taxable-check"><input type="checkbox" id="inAllowHousingTaxable" checked>課税</span></label>
+        <input type="text" id="inAllowHousing" placeholder="例: 10000">
+      </div>
+      <div class="field">
+        <label>役職手当(円)<span class="taxable-check"><input type="checkbox" id="inAllowPositionTaxable" checked>課税</span></label>
+        <input type="text" id="inAllowPosition" placeholder="例: 10000">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>通勤手当(円)<span class="taxable-check"><input type="checkbox" id="inAllowCommuteTaxable">課税</span></label>
+        <input type="text" id="inAllowCommute" placeholder="例: 10000">
+      </div>
+      <div class="field">
+        <label>資格手当(円)<span class="taxable-check"><input type="checkbox" id="inAllowQualificationTaxable" checked>課税</span></label>
+        <input type="text" id="inAllowQualification" placeholder="例: 10000">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>家族手当(円)<span class="taxable-check"><input type="checkbox" id="inAllowFamilyTaxable" checked>課税</span></label>
+        <input type="text" id="inAllowFamily" placeholder="例: 10000">
+      </div>
+      <div class="field"></div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>その他1・項目名</label>
+        <input type="text" id="inAllowOther1Label" placeholder="例: 皆勤手当">
+      </div>
+      <div class="field">
+        <label>その他1・金額(円)<span class="taxable-check"><input type="checkbox" id="inAllowOther1Taxable" checked>課税</span></label>
+        <input type="text" id="inAllowOther1Amount" placeholder="例: 5000">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>その他2・項目名</label>
+        <input type="text" id="inAllowOther2Label" placeholder="例: 皆勤手当">
+      </div>
+      <div class="field">
+        <label>その他2・金額(円)<span class="taxable-check"><input type="checkbox" id="inAllowOther2Taxable" checked>課税</span></label>
+        <input type="text" id="inAllowOther2Amount" placeholder="例: 5000">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>その他3・項目名</label>
+        <input type="text" id="inAllowOther3Label" placeholder="例: 皆勤手当">
+      </div>
+      <div class="field">
+        <label>その他3・金額(円)<span class="taxable-check"><input type="checkbox" id="inAllowOther3Taxable" checked>課税</span></label>
+        <input type="text" id="inAllowOther3Amount" placeholder="例: 5000">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:1 1 100%;">
+        <p style="font-size:11px;color:#9AA0AC;margin:0;">「課税」のチェックを外すと、給与計算(源泉徴収税額の計算)でその手当を課税対象額に含めません。通勤手当は非課税限度額内であれば通常チェックを外します。</p>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>口座情報(給与振込用・任意)</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>銀行名</label>
+        <input type="text" id="inBankName" placeholder="例: 〇〇銀行">
+      </div>
+      <div class="field">
+        <label>支店名</label>
+        <input type="text" id="inBankBranch" placeholder="例: 本店営業部">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>口座種別</label>
+        <input type="text" id="inBankAccountType" placeholder="例: 普通">
+      </div>
+      <div class="field">
+        <label>口座番号</label>
+        <input type="text" id="inBankAccountNumber" placeholder="例: 1234567">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>口座名義(カナ)</label>
+        <input type="text" id="inBankAccountHolder" placeholder="例: タカハシ ダイスケ">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:1 1 100%;">
+        <label>備考</label>
+        <textarea id="inMemo" placeholder="緊急連絡先、雇用形態など自由記入" rows="3" style="width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;font-size:14px;font-family:inherit;color:var(--ink);resize:vertical;"></textarea>
+      </div>
+    </div>
+    <br>
+    <button class="submit-btn" id="addBtn">登録する</button>
+    <div class="form-msg" id="formMsg"></div>
+  </div>
+
+  <div class="panel mo-hide" id="importPanel">
+    <div class="panel-title">従業員データ取り込み(Excel / CSV)</div>
+    <p class="imp-help">
+      ①「ひな形をダウンロード」して従業員の情報を入力 → ②「ファイルを選ぶ」で読み込み → ③内容を確認して「取り込む」。<br>
+      この画面の「Excelで保存」で出力した一覧ファイルも、そのまま取り込めます(従業員No・管理者権限・手当合計などの列は無視されます)。
+      従業員Noは部署ごとに自動で付きます。ExcelのCSV(Shift_JIS)にも対応しています。
+    </p>
+    <div class="imp-row-actions">
+      <button type="button" class="imp-btn" id="importTemplateBtn">📄 ひな形をダウンロード</button>
+      <label class="imp-btn imp-btn-primary" for="importFile" style="display:inline-block;">📂 ファイルを選ぶ(.xlsx / .csv)</label>
+      <input type="file" id="importFile" accept=".xlsx,.xls,.csv,.txt" style="display:none;">
+      <span class="imp-file-name" id="importFileName"></span>
+    </div>
+    <div id="importPreview"></div>
+  </div>
+
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <div class="panel-title" style="margin:0;">登録済み従業員一覧</div>
+      <button id="exportBtn" style="background:var(--dept-make);color:#fff;border:none;border-radius:7px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">📥 Excelで保存</button>
+    </div>
+    <p class="emp-scroll-hint">表が横にはみ出す場合は、表の上または下のバーを左右にスライドして見られます。</p>
+    <div class="emp-scroll-top" id="empScrollTop"><div></div></div>
+    <div class="emp-scroll-body" id="empScrollBody">
+    <table>
+      <thead>
+        <tr>
+          <th>No.(識別キー)</th>
+          <th>ログインパスワード</th>
+          <th>氏名</th>
+          <th>部署</th>
+          <th>管理者権限</th>
+          <th>給与形態</th>
+          <th>手当(月額)</th>
+          <th>生年月日</th>
+          <th>郵便番号</th>
+          <th>住所</th>
+          <th>電話番号</th>
+          <th>携帯番号</th>
+          <th>備考</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="empTableBody">
+        <tr><td colspan="14" class="empty-row">読み込み中...</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:10px;">
+    <a id="topLink" href="#" style="color:var(--ink-soft);font-size:13px;text-decoration:underline;">← トップに戻る</a>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+   「マッシュオフィスシステム(WordPress DB版)」プラグインが提供する
+   REST API (/wp-json/mush-office/v1/employees) を呼び出します。
+   ※ 相対パスで指定しているので、このページが乗っているWordPressサイトの
+     REST APIがそのまま呼ばれます(ドメインを書き換える必要はありません)。
+============================================================ */
+// WordPressのREST APIのURLを、なるべく確実な方法で自動検出します。
+// 1) まずページの<head>内にWordPressが標準で出力する
+//    <link rel="https://api.w.org/" href="実際のURL"> を探します。
+// 2) それが見つからない場合(セキュリティプラグインなどにより隠されている場合)、
+//    ページ内の /wp-content/ を含むCSS・JSの読み込み元から、
+//    WordPressの設置場所(ドメイン直下 or サブディレクトリ)を逆算します。
+// 3) それでも分からない場合は、ドメイン直下にあるものとして扱います。
+function getSiteBasePath(){
+  const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+  for (const el of els){
+    const url = el.href || el.src;
+    if(!url) continue;
+    try{
+      const u = new URL(url, window.location.href);
+      const idx = u.pathname.indexOf('/wp-content/');
+      if(idx !== -1){
+        return u.pathname.substring(0, idx); // 例: '/yokose' または ''(ドメイン直下)
+      }
+    }catch(e){ /* 無視して次を試す */ }
+  }
+  return '';
+}
+function getRestApiBase(){
+  const link = document.querySelector('link[rel="https://api.w.org/"]');
+  if(link && link.href){
+    return link.href.replace(/\/$/, '');
+  }
+  return getSiteBasePath() + '/wp-json';
+}
+const API_BASE = getRestApiBase() + '/mush-office/v1';
+  // 管理者または従業員のログイントークンを付けてAPIを呼ぶ(ログイン必須のAPI用)。
+  function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = JSON.parse(localStorage.getItem("mush_nippo_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    return fetch(url, o);
+  }
+
+
+const DEPT_BAND = {
+  "営業": 100,
+  "デザイン": 200,
+  "製作": 300,
+  "事務": 400,
+};
+// 従業員Noは3けたで表示する(管理部門の000番台は 001, 002…)。
+function deptNamesByBand(){ return Object.keys(DEPT_BAND).sort((a, b) => DEPT_BAND[a] - DEPT_BAND[b]); } // 000番台が一番上
+function fmtNo(n){ const v = Number(n); return (n === null || n === undefined || n === '' || isNaN(v)) ? '' : String(v).padStart(3, '0'); }
+function bandLabel(b){ return String(b).padStart(3, '0') + '番台'; }
+const DEPT_COLOR = {
+  "営業": "var(--dept-sales)",
+  "デザイン": "var(--dept-design)",
+  "製作": "var(--dept-make)",
+  "事務": "var(--dept-office)",
+};
+
+let employees = []; // { id, employee_number, name, department, ... } ※WordPress DB版のフィールド名(スネークケース)
+
+// 管理者ログイン(mush_admin_auth)のトークンをAuthorizationヘッダーとして付ける。
+function adminAuthHeaders(extra){
+  var h = Object.assign({}, extra || {});
+  try{
+    var a = JSON.parse(localStorage.getItem('mush_admin_auth') || 'null');
+    if(a && a.token){ h['Authorization'] = 'Bearer ' + a.token; }
+  }catch(e){}
+  return h;
+}
+window.addEventListener('mushAdminAuthed', function(){ loadEmployees(); });
+
+async function loadEmployees(){
+  try{
+    const res = await fetch(`${API_BASE}/employees`, { headers: adminAuthHeaders() });
+    if(!res.ok) throw new Error('取得に失敗しました');
+    employees = await res.json();
+  }catch(e){
+    employees = [];
+    const tbody = document.getElementById('empTableBody');
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-row">データの取得に失敗しました。プラグインが有効化されているかご確認ください。</td></tr>';
+  }
+  renderTable();
+  renderDeptPanel();
+  updateNumberPreview();
+}
+
+function nextNumberForDept(dept){
+  // 画面上のプレビュー表示専用の簡易計算(実際の採番はサーバー側で行うため、
+  // 同時登録があっても重複しない)
+  const band = DEPT_BAND[dept];
+  const used = employees
+    .filter(e => e.department === dept)
+    .map(e => Number(e.employee_number));
+  let n = band + 1;
+  while(used.includes(n)) n++;
+  return n;
+}
+
+function updateNumberPreview(){
+  const dept = document.getElementById('inDept').value;
+  document.getElementById('numberPreview').textContent = fmtNo(nextNumberForDept(dept));
+}
+
+function renderTable(){
+  const tbody = document.getElementById('empTableBody');
+  if(employees.length === 0){
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-row">まだ登録された従業員がいません</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  employees.forEach(e => {
+    const tr = document.createElement('tr');
+    const hasPassword = e.has_login_password === true;
+    const isAdminRow = e.is_admin === true || e.is_admin === 1 || e.is_admin === '1';
+    tr.innerHTML = `
+      <td class="num-cell">${fmtNo(e.employee_number)}</td>
+      <td>
+        ${hasPassword ? `<span class="login-status set">設定済み</span>` : `<span class="login-status unset">未設定</span>`}
+        <button class="pw-link" data-id="${e.id}">${hasPassword ? '変更' : '設定'}</button>
+      </td>
+      <td><button class="name-edit-link" data-id="${e.id}">${escapeHtml(e.name)}</button></td>
+      <td><span class="dept-tag" style="background:${DEPT_COLOR[e.department] || '#888'}">${escapeHtml(e.department)}</span></td>
+      <td>
+        <span class="admin-badge ${isAdminRow ? 'on' : 'off'}">${isAdminRow ? '管理者' : '一般'}</span>
+        <button class="admin-toggle-link" data-id="${e.id}">${isAdminRow ? '解除' : '付与'}</button>
+      </td>
+      <td>
+        ${e.wage_type ? `<span class="wage-tag">${escapeHtml(e.wage_type)} ¥${Number(e.wage_rate || 0).toLocaleString('ja-JP')}</span>` : `<span class="login-status unset">未設定</span>`}
+        <button class="wage-edit-link" data-id="${e.id}">変更</button>
+      </td>
+      <td>
+        ${allowanceTotal(e) > 0 ? `<span class="allow-tag">¥${allowanceTotal(e).toLocaleString('ja-JP')}</span>` : `<span class="login-status unset">未設定</span>`}
+        <button class="allow-edit-link" data-id="${e.id}">変更</button>
+      </td>
+      <td>${escapeHtml(e.birthdate || '')}</td>
+      <td>${escapeHtml(e.zip || '')}</td>
+      <td>${escapeHtml(e.address || '')}</td>
+      <td>${escapeHtml(e.phone || '')}</td>
+      <td>${escapeHtml(e.mobile || '')}</td>
+      <td>${escapeHtml(e.memo || '')}</td>
+      <td><button class="del-link" data-id="${e.id}">削除</button></td>
+    `;
+    tr.querySelector('.del-link').addEventListener('click', () => removeEmployee(e.id, e.name));
+    tr.querySelector('.pw-link').addEventListener('click', () => changePassword(e.id, e.name));
+    tr.querySelector('.admin-toggle-link').addEventListener('click', () => toggleAdmin(e.id, e.name, isAdminRow));
+    tr.querySelector('.wage-edit-link').addEventListener('click', () => changeWage(e.id, e.name, e.wage_type || '', e.wage_rate || 0));
+    tr.querySelector('.allow-edit-link').addEventListener('click', () => openAllowanceModal(e));
+    tr.querySelector('.name-edit-link').addEventListener('click', () => openProfileModal(e));
+    tbody.appendChild(tr);
+  });
+}
+
+function allowanceTotal(e){
+  return (Number(e.housing_allowance) || 0) + (Number(e.position_allowance) || 0) + (Number(e.commute_allowance) || 0) +
+    (Number(e.qualification_allowance) || 0) + (Number(e.family_allowance) || 0) +
+    (Number(e.other1_amount) || 0) + (Number(e.other2_amount) || 0) + (Number(e.other3_amount) || 0);
+}
+
+async function changePassword(id, name){
+  const newPassword = prompt(`「${name}」の新しいログインパスワードを入力してください。`);
+  if(newPassword === null) return;
+  if(!newPassword.trim()){
+    alert('パスワードを入力してください。');
+    return;
+  }
+  try{
+    const res = await apiFetch(`${API_BASE}/employees/${id}/password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPassword.trim() })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data && data.error ? data.error : '更新に失敗しました。');
+    await loadEmployees();
+  }catch(e){
+    alert(e.message || '更新に失敗しました。');
+  }
+}
+
+async function toggleAdmin(id, name, currentlyAdmin){
+  const nextIsAdmin = !currentlyAdmin;
+  const msg = nextIsAdmin
+    ? `「${name}」に管理者権限を付与します。よろしいですか？(ログインパスワードは今まで通り本人のものを使います)`
+    : `「${name}」の管理者権限を解除します。よろしいですか？`;
+  if(!confirm(msg)) return;
+  try{
+    const res = await apiFetch(`${API_BASE}/employees/${id}/admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isAdmin: nextIsAdmin })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data && data.error ? data.error : '更新に失敗しました。');
+    await loadEmployees();
+  }catch(e){
+    alert(e.message || '更新に失敗しました。');
+  }
+}
+
+async function changeWage(id, name, currentType, currentRate){
+  const choice = prompt(`「${name}」の給与形態を選択してください。\n1: 時給\n2: 日給\n3: 月給\n(未設定に戻す場合は空欄のままOK)`, '');
+  if(choice === null) return;
+  const trimmed = choice.trim();
+  const typeMap = { '1':'時給', '2':'日給', '3':'月給', '時給':'時給', '日給':'日給', '月給':'月給' };
+  let wageType = '';
+  if(trimmed){
+    wageType = typeMap[trimmed] || null;
+    if(wageType === null){
+      alert('1(時給)・2(日給)・3(月給)のいずれかを入力してください。');
+      return;
+    }
+  }
+  const rateInput = prompt(`「${name}」の単価(円)を入力してください。`, currentRate ? String(currentRate) : '');
+  if(rateInput === null) return;
+  const wageRate = Number(normalizePhoneValue(rateInput.trim())) || 0;
+  try{
+    const res = await apiFetch(`${API_BASE}/employees/${id}/wage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wageType, wageRate })
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data && data.error ? data.error : '更新に失敗しました。');
+    await loadEmployees();
+  }catch(e){
+    alert(e.message || '更新に失敗しました。');
+  }
+}
+
+function closeAllowanceModal(){
+  const el = document.getElementById('allowModalOverlay');
+  if(el) el.remove();
+}
+
+function closeProfileModal(){
+  const el = document.getElementById('profileModalOverlay');
+  if(el) el.remove();
+}
+
+function openProfileModal(e){
+  closeProfileModal();
+  const deptOptions = deptNamesByBand().map(d => `<option value="${d}" ${d===e.department?'selected':''}>${d}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.id = 'profileModalOverlay';
+  overlay.className = 'allow-modal-overlay';
+  overlay.innerHTML = `
+    <div class="allow-modal">
+      <h3>「${escapeHtml(e.name)}」の詳細を編集</h3>
+      <div class="form-row">
+        <div class="field"><label>氏名</label><input type="text" id="mProfileName" value="${escapeHtml(e.name)}"></div>
+        <div class="field">
+          <label>部署</label>
+          <select id="mProfileDept">${deptOptions}</select>
+        </div>
+      </div>
+      <p style="font-size:11px;color:#9AA0AC;margin:-4px 0 10px;">部署を変更すると、社員番号(No.)も新しい部署の番台の番号に付け替わります(過去の給与明細の社員番号は当時のまま残ります)。</p>
+      <div class="form-row">
+        <div class="field"><label>生年月日</label><input type="date" id="mProfileBirthdate" value="${escapeHtml(e.birthdate || '')}"></div>
+        <div class="field"><label>入社日</label><input type="date" id="mProfileHireDate" value="${escapeHtml(e.hire_date || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>郵便番号</label><input type="text" id="mProfileZip" value="${escapeHtml(e.zip || '')}" placeholder="例: 321-0971"></div>
+        <div class="field"><label>住所</label><input type="text" id="mProfileAddress" value="${escapeHtml(e.address || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>電話番号</label><input type="text" id="mProfilePhone" value="${escapeHtml(e.phone || '')}"></div>
+        <div class="field"><label>携帯番号</label><input type="text" id="mProfileMobile" value="${escapeHtml(e.mobile || '')}"></div>
+      </div>
+      <p style="font-size:11px;color:#9AA0AC;margin:10px 0 -2px;">口座情報(給与振込用・任意)</p>
+      <div class="form-row">
+        <div class="field"><label>銀行名</label><input type="text" id="mProfileBankName" value="${escapeHtml(e.bank_name || '')}"></div>
+        <div class="field"><label>支店名</label><input type="text" id="mProfileBankBranch" value="${escapeHtml(e.bank_branch || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>口座種別</label><input type="text" id="mProfileBankAccountType" placeholder="例: 普通" value="${escapeHtml(e.bank_account_type || '')}"></div>
+        <div class="field"><label>口座番号</label><input type="text" id="mProfileBankAccountNumber" value="${escapeHtml(e.bank_account_number || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field" style="flex:1 1 100%;"><label>口座名義(カナ)</label><input type="text" id="mProfileBankAccountHolder" value="${escapeHtml(e.bank_account_holder || '')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field" style="flex:1 1 100%;"><label>備考</label><input type="text" id="mProfileMemo" value="${escapeHtml(e.memo || '')}"></div>
+      </div>
+
+      <div class="modal-sec">給与</div>
+      <div class="form-row">
+        <div class="field">
+          <label>給与形態</label>
+          <select id="mWageType">
+            ${['', '時給', '日給', '月給'].map(t => `<option value="${t}" ${t === (e.wage_type || '') ? 'selected' : ''}>${t || '未設定'}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>単価(円)</label><input type="text" id="mWageRate" value="${Number(e.wage_rate) || 0}"></div>
+      </div>
+
+      <div class="modal-sec">手当(月額)</div>
+${allowanceFieldsHtml(e)}
+      <p style="font-size:11px;color:#9AA0AC;margin:0 0 4px;">「課税」のチェックを外すと、給与計算でその手当を課税対象額に含めません。</p>
+
+      <div class="modal-sec">固定控除(月額)・扶養</div>
+      <div class="form-row">
+        <div class="field"><label>雇用保険(円)</label><input type="text" id="mDedEmployment" value="${Number(e.employment_insurance_fixed) || 0}"></div>
+        <div class="field"><label>住民税(円)</label><input type="text" id="mDedResident" value="${Number(e.resident_tax_fixed) || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>生命保険(円)</label><input type="text" id="mDedLife" value="${Number(e.life_insurance_fixed) || 0}"></div>
+        <div class="field"><label>財形貯蓄(円)</label><input type="text" id="mDedSavings" value="${Number(e.wage_savings_fixed) || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>従業員持株会(円)</label><input type="text" id="mDedStock" value="${Number(e.stock_ownership_fixed) || 0}"></div>
+        <div class="field"><label>扶養人数(人)</label><input type="text" id="mDedDependents" value="${Number(e.dependents_count) || 0}"></div>
+      </div>
+      <p style="font-size:11px;color:#9AA0AC;margin:0 0 4px;">給与明細を新しく作るときの初期値になります(明細ごとに変更できます)。</p>
+
+      <div class="modal-sec mo-hide">権限・ログイン</div>
+      <label class="check-row mo-hide"><input type="checkbox" id="mIsAdmin" ${isAdminEmployee(e) ? 'checked' : ''}>管理者権限を付与する</label>
+      <div class="form-row mo-hide">
+        <div class="field" style="flex:1 1 100%;">
+          <label>ログインパスワード(${e.has_login_password === true ? '設定済み' : '未設定'})</label>
+          <input type="password" id="mNewPassword" placeholder="変更する場合だけ新しいパスワードを入力" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="form-msg" id="profileModalMsg"></div>
+      <div class="modal-btns">
+        <button class="modal-cancel" id="profileModalCancel">キャンセル</button>
+        <button class="submit-btn" id="profileModalSave">保存する</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (ev) => {
+    if(ev.target === overlay) closeProfileModal();
+  });
+  document.getElementById('profileModalCancel').addEventListener('click', closeProfileModal);
+  ['mProfileZip','mProfilePhone','mProfileMobile','mProfileBankAccountNumber'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('blur', () => { el.value = normalizePhoneValue(el.value); });
+  });
+  bindNumberBlur(ALLOWANCE_AMOUNT_IDS.concat(['mWageRate','mDedEmployment','mDedResident','mDedLife','mDedSavings','mDedStock','mDedDependents']));
+  document.getElementById('profileModalSave').addEventListener('click', () => saveProfile(e));
+}
+
+async function saveProfile(e){
+  const id = e.id;
+  const msg = document.getElementById('profileModalMsg');
+  const name = document.getElementById('mProfileName').value.trim();
+  if(!name){
+    msg.textContent = '氏名を入力してください。';
+    msg.className = 'form-msg err';
+    return;
+  }
+  const payload = {
+    name,
+    department: document.getElementById('mProfileDept').value,
+    birthdate: document.getElementById('mProfileBirthdate').value,
+    hireDate: document.getElementById('mProfileHireDate').value,
+    zip: formatZipWithHyphen(normalizePhoneValue(document.getElementById('mProfileZip').value.trim())),
+    address: document.getElementById('mProfileAddress').value.trim(),
+    phone: formatPhoneWithHyphen(normalizePhoneValue(document.getElementById('mProfilePhone').value.trim())),
+    mobile: formatPhoneWithHyphen(normalizePhoneValue(document.getElementById('mProfileMobile').value.trim())),
+    memo: document.getElementById('mProfileMemo').value.trim(),
+    bankName: document.getElementById('mProfileBankName').value.trim(),
+    bankBranch: document.getElementById('mProfileBankBranch').value.trim(),
+    bankAccountType: document.getElementById('mProfileBankAccountType').value.trim(),
+    bankAccountNumber: document.getElementById('mProfileBankAccountNumber').value.trim(),
+    bankAccountHolder: document.getElementById('mProfileBankAccountHolder').value.trim(),
+  };
+  // 基本情報・給与・手当・控除・権限・パスワードは別々のAPIなので、順番に保存する。
+  const steps = [
+    ['基本情報', 'profile', payload],
+    ['給与', 'wage', { wageType: document.getElementById('mWageType').value, wageRate: numVal('mWageRate') }],
+    ['手当', 'allowances', collectAllowancePayload()],
+    ['固定控除', 'deductions', {
+      employmentInsurance: numVal('mDedEmployment'),
+      residentTax: numVal('mDedResident'),
+      lifeInsurance: numVal('mDedLife'),
+      wageSavings: numVal('mDedSavings'),
+      stockOwnership: numVal('mDedStock'),
+      dependents: numVal('mDedDependents'),
+    }],
+  ];
+  const isAdmin = document.getElementById('mIsAdmin').checked;
+  if(isAdmin !== isAdminEmployee(e)){
+    steps.push(['管理者権限', 'admin', { isAdmin }]);
+  }
+  const newPassword = document.getElementById('mNewPassword').value.trim();
+  if(newPassword){
+    steps.push(['パスワード', 'password', { password: newPassword }]);
+  }
+
+  const saveBtn = document.getElementById('profileModalSave');
+  saveBtn.disabled = true;
+  const done = [];
+  try{
+    for(const [label, path, body] of steps){
+      const res = await apiFetch(`${API_BASE}/employees/${id}/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(`${label}の保存に失敗しました。` + (data && data.error ? `(${data.error})` : ''));
+      done.push(label);
+    }
+    closeProfileModal();
+    await loadEmployees();
+  }catch(err){
+    msg.textContent = (err.message || '更新に失敗しました。') + (done.length ? ` ※${done.join('・')}は保存済みです。` : '');
+    msg.className = 'form-msg err';
+    saveBtn.disabled = false;
+    if(done.length) loadEmployees();
+  }
+}
+
+function isAdminEmployee(e){
+  return e.is_admin === true || e.is_admin === 1 || e.is_admin === '1';
+}
+
+function taxableChecked(value, defaultChecked){
+  if(value === undefined || value === null || value === ''){
+    return defaultChecked;
+  }
+  return value === true || value === 1 || value === '1';
+}
+
+const ALLOWANCE_AMOUNT_IDS = ['mAllowHousing','mAllowPosition','mAllowCommute','mAllowQualification','mAllowFamily','mAllowOther1Amount','mAllowOther2Amount','mAllowOther3Amount'];
+
+function bindNumberBlur(ids){
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('blur', () => { el.value = normalizePhoneValue(el.value); });
+  });
+}
+
+function numVal(fieldId){
+  return Number(normalizePhoneValue(document.getElementById(fieldId).value.trim())) || 0;
+}
+
+// 手当(月額)の入力欄。手当モーダルと詳細編集モーダルで共用する。
+function allowanceFieldsHtml(e){
+  return `
+      <div class="form-row">
+        <div class="field"><label>住宅手当(円)<span class="taxable-check"><input type="checkbox" id="mAllowHousingTaxable" ${taxableChecked(e.housing_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowHousing" value="${Number(e.housing_allowance) || 0}"></div>
+        <div class="field"><label>役職手当(円)<span class="taxable-check"><input type="checkbox" id="mAllowPositionTaxable" ${taxableChecked(e.position_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowPosition" value="${Number(e.position_allowance) || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>通勤手当(円)<span class="taxable-check"><input type="checkbox" id="mAllowCommuteTaxable" ${taxableChecked(e.commute_taxable, false) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowCommute" value="${Number(e.commute_allowance) || 0}"></div>
+        <div class="field"><label>資格手当(円)<span class="taxable-check"><input type="checkbox" id="mAllowQualificationTaxable" ${taxableChecked(e.qualification_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowQualification" value="${Number(e.qualification_allowance) || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>家族手当(円)<span class="taxable-check"><input type="checkbox" id="mAllowFamilyTaxable" ${taxableChecked(e.family_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowFamily" value="${Number(e.family_allowance) || 0}"></div>
+        <div class="field"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>その他1・項目名</label><input type="text" id="mAllowOther1Label" value="${escapeHtml(e.other1_label || '')}"></div>
+        <div class="field"><label>その他1・金額(円)<span class="taxable-check"><input type="checkbox" id="mAllowOther1Taxable" ${taxableChecked(e.other1_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowOther1Amount" value="${Number(e.other1_amount) || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>その他2・項目名</label><input type="text" id="mAllowOther2Label" value="${escapeHtml(e.other2_label || '')}"></div>
+        <div class="field"><label>その他2・金額(円)<span class="taxable-check"><input type="checkbox" id="mAllowOther2Taxable" ${taxableChecked(e.other2_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowOther2Amount" value="${Number(e.other2_amount) || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>その他3・項目名</label><input type="text" id="mAllowOther3Label" value="${escapeHtml(e.other3_label || '')}"></div>
+        <div class="field"><label>その他3・金額(円)<span class="taxable-check"><input type="checkbox" id="mAllowOther3Taxable" ${taxableChecked(e.other3_taxable, true) ? 'checked' : ''}>課税</span></label><input type="text" id="mAllowOther3Amount" value="${Number(e.other3_amount) || 0}"></div>
+      </div>
+  `;
+}
+
+function collectAllowancePayload(){
+  const val = numVal;
+  const label = (fieldId) => document.getElementById(fieldId).value.trim();
+  const checked = (fieldId) => document.getElementById(fieldId).checked;
+  const payload = {
+    housingAllowance: val('mAllowHousing'),
+    positionAllowance: val('mAllowPosition'),
+    commuteAllowance: val('mAllowCommute'),
+    qualificationAllowance: val('mAllowQualification'),
+    familyAllowance: val('mAllowFamily'),
+    other1Label: label('mAllowOther1Label'),
+    other1Amount: val('mAllowOther1Amount'),
+    other2Label: label('mAllowOther2Label'),
+    other2Amount: val('mAllowOther2Amount'),
+    other3Label: label('mAllowOther3Label'),
+    other3Amount: val('mAllowOther3Amount'),
+    housingTaxable: checked('mAllowHousingTaxable'),
+    positionTaxable: checked('mAllowPositionTaxable'),
+    commuteTaxable: checked('mAllowCommuteTaxable'),
+    qualificationTaxable: checked('mAllowQualificationTaxable'),
+    familyTaxable: checked('mAllowFamilyTaxable'),
+    other1Taxable: checked('mAllowOther1Taxable'),
+    other2Taxable: checked('mAllowOther2Taxable'),
+    other3Taxable: checked('mAllowOther3Taxable'),
+  };
+  return payload;
+}
+
+function openAllowanceModal(e){
+  closeAllowanceModal();
+  const overlay = document.createElement('div');
+  overlay.id = 'allowModalOverlay';
+  overlay.className = 'allow-modal-overlay';
+  overlay.innerHTML = `
+    <div class="allow-modal">
+      <h3>「${escapeHtml(e.name)}」の手当(月額)を編集</h3>
+${allowanceFieldsHtml(e)}
+      <p style="font-size:11px;color:#9AA0AC;margin:0 0 4px;">「課税」のチェックを外すと、給与計算でその手当を課税対象額に含めません。</p>
+      <div class="form-msg" id="allowModalMsg"></div>
+      <div class="modal-btns">
+        <button class="modal-cancel" id="allowModalCancel">キャンセル</button>
+        <button class="submit-btn" id="allowModalSave">保存する</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (ev) => {
+    if(ev.target === overlay) closeAllowanceModal();
+  });
+  document.getElementById('allowModalCancel').addEventListener('click', closeAllowanceModal);
+  bindNumberBlur(ALLOWANCE_AMOUNT_IDS);
+  document.getElementById('allowModalSave').addEventListener('click', () => saveAllowances(e.id));
+}
+
+async function saveAllowances(id){
+  const msg = document.getElementById('allowModalMsg');
+  const payload = collectAllowancePayload();
+  try{
+    const res = await apiFetch(`${API_BASE}/employees/${id}/allowances`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error(data && data.error ? data.error : '更新に失敗しました。');
+    }
+    closeAllowanceModal();
+    await loadEmployees();
+  }catch(err){
+    msg.textContent = err.message || '更新に失敗しました。';
+    msg.className = 'form-msg err';
+  }
+}
+
+async function removeEmployee(id, name){
+  if(!confirm(`「${name}」を削除しますか？(過去の予定・実績データは残ります)`)) return;
+  try{
+    const res = await apiFetch(`${API_BASE}/employees/${id}`, { method: 'DELETE' });
+    if(!res.ok) throw new Error('削除に失敗しました');
+    await loadEmployees();
+  }catch(e){
+    alert('削除に失敗しました。通信環境をご確認ください。');
+  }
+}
+
+function escapeHtml(s){
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+document.getElementById('inDept').addEventListener('change', updateNumberPreview);
+
+// 時給・日給・月給は1つだけ選べるようにする(どれか1つをチェックすると他は外れる)
+const WAGE_CHECK_IDS = ['inWageHourly', 'inWageDaily', 'inWageMonthly'];
+WAGE_CHECK_IDS.forEach(id => {
+  document.getElementById(id).addEventListener('change', (e) => {
+    if(e.target.checked){
+      WAGE_CHECK_IDS.forEach(otherId => {
+        if(otherId !== id) document.getElementById(otherId).checked = false;
+      });
+    }
+  });
+});
+function getSelectedWageType(){
+  if(document.getElementById('inWageHourly').checked) return '時給';
+  if(document.getElementById('inWageDaily').checked) return '日給';
+  if(document.getElementById('inWageMonthly').checked) return '月給';
+  return '';
+}
+
+// 郵便番号・電話番号・携帯番号: 全角数字→半角数字に自動変換し、ハイフンや空白などは除去して数字のみにする
+function normalizePhoneValue(raw){
+  const zenToHan = raw.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  return zenToHan.replace(/[^0-9]/g, '');
+}
+
+document.getElementById('inZip').addEventListener('input', async (e) => {
+  const zip = normalizePhoneValue(e.target.value);
+  if(zip !== e.target.value){
+    e.target.value = zip;
+  }
+  if(zip.length !== 7) return;
+  try{
+    const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+    const data = await res.json();
+    if(data.results && data.results[0]){
+      const r = data.results[0];
+      document.getElementById('inAddress').value = `${r.address1}${r.address2}${r.address3}`;
+    }
+  }catch(err){
+    // 通信エラー時は自動補完のみ諦め、手入力を促す(エラー表示はしない)
+  }
+});
+
+// 登録(保存)時に、数字のみの郵便番号へ自動でハイフンを挿入する(7桁: 3-4)
+function formatZipWithHyphen(digits){
+  if(!digits) return '';
+  if(digits.length === 7) return digits.replace(/^(\d{3})(\d{4})$/, '$1-$2');
+  return digits; // 7桁以外はそのまま(自動整形しない)
+}
+
+// 登録(保存)時に、数字のみの電話番号へ自動でハイフンを挿入する
+// 携帯電話(11桁): 3-4-4 / 固定電話(10桁・市外局番2桁の東京03・大阪06): 2-4-4 / それ以外の10桁: 3-3-4
+function formatPhoneWithHyphen(digits){
+  if(!digits) return '';
+  if(digits.length === 11) return digits.replace(/^(\d{3})(\d{4})(\d{4})$/, '$1-$2-$3');
+  if(digits.length === 10){
+    if(digits.startsWith('03') || digits.startsWith('06')){
+      return digits.replace(/^(\d{2})(\d{4})(\d{4})$/, '$1-$2-$3');
+    }
+    return digits.replace(/^(\d{3})(\d{3})(\d{4})$/, '$1-$2-$3');
+  }
+  return digits; // 想定外の桁数はそのまま(自動整形しない)
+}
+['inPhone', 'inMobile', 'inWageRate', 'inAllowHousing', 'inAllowPosition', 'inAllowCommute', 'inAllowQualification', 'inAllowFamily', 'inAllowOther1Amount', 'inAllowOther2Amount', 'inAllowOther3Amount', 'inBankAccountNumber'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', (e) => {
+    const normalized = normalizePhoneValue(e.target.value);
+    if(normalized !== e.target.value){
+      e.target.value = normalized;
+    }
+  });
+});
+
+document.getElementById('addBtn').addEventListener('click', async () => {
+  const name = document.getElementById('inName').value.trim();
+  const dept = document.getElementById('inDept').value;
+  const birthdate = document.getElementById('inBirthdate').value;
+  const zip = formatZipWithHyphen(normalizePhoneValue(document.getElementById('inZip').value.trim()));
+  const address = document.getElementById('inAddress').value.trim();
+  const phone = formatPhoneWithHyphen(normalizePhoneValue(document.getElementById('inPhone').value.trim()));
+  const mobile = formatPhoneWithHyphen(normalizePhoneValue(document.getElementById('inMobile').value.trim()));
+  const memo = document.getElementById('inMemo').value.trim();
+  const bankName = document.getElementById('inBankName').value.trim();
+  const bankBranch = document.getElementById('inBankBranch').value.trim();
+  const bankAccountType = document.getElementById('inBankAccountType').value.trim();
+  const bankAccountNumber = document.getElementById('inBankAccountNumber').value.trim();
+  const bankAccountHolder = document.getElementById('inBankAccountHolder').value.trim();
+  const password = document.getElementById('inPassword').value.trim();
+  const isAdmin = document.getElementById('inIsAdmin').checked;
+  const wageType = getSelectedWageType();
+  const wageRate = Number(normalizePhoneValue(document.getElementById('inWageRate').value.trim())) || 0;
+  const housingAllowance = Number(normalizePhoneValue(document.getElementById('inAllowHousing').value.trim())) || 0;
+  const positionAllowance = Number(normalizePhoneValue(document.getElementById('inAllowPosition').value.trim())) || 0;
+  const commuteAllowance = Number(normalizePhoneValue(document.getElementById('inAllowCommute').value.trim())) || 0;
+  const qualificationAllowance = Number(normalizePhoneValue(document.getElementById('inAllowQualification').value.trim())) || 0;
+  const familyAllowance = Number(normalizePhoneValue(document.getElementById('inAllowFamily').value.trim())) || 0;
+  const other1Label = document.getElementById('inAllowOther1Label').value.trim();
+  const other1Amount = Number(normalizePhoneValue(document.getElementById('inAllowOther1Amount').value.trim())) || 0;
+  const other2Label = document.getElementById('inAllowOther2Label').value.trim();
+  const other2Amount = Number(normalizePhoneValue(document.getElementById('inAllowOther2Amount').value.trim())) || 0;
+  const other3Label = document.getElementById('inAllowOther3Label').value.trim();
+  const other3Amount = Number(normalizePhoneValue(document.getElementById('inAllowOther3Amount').value.trim())) || 0;
+  const housingTaxable = document.getElementById('inAllowHousingTaxable').checked;
+  const positionTaxable = document.getElementById('inAllowPositionTaxable').checked;
+  const commuteTaxable = document.getElementById('inAllowCommuteTaxable').checked;
+  const qualificationTaxable = document.getElementById('inAllowQualificationTaxable').checked;
+  const familyTaxable = document.getElementById('inAllowFamilyTaxable').checked;
+  const other1Taxable = document.getElementById('inAllowOther1Taxable').checked;
+  const other2Taxable = document.getElementById('inAllowOther2Taxable').checked;
+  const other3Taxable = document.getElementById('inAllowOther3Taxable').checked;
+  const msg = document.getElementById('formMsg');
+  msg.className = 'form-msg';
+  msg.textContent = '';
+
+  if(!name){
+    msg.textContent = '氏名を入力してください。';
+    msg.classList.add('err');
+    return;
+  }
+  if(isAdmin && !password){
+    msg.textContent = '管理者権限を付与するときは、ログインパスワードも設定してください。';
+    msg.classList.add('err');
+    return;
+  }
+
+  try{
+    const res = await apiFetch(`${API_BASE}/employees`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name, department: dept, birthdate, zip, address, phone, mobile, memo, password, isAdmin, wageType, wageRate,
+        housingAllowance, positionAllowance, commuteAllowance, qualificationAllowance, familyAllowance,
+        other1Label, other1Amount, other2Label, other2Amount, other3Label, other3Amount,
+        housingTaxable, positionTaxable, commuteTaxable, qualificationTaxable, familyTaxable,
+        other1Taxable, other2Taxable, other3Taxable,
+        bankName, bankBranch, bankAccountType, bankAccountNumber, bankAccountHolder,
+      })
+    });
+    const data = await res.json();
+    if(!res.ok){
+      throw new Error(data && data.error ? data.error : '登録に失敗しました。');
+    }
+    document.getElementById('inName').value = '';
+    document.getElementById('inBirthdate').value = '';
+    document.getElementById('inZip').value = '';
+    document.getElementById('inAddress').value = '';
+    document.getElementById('inPhone').value = '';
+    document.getElementById('inMobile').value = '';
+    document.getElementById('inMemo').value = '';
+    document.getElementById('inBankName').value = '';
+    document.getElementById('inBankBranch').value = '';
+    document.getElementById('inBankAccountType').value = '';
+    document.getElementById('inBankAccountNumber').value = '';
+    document.getElementById('inBankAccountHolder').value = '';
+    document.getElementById('inPassword').value = '';
+    document.getElementById('inIsAdmin').checked = false;
+    WAGE_CHECK_IDS.forEach(id => { document.getElementById(id).checked = false; });
+    document.getElementById('inWageRate').value = '';
+    ['inAllowHousing','inAllowPosition','inAllowCommute','inAllowQualification','inAllowFamily',
+     'inAllowOther1Label','inAllowOther1Amount','inAllowOther2Label','inAllowOther2Amount','inAllowOther3Label','inAllowOther3Amount']
+      .forEach(id => { document.getElementById(id).value = ''; });
+    ['inAllowHousingTaxable','inAllowPositionTaxable','inAllowQualificationTaxable','inAllowFamilyTaxable',
+     'inAllowOther1Taxable','inAllowOther2Taxable','inAllowOther3Taxable']
+      .forEach(id => { document.getElementById(id).checked = true; });
+    document.getElementById('inAllowCommuteTaxable').checked = false;
+    msg.textContent = `登録しました(No.${fmtNo(data.employee_number)})`;
+    msg.classList.add('ok');
+    await loadEmployees();
+  }catch(e){
+    msg.textContent = e.message || '登録に失敗しました。通信環境をご確認ください。';
+    msg.classList.add('err');
+  }
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if(employees.length === 0){
+    alert('登録されている従業員がいません。');
+    return;
+  }
+  // 列の定義: [見出し, 値の取り出し方, 列幅]。一覧・詳細編集で扱う項目をすべて出力する(パスワードは設定有無のみ)。
+  const num = v => Number(v) || 0;
+  const tax = (v, def) => taxableChecked(v, def) ? '課税' : '非課税';
+  const columns = [
+    ['従業員No', e => fmtNo(e.employee_number), 8],
+    ['氏名', e => e.name, 14],
+    ['部署', e => e.department, 10],
+    ['管理者権限', e => isAdminEmployee(e) ? '管理者' : '一般', 10],
+    ['ログインパスワード', e => e.has_login_password === true ? '設定済み' : '未設定', 12],
+    ['入社日', e => e.hire_date || '', 12],
+    ['生年月日', e => e.birthdate || '', 12],
+    ['郵便番号', e => e.zip || '', 10],
+    ['住所', e => e.address || '', 34],
+    ['電話番号', e => e.phone || '', 16],
+    ['携帯番号', e => e.mobile || '', 16],
+    ['銀行名', e => e.bank_name || '', 14],
+    ['支店名', e => e.bank_branch || '', 14],
+    ['口座種別', e => e.bank_account_type || '', 8],
+    ['口座番号', e => e.bank_account_number || '', 12],
+    ['口座名義(カナ)', e => e.bank_account_holder || '', 18],
+    ['給与形態', e => e.wage_type || '未設定', 8],
+    ['単価(円)', e => num(e.wage_rate), 10],
+    ['住宅手当', e => num(e.housing_allowance), 10],
+    ['住宅手当・課税', e => tax(e.housing_taxable, true), 8],
+    ['役職手当', e => num(e.position_allowance), 10],
+    ['役職手当・課税', e => tax(e.position_taxable, true), 8],
+    ['通勤手当', e => num(e.commute_allowance), 10],
+    ['通勤手当・課税', e => tax(e.commute_taxable, false), 8],
+    ['資格手当', e => num(e.qualification_allowance), 10],
+    ['資格手当・課税', e => tax(e.qualification_taxable, true), 8],
+    ['家族手当', e => num(e.family_allowance), 10],
+    ['家族手当・課税', e => tax(e.family_taxable, true), 8],
+    ['その他1・項目名', e => e.other1_label || '', 12],
+    ['その他1・金額', e => num(e.other1_amount), 10],
+    ['その他1・課税', e => tax(e.other1_taxable, true), 8],
+    ['その他2・項目名', e => e.other2_label || '', 12],
+    ['その他2・金額', e => num(e.other2_amount), 10],
+    ['その他2・課税', e => tax(e.other2_taxable, true), 8],
+    ['その他3・項目名', e => e.other3_label || '', 12],
+    ['その他3・金額', e => num(e.other3_amount), 10],
+    ['その他3・課税', e => tax(e.other3_taxable, true), 8],
+    ['手当合計(月額)', e => allowanceTotal(e), 12],
+    ['雇用保険(固定)', e => num(e.employment_insurance_fixed), 12],
+    ['住民税(固定)', e => num(e.resident_tax_fixed), 12],
+    ['生命保険(固定)', e => num(e.life_insurance_fixed), 12],
+    ['財形貯蓄(固定)', e => num(e.wage_savings_fixed), 12],
+    ['従業員持株会(固定)', e => num(e.stock_ownership_fixed), 14],
+    ['扶養人数', e => num(e.dependents_count), 8],
+    ['備考', e => e.memo || '', 30],
+  ];
+  const rows = employees.map(e => {
+    const row = {};
+    columns.forEach(([label, get]) => { row[label] = get(e); });
+    return row;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = columns.map(c => ({ wch: c[2] }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '従業員一覧');
+  const today = new Date();
+  const p = n => String(n).padStart(2,'0');
+  const fname = `従業員一覧_${today.getFullYear()}${p(today.getMonth()+1)}${p(today.getDate())}.xlsx`;
+  XLSX.writeFile(wb, fname);
+});
+
+/* ============================================================
+   部署の管理(標準の4部署+新しく登録した部署)
+============================================================ */
+let DEPT_LIST = []; // [{ name, band, fg, bg, builtin }]
+const BUILTIN_DEPT_NAMES = ['営業', 'デザイン', '製作', '事務'];
+
+function renderDeptSelect(){
+  const sel = document.getElementById('inDept');
+  const cur = sel.value;
+  sel.innerHTML = deptNamesByBand().map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}(${bandLabel(DEPT_BAND[d])})</option>`).join('');
+  if(DEPT_BAND[cur] !== undefined){ sel.value = cur; }
+}
+
+function renderDeptPanel(){
+  const box = document.getElementById('deptList');
+  if(!box){ return; }
+  box.innerHTML = deptNamesByBand().map(name => {
+    const info = DEPT_LIST.find(d => d.name === name);
+    const builtin = BUILTIN_DEPT_NAMES.indexOf(name) !== -1;
+    const count = employees.filter(e => e.department === name).length;
+    const del = builtin ? '' : `<button type="button" class="dept-del" data-dept="${escapeHtml(name)}">削除</button>`;
+    return `<div class="dept-item"><span class="dept-tag" style="background:${DEPT_COLOR[name] || '#888'}">${escapeHtml(name)}</span>`
+      + `<span class="dept-meta">${bandLabel(DEPT_BAND[name])} / ${count}人${builtin ? ' / 標準の部署' : ''}</span>${del}</div>`;
+  }).join('');
+}
+
+async function loadDepartments(){
+  try{
+    const res = await fetch(`${API_BASE}/departments`);
+    const list = res.ok ? await res.json() : [];
+    if(Array.isArray(list)){
+      if(list.length > 0){ DEPT_LIST = list; }
+    }
+  }catch(e){ /* 取得できなければ標準の4部署のまま */ }
+  // 標準の4部署の後ろに、登録済みの新しい部署を足す(削除された部署は消す)。
+  Object.keys(DEPT_BAND).forEach(k => { if(BUILTIN_DEPT_NAMES.indexOf(k) === -1){ delete DEPT_BAND[k]; delete DEPT_COLOR[k]; } });
+  DEPT_LIST.forEach(d => {
+    DEPT_BAND[d.name] = d.band;
+    if(BUILTIN_DEPT_NAMES.indexOf(d.name) === -1){ DEPT_COLOR[d.name] = d.fg; }
+  });
+  renderDeptSelect();
+  renderDeptPanel();
+  updateNumberPreview();
+}
+
+document.getElementById('deptAddBtn').addEventListener('click', async () => {
+  const input = document.getElementById('deptNewName');
+  const msg = document.getElementById('deptMsg');
+  msg.className = 'form-msg'; msg.textContent = '';
+  const name = input.value.trim();
+  if(!name){ msg.textContent = '部署名を入力してください。'; msg.classList.add('err'); return; }
+  try{
+    const res = await apiFetch(`${API_BASE}/departments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data && data.error ? data.error : '登録に失敗しました。'); }
+    input.value = '';
+    msg.textContent = `部署「${data.name}」を登録しました(${fmtNo(data.band + 1)}から採番)`;
+    msg.classList.add('ok');
+    await loadDepartments();
+  }catch(e){
+    msg.textContent = e.message || '登録に失敗しました。';
+    msg.classList.add('err');
+  }
+});
+
+document.getElementById('deptList').addEventListener('click', async (ev) => {
+  const name = ev.target.getAttribute('data-dept');
+  if(!name){ return; }
+  if(!confirm(`部署「${name}」を削除します。よろしいですか？`)){ return; }
+  const msg = document.getElementById('deptMsg');
+  msg.className = 'form-msg'; msg.textContent = '';
+  try{
+    const res = await apiFetch(`${API_BASE}/departments/delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data && data.error ? data.error : '削除に失敗しました。'); }
+    msg.textContent = `部署「${name}」を削除しました`;
+    msg.classList.add('ok');
+    await loadDepartments();
+  }catch(e){
+    msg.textContent = e.message || '削除に失敗しました。';
+    msg.classList.add('err');
+  }
+});
+
+/* ============================================================
+   従業員データ取り込み(Excel / CSV)
+   ひな形または「Excelで保存」した一覧ファイルを読み込み、内容を確認してから
+   従業員を1人ずつ登録する。従業員Noは部署ごとに自動で採番される。
+============================================================ */
+// [キー, 見出し(ひな形・Excel保存と同じ), 別名, 種類, 空欄時の既定値(課税のみ)]
+const IMPORT_FIELDS = [
+  ['name', '氏名', ['名前', '従業員名'], 'text'],
+  ['department', '部署', ['部門'], 'dept'],
+  ['hireDate', '入社日', ['入社年月日'], 'date'],
+  ['birthdate', '生年月日', ['誕生日'], 'date'],
+  ['zip', '郵便番号', ['〒', '郵便'], 'zip'],
+  ['address', '住所', [], 'text'],
+  ['phone', '電話番号', ['電話', 'TEL'], 'phone'],
+  ['mobile', '携帯番号', ['携帯', '携帯電話'], 'phone'],
+  ['password', 'ログインパスワード', ['パスワード'], 'password'],
+  ['bankName', '銀行名', [], 'text'],
+  ['bankBranch', '支店名', [], 'text'],
+  ['bankAccountType', '口座種別', [], 'text'],
+  ['bankAccountNumber', '口座番号', [], 'text'],
+  ['bankAccountHolder', '口座名義(カナ)', ['口座名義'], 'text'],
+  ['wageType', '給与形態', [], 'wage'],
+  ['wageRate', '単価(円)', ['単価', '基本給'], 'money'],
+  ['housingAllowance', '住宅手当', [], 'money'],
+  ['housingTaxable', '住宅手当・課税', [], 'tax', true],
+  ['positionAllowance', '役職手当', [], 'money'],
+  ['positionTaxable', '役職手当・課税', [], 'tax', true],
+  ['commuteAllowance', '通勤手当', [], 'money'],
+  ['commuteTaxable', '通勤手当・課税', [], 'tax', false],
+  ['qualificationAllowance', '資格手当', [], 'money'],
+  ['qualificationTaxable', '資格手当・課税', [], 'tax', true],
+  ['familyAllowance', '家族手当', [], 'money'],
+  ['familyTaxable', '家族手当・課税', [], 'tax', true],
+  ['other1Label', 'その他1・項目名', [], 'text'],
+  ['other1Amount', 'その他1・金額', [], 'money'],
+  ['other1Taxable', 'その他1・課税', [], 'tax', true],
+  ['other2Label', 'その他2・項目名', [], 'text'],
+  ['other2Amount', 'その他2・金額', [], 'money'],
+  ['other2Taxable', 'その他2・課税', [], 'tax', true],
+  ['other3Label', 'その他3・項目名', [], 'text'],
+  ['other3Amount', 'その他3・金額', [], 'money'],
+  ['other3Taxable', 'その他3・課税', [], 'tax', true],
+  ['memo', '備考', [], 'text'],
+];
+const IMPORT_MAX_ROWS = 500;
+const IMPORT_SAMPLE_MARK = '【例】'; // ひな形のサンプル行(氏名がこの記号で始まる行は取り込まない)
+
+function impHalf(s){ return String(s).replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)); }
+function impText(v){ return String(v === null || v === undefined ? '' : v).trim(); }
+function impPad2(n){ return String(n).padStart(2, '0'); }
+function impHeader(s){ return impText(s).replace(/[\s　]/g, '').replace(/（/g, '(').replace(/）/g, ')'); }
+
+// 各項目の値を取り込み用に整える。形式が不正なときは undefined を返す(呼び出し側でエラーにする)。
+function impConvert(type, v, def){
+  if(type === 'text'){ return impText(v); }
+  if(type === 'password'){
+    const s = impText(v);
+    return (s === '設定済み' || s === '未設定') ? '' : s; // Excel保存の「設定有無」の表示は無視する
+  }
+  if(type === 'dept'){
+    const s = impText(v).replace(/[\s　]/g, '').replace(/(部|課)$/, '');
+    return DEPT_BAND[s] !== undefined ? s : undefined;
+  }
+  if(type === 'date'){
+    if(typeof v === 'number' && v > 0 && v < 100000){ // Excelの日付(シリアル値)
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      return d.getUTCFullYear() + '-' + impPad2(d.getUTCMonth() + 1) + '-' + impPad2(d.getUTCDate());
+    }
+    const s = impHalf(impText(v));
+    if(s === ''){ return ''; }
+    let m = s.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})日?$/);
+    if(!m){ m = s.match(/^(\d{4})(\d{2})(\d{2})$/); }
+    if(!m){ return undefined; }
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    if(dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d){ return undefined; }
+    return y + '-' + impPad2(mo) + '-' + impPad2(d);
+  }
+  if(type === 'zip'){
+    let d = normalizePhoneValue(impText(v));
+    if(d.length === 6){ d = '0' + d; } // Excelで先頭の0が消えた場合
+    return d.length === 7 ? formatZipWithHyphen(d) : impText(v);
+  }
+  if(type === 'phone'){
+    const raw = impText(v);
+    if(/[^0-9０-９\-ー−‐\s()（）]/.test(raw)){ return raw; } // 「内線」などの文字を含む場合はそのまま
+    let d = normalizePhoneValue(raw);
+    if(d.length === 9 || d.length === 10){ if(d.charAt(0) !== '0'){ d = '0' + d; } } // 先頭の0が消えた場合
+    return d ? formatPhoneWithHyphen(d) : '';
+  }
+  if(type === 'wage'){
+    const s = impText(v);
+    if(s === '' || s === '未設定' || s === '-'){ return ''; }
+    return (s === '時給' || s === '日給' || s === '月給') ? s : undefined;
+  }
+  if(type === 'money'){
+    if(typeof v === 'number'){ return Math.round(v); }
+    const s = impHalf(impText(v)).replace(/[,¥￥円\s]/g, '');
+    if(s === ''){ return 0; }
+    const n = Number(s);
+    return isNaN(n) ? undefined : Math.round(n);
+  }
+  if(type === 'tax'){
+    const s = impText(v);
+    if(s === ''){ return def; }
+    if(s === '課税'){ return true; }
+    if(s === '非課税'){ return false; }
+    return undefined;
+  }
+  return impText(v);
+}
+
+// 表(2次元配列)から、見出し行を探して取り込み候補の行を作る。
+function impBuildRows(table, existingEmployees){
+  let headerIdx = -1;
+  const nameAliases = ['氏名', '名前', '従業員名'];
+  for(let i = 0; i < Math.min(10, table.length); i++){
+    if(table[i].some(c => nameAliases.indexOf(impHeader(c)) !== -1)){ headerIdx = i; break; }
+  }
+  if(headerIdx === -1){
+    return { error: '見出し行(「氏名」「部署」など)が見つかりませんでした。ひな形をご利用ください。' };
+  }
+  const headers = table[headerIdx].map(impHeader);
+  const colOf = {};
+  IMPORT_FIELDS.forEach(f => {
+    const names = [impHeader(f[1])].concat(f[2].map(impHeader));
+    const idx = headers.findIndex(h => names.indexOf(h) !== -1);
+    if(idx !== -1){ colOf[f[0]] = idx; }
+  });
+  if(colOf.department === undefined){
+    return { error: '「部署」の列が見つかりませんでした。ひな形をご利用ください。' };
+  }
+  const known = {};
+  (existingEmployees || []).forEach(e => { known[impHeader(e.name)] = true; });
+  const seenInFile = {};
+  const rows = [];
+  for(let r = headerIdx + 1; r < table.length; r++){
+    const cells = table[r];
+    if(cells.every(c => impText(c) === '')){ continue; } // 空行
+    const nameRaw = impText(cells[colOf.name]);
+    if(nameRaw.indexOf(IMPORT_SAMPLE_MARK) === 0){ continue; } // ひな形のサンプル行
+    const data = {};
+    const errors = [];
+    IMPORT_FIELDS.forEach(f => {
+      const key = f[0];
+      const raw = colOf[key] === undefined ? '' : cells[colOf[key]];
+      const val = impConvert(f[3], raw, f[4]);
+      if(val === undefined){ errors.push(f[1] + 'の形式が正しくありません(' + impText(raw) + ')'); data[key] = f[3] === 'money' ? 0 : ''; }
+      else { data[key] = val; }
+    });
+    if(!data.name){ errors.push('氏名が空です'); }
+    const warnings = [];
+    const nk = impHeader(data.name);
+    if(nk){
+      if(known[nk]){ warnings.push('同じ氏名の従業員がすでに登録されています'); }
+      if(seenInFile[nk]){ warnings.push('ファイル内に同じ氏名があります(' + seenInFile[nk] + '行目)'); }
+      else { seenInFile[nk] = r + 1; }
+    }
+    const status = errors.length > 0 ? 'err' : (warnings.length > 0 ? 'warn' : 'ok');
+    rows.push({ rowNo: r + 1, data: data, status: status, msgs: errors.concat(warnings), checked: status === 'ok' });
+  }
+  return { rows: rows };
+}
+
+const impState = { rows: [], busy: false, progress: '', result: '' };
+
+function impRender(){
+  const box = document.getElementById('importPreview');
+  const rows = impState.rows;
+  if(rows.length === 0 && !impState.result){ box.innerHTML = ''; return; }
+  const countOf = s => rows.filter(r => r.status === s).length;
+  const selected = rows.filter(r => r.checked && r.status !== 'err').length;
+  const label = { ok: 'OK', warn: '要確認', err: 'エラー' };
+  const body = rows.map((r, i) => {
+    const d = r.data;
+    const chk = r.checked ? 'checked' : '';
+    const dis = (r.status === 'err' || impState.busy) ? 'disabled' : '';
+    const wage = d.wageType ? (d.wageType + ' ¥' + Number(d.wageRate || 0).toLocaleString('ja-JP')) : '';
+    return '<tr class="imp-' + r.status + '">'
+      + '<td><input type="checkbox" data-imp-index="' + i + '" ' + chk + ' ' + dis + '></td>'
+      + '<td>' + r.rowNo + '</td>'
+      + '<td>' + escapeHtml(d.name) + '</td>'
+      + '<td>' + escapeHtml(d.department) + '</td>'
+      + '<td>' + escapeHtml(d.birthdate) + '</td>'
+      + '<td>' + escapeHtml(d.mobile || d.phone) + '</td>'
+      + '<td>' + escapeHtml(wage) + '</td>'
+      + '<td><span class="imp-badge imp-badge-' + r.status + '">' + label[r.status] + '</span> ' + escapeHtml(r.msgs.join(' / ')) + '</td>'
+      + '</tr>';
+  }).join('');
+  const table = rows.length === 0 ? '' : (
+    '<div class="imp-summary">' + rows.length + '行を読み込みました: OK ' + countOf('ok') + '件 / 要確認 ' + countOf('warn') + '件 / エラー ' + countOf('err') + '件'
+    + '<span class="imp-hint">(エラーの行は取り込めません。「要確認」は既存の従業員と同姓同名の可能性があるため、確認のうえチェックを付けてください)</span></div>'
+    + '<div class="imp-scroll"><table class="imp-table"><thead><tr><th>取込</th><th>行</th><th>氏名</th><th>部署</th><th>生年月日</th><th>電話</th><th>給与形態</th><th>判定</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+    + '<div class="imp-actions">'
+    + '<button type="button" class="submit-btn" id="impRunBtn" ' + ((selected === 0 || impState.busy) ? 'disabled' : '') + '>選択した' + selected + '件を取り込む</button>'
+    + '<button type="button" class="imp-btn" id="impAllBtn" ' + (impState.busy ? 'disabled' : '') + '>エラー以外を全選択</button>'
+    + '<button type="button" class="imp-btn" id="impNoneBtn" ' + (impState.busy ? 'disabled' : '') + '>全解除</button>'
+    + '<button type="button" class="imp-btn" id="impCancelBtn" ' + (impState.busy ? 'disabled' : '') + '>取り消す</button>'
+    + '</div>'
+  );
+  box.innerHTML = table
+    + (impState.progress ? '<div class="form-msg">' + escapeHtml(impState.progress) + '</div>' : '')
+    + (impState.result ? '<div class="imp-result">' + impState.result + '</div>' : '');
+}
+
+async function impRun(){
+  const targets = impState.rows.filter(r => r.checked && r.status !== 'err');
+  if(targets.length === 0){ return; }
+  if(!confirm(targets.length + '人の従業員を登録します。よろしいですか？')){ return; }
+  impState.busy = true; impState.result = '';
+  let okCount = 0;
+  const failed = [];
+  for(let i = 0; i < targets.length; i++){
+    const r = targets[i];
+    impState.progress = '登録中… ' + (i + 1) + ' / ' + targets.length;
+    impRender();
+    try{
+      const body = Object.assign({}, r.data, { importSource: true });
+      const res = await apiFetch(API_BASE + '/employees', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => null);
+      if(!res.ok){ throw new Error(json && json.error ? json.error : '登録に失敗しました。'); }
+      okCount++;
+      r.done = true;
+    }catch(e){
+      r.status = 'err'; r.checked = false; r.msgs = [e.message || '登録に失敗しました。'];
+      failed.push(r);
+    }
+  }
+  impState.rows = impState.rows.filter(r => !r.done); // 登録できた行は一覧から消す(失敗した行・未選択の行は残す)
+  impState.busy = false; impState.progress = '';
+  let html = '取り込み完了: <b>' + okCount + '件</b>登録しました。';
+  if(failed.length > 0){
+    html += ' 失敗 <b>' + failed.length + '件</b>(下の表のエラーを確認してください)。';
+  }
+  impState.result = html;
+  await loadEmployees();
+  impRender();
+}
+
+function impLoadTable(table){
+  const built = impBuildRows(table, employees);
+  impState.progress = ''; impState.result = '';
+  if(built.error){ impState.rows = []; impState.result = '<span style="color:var(--orange);">' + escapeHtml(built.error) + '</span>'; impRender(); return; }
+  if(built.rows.length === 0){ impState.rows = []; impState.result = '取り込める行がありませんでした(サンプル行・空行のみ)。'; impRender(); return; }
+  if(built.rows.length > IMPORT_MAX_ROWS){ impState.rows = []; impState.result = '<span style="color:var(--orange);">一度に取り込めるのは' + IMPORT_MAX_ROWS + '行までです(' + built.rows.length + '行ありました)。ファイルを分けてください。</span>'; impRender(); return; }
+  impState.rows = built.rows;
+  impRender();
+}
+
+document.getElementById('importFile').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0];
+  if(!file){ return; }
+  document.getElementById('importFileName').textContent = file.name;
+  try{
+    const buf = await file.arrayBuffer();
+    let wb;
+    if(/\.(csv|txt)$/i.test(file.name)){
+      let text;
+      try{ text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+      catch(e){ text = new TextDecoder('shift_jis').decode(buf); } // ExcelのCSV(Shift_JIS)にも対応
+      wb = XLSX.read(text.replace(/^﻿/, ''), { type: 'string', raw: true });
+    }else{
+      wb = XLSX.read(buf, { type: 'array' });
+    }
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const table = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    impLoadTable(table);
+  }catch(e){
+    impState.rows = [];
+    impState.result = '<span style="color:var(--orange);">ファイルを読み込めませんでした。Excel(.xlsx)またはCSVファイルを選んでください。</span>';
+    impRender();
+  }
+  ev.target.value = ''; // 同じファイルをもう一度選べるようにする
+});
+
+document.getElementById('importPreview').addEventListener('change', (ev) => {
+  const idx = ev.target.getAttribute('data-imp-index');
+  if(idx === null){ return; }
+  impState.rows[Number(idx)].checked = ev.target.checked;
+  impRender();
+});
+document.getElementById('importPreview').addEventListener('click', (ev) => {
+  const id = ev.target.id;
+  if(id === 'impRunBtn'){ impRun(); }
+  else if(id === 'impAllBtn'){ impState.rows.forEach(r => { r.checked = r.status !== 'err'; }); impRender(); }
+  else if(id === 'impNoneBtn'){ impState.rows.forEach(r => { r.checked = false; }); impRender(); }
+  else if(id === 'impCancelBtn'){ impState.rows = []; impState.result = ''; document.getElementById('importFileName').textContent = ''; impRender(); }
+});
+
+document.getElementById('importTemplateBtn').addEventListener('click', () => {
+  const sample = {
+    name: IMPORT_SAMPLE_MARK + '山田 太郎', department: '営業', hireDate: '2024-04-01', birthdate: '1990-05-20', zip: '320-0000',
+    address: '栃木県宇都宮市〇〇町1-2-3', phone: '028-123-4567', mobile: '090-1234-5678', password: '', bankName: '〇〇銀行', bankBranch: '本店営業部',
+    bankAccountType: '普通', bankAccountNumber: '1234567', bankAccountHolder: 'ヤマダ タロウ', wageType: '月給', wageRate: 250000,
+    housingAllowance: 0, housingTaxable: '課税', positionAllowance: 0, positionTaxable: '課税', commuteAllowance: 10000, commuteTaxable: '非課税',
+    qualificationAllowance: 0, qualificationTaxable: '課税', familyAllowance: 0, familyTaxable: '課税',
+    other1Label: '', other1Amount: 0, other1Taxable: '課税', other2Label: '', other2Amount: 0, other2Taxable: '課税',
+    other3Label: '', other3Amount: 0, other3Taxable: '課税', memo: '',
+  };
+  const aoa = [IMPORT_FIELDS.map(f => f[1]), IMPORT_FIELDS.map(f => sample[f[0]])];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = IMPORT_FIELDS.map(f => ({ wch: Math.max(10, f[1].length * 2) }));
+  const help = [
+    ['従業員データ取り込みの書き方'],
+    ['1. 「従業員取り込み」シートの2行目(【例】で始まる行)は見本です。取り込まれませんので、消さなくても構いません。'],
+    ['2. 必須は「氏名」と「部署」です。部署は、登録済みの部署名(' + Object.keys(DEPT_BAND).join(' / ') + ')のいずれかを入力してください。'],
+    ['3. 従業員No(識別キー)は取り込み時に部署ごとに自動で付きます。ファイルには書かないでください。'],
+    ['4. 生年月日・入社日は 2024-04-01 や 2024/4/1 の形式で入力してください。'],
+    ['5. 給与形態は 時給 / 日給 / 月給 のいずれか(空欄可)。各手当の「課税」列は 課税 / 非課税(空欄は、通勤手当のみ非課税、それ以外は課税)。'],
+    ['6. ログインパスワードは空欄でも構いません(取り込み後に一覧の「設定」から付けられます)。パスワードを書いたファイルは、取り込み後に必ず削除してください。'],
+    ['7. 郵便番号・電話番号はハイフンの有無どちらでも取り込めます(自動でハイフンを付けます)。'],
+    ['8. 一度に取り込めるのは500行までです。'],
+  ];
+  const wsHelp = XLSX.utils.aoa_to_sheet(help);
+  wsHelp['!cols'] = [{ wch: 120 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '従業員取り込み');
+  XLSX.utils.book_append_sheet(wb, wsHelp, '書き方');
+  XLSX.writeFile(wb, '従業員取り込みひな形.xlsx');
+});
+
+// 登録済み従業員一覧: はみ出す部分を左右にスライドして見られるよう、表の上下にスクロールバーを付ける(上下は連動)。
+(function(){
+  const top = document.getElementById('empScrollTop');
+  const body = document.getElementById('empScrollBody');
+  if(!top || !body){ return; }
+  const inner = top.firstElementChild;
+  function syncWidth(){ inner.style.width = body.scrollWidth + 'px'; }
+  top.addEventListener('scroll', () => { if(body.scrollLeft !== top.scrollLeft){ body.scrollLeft = top.scrollLeft; } });
+  body.addEventListener('scroll', () => { if(top.scrollLeft !== body.scrollLeft){ top.scrollLeft = body.scrollLeft; } });
+  window.addEventListener('resize', syncWidth);
+  new MutationObserver(syncWidth).observe(document.getElementById('empTableBody'), { childList: true, subtree: true });
+  syncWidth();
+})();
+
+document.getElementById('topLink').href = getSiteBasePath() + '/トップ/';
+document.getElementById('topLinkTop').href = getSiteBasePath() + '/トップ/';
+
+loadDepartments();
+loadEmployees();
+</script>
+
+</body>
+</html>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

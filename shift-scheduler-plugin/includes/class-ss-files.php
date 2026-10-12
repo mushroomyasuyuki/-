@@ -30,7 +30,7 @@ final class SS_Files {
     /** 画面にそのまま表示してよい種類（それ以外は、ダウンロードとして渡す） */
     const INLINE_TYPES = array('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/pdf');
     /** 署名つきURLで渡せるファイルの種類 => 行を取り出す関数 */
-    const KINDS = array('task_image' => 'task_image_by_id', 'company_doc' => 'company_document_by_id');
+    const KINDS = array('task_image' => 'task_image_by_id', 'company_doc' => 'company_document_by_id', 'pay_table' => 'pay_table_by_id');
 
     /** テスト用：true にすると、アップロード以外のファイル（テストで作ったファイル）も受け付ける */
     public static $allow_local_files = false;

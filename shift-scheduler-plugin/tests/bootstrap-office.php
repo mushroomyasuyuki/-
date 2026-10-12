@@ -14,8 +14,9 @@ define('SS_PRODUCT_NAME', 'マッシュオフィス 経理・管理・勤怠');
 class WP_Error { public $code; public $msg; public $data; function __construct($c = '', $m = '', $d = null) { $this->code = $c; $this->msg = $m; $this->data = $d; } function get_error_code() { return $this->code; } function get_error_message() { return $this->msg; } }
 class WP_REST_Response { public $data; public $status; function __construct($d = null, $s = 200) { $this->data = $d; $this->status = $s; } }
 class WP_REST_Request implements ArrayAccess {
-    private $p; private $q; private $f;
-    function __construct($json = array(), $query = array(), $files = array()) { $this->p = $json; $this->q = $query; $this->f = $files; }
+    private $p; private $q; private $f; private $route;
+    function __construct($json = array(), $query = array(), $files = array(), $route = '') { $this->p = $json; $this->q = $query; $this->f = $files; $this->route = $route; }
+    function get_route() { return $this->route; }
     function get_json_params() { return $this->p; }
     function get_params() { return array_merge($this->p, $this->q); }
     function get_param($k) { return isset($this->q[$k]) ? $this->q[$k] : (isset($this->p[$k]) ? $this->p[$k] : null); }
@@ -48,7 +49,8 @@ function wp_get_current_user() { return (object) array('display_name' => 'WPユ�
 
 $GLOBALS['uid'] = 0;
 $GLOBALS['caps'] = array(
-    'owner' => array('shift_manage_staff', 'shift_manage_schedule', 'shift_view'),
+    'owner' => array('shift_manage_staff', 'shift_manage_schedule', 'shift_view', 'shift_manage_settings', 'shift_manage_billing'),
+    'manager' => array('shift_manage_staff', 'shift_manage_schedule', 'shift_view'),
     'staff' => array('shift_view'),
 );
 $GLOBALS['wp_roles'] = array();
@@ -63,7 +65,7 @@ class FakeWpdb {
         $t = array(
             'tenants' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, public_id, name, industry, status, trial_start, trial_end, plan_id, payjp_customer_id DEFAULT "", payjp_subscription_id DEFAULT "", next_billing_at, settings, created_at, deleted_at',
             'users' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, wp_user_id, email, role, staff_id, status, last_login_at, created_at',
-            'staff' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, kana DEFAULT "", employee_number DEFAULT "", department DEFAULT "", employment DEFAULT "part", roles, qualifications, available_weekdays DEFAULT "0,1,2,3,4,5,6", max_hours_week, max_hours_month, max_days_row, night_ok DEFAULT 1, active DEFAULT 1, sort_order DEFAULT 0, hire_date DEFAULT "", punch_ver DEFAULT 0, created_at',
+            'staff' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, kana DEFAULT "", employee_number DEFAULT "", department DEFAULT "", employment DEFAULT "part", roles, qualifications, available_weekdays DEFAULT "0,1,2,3,4,5,6", max_hours_week, max_hours_month, max_days_row, night_ok DEFAULT 1, active DEFAULT 1, sort_order DEFAULT 0, hire_date DEFAULT "", punch_ver DEFAULT 0, profile, created_at',
             'plans' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, name, max_staff, price, payjp_plan_id DEFAULT "", payjp_amount DEFAULT 0, active DEFAULT 1, sort_order DEFAULT 0',
             'task_records' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, record_date, staff_id, staff_name DEFAULT "", department DEFAULT "", category DEFAULT "", client, project, start_time DEFAULT "", end_time DEFAULT "", status DEFAULT "予定", is_outside DEFAULT 0, area DEFAULT "", prefecture DEFAULT "", travel_type DEFAULT "", note, bulk_mode DEFAULT 0, bulk_count DEFAULT "", progress DEFAULT 0, current_day DEFAULT 0, total_days DEFAULT 0, due_date DEFAULT "", holiday_work DEFAULT 0, early_work DEFAULT 0, night_work DEFAULT 0, images_cleared DEFAULT 0, created_at, updated_at',
             'task_images' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, task_record_id, file_path DEFAULT "", file_name DEFAULT "", mime DEFAULT "", uploaded_by DEFAULT "", created_at, expires_at',
@@ -72,6 +74,11 @@ class FakeWpdb {
             'time_cards' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, record_date, staff_id, staff_name DEFAULT "", department DEFAULT "", clock_in DEFAULT "", clock_out DEFAULT "", clock_in_lat, clock_in_lng, clock_in_accuracy, clock_out_lat, clock_out_lng, clock_out_accuracy, created_at, updated_at, UNIQUE (tenant_id, record_date, staff_id)',
             'attendance_days' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, record_date, day_type DEFAULT "通常", clock_in DEFAULT "", clock_out DEFAULT "", early_minutes, overtime_minutes, created_at, updated_at, UNIQUE (tenant_id, staff_id, record_date)',
             'leave_grants' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, grant_date, days DEFAULT 0, note DEFAULT "", created_at',
+            'pay_tables' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, kind, fiscal_year, region DEFAULT "", title DEFAULT "", file_name DEFAULT "", file_path DEFAULT "", mime DEFAULT "", data_json, uploaded_by DEFAULT "", created_at',
+            'payslips' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, staff_name DEFAULT "", department DEFAULT "", employee_number DEFAULT "", pay_year, pay_month, period_start DEFAULT "", period_end DEFAULT "", data_json, created_by DEFAULT "", created_at, updated_at, UNIQUE (tenant_id, staff_id, pay_year, pay_month)',
+            'payslip_history' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, payslip_id, staff_id, staff_name DEFAULT "", pay_year, pay_month, data_json, saved_at, replaced_at, replaced_by DEFAULT "", reason DEFAULT ""',
+            'year_end' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, staff_name DEFAULT "", adjust_year, apply_month DEFAULT 12, adjustment DEFAULT 0, data_json, updated_by DEFAULT "", created_at, updated_at, UNIQUE (tenant_id, staff_id, adjust_year)',
+            'year_end_decl' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, staff_id, staff_name DEFAULT "", decl_year, data_json, submitted_at, updated_at, UNIQUE (tenant_id, staff_id, decl_year)',
             'company_documents' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, kind DEFAULT "doc", title DEFAULT "", file_name DEFAULT "", file_path DEFAULT "", mime DEFAULT "", file_size DEFAULT 0, uploaded_by DEFAULT "", created_at',
             'clients' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, rep1 DEFAULT "", rep2 DEFAULT "", postal_code DEFAULT "", address DEFAULT "", phone DEFAULT "", projects, memo, created_at, updated_at',
             'products' => 'id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id, name, cost DEFAULT 0, price DEFAULT 0, maker DEFAULT "", created_at, updated_at',
@@ -95,7 +102,7 @@ class FakeWpdb {
     function delete($t, $where) { return $this->pdo->exec("DELETE FROM {$t} WHERE " . $this->cond($where)); }
 }
 $wpdb = new FakeWpdb();
-foreach (array('system', 'context', 'repo', 'tenants', 'rest', 'files', 'rest-office', 'rest-kintai', 'rest-keiri', 'auth', 'view', 'router') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
+foreach (array('system', 'context', 'repo', 'tenants', 'rest', 'files', 'rest-office', 'rest-kintai', 'rest-keiri', 'rest-kyuyo', 'auth', 'view', 'router') as $f) { require __DIR__ . "/../includes/class-ss-{$f}.php"; }
 SS_Files::$allow_local_files = true;
 
 $failed = 0;

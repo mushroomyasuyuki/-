@@ -183,6 +183,9 @@ final class SS_Router {
             if (!current_user_can($def['cap']) || (!empty($def['needs_staff']) && empty($user['staff_id']))) {
                 SS_View::message('権限がありません', 'この画面は利用できません。', 403, SS_View::app_url($tenant['public_id']), 'トップへ');
             }
+            if (!empty($def['payroll']) && !SS_Rest_Kyuyo::can_payroll()) {
+                SS_View::message('権限がありません', '給与計算は、契約者（管理者）と、契約者が「設定」で許可した副管理者だけが使えます。', 403, SS_View::app_url($tenant['public_id']), 'トップへ');
+            }
             if (!empty($def['office'])) {
                 self::render_office($tenant, $user, $path, $def, $common);
             }
@@ -255,7 +258,7 @@ final class SS_Router {
             array('color' => 'chorei', 'icon' => '☀️', 'label' => '朝礼', 'desc' => '本日の全体予定・未提出者を確認します', 'url' => $u('chorei')),
             array('color' => 'keiri', 'icon' => '🧾', 'label' => '経理', 'desc' => '見積もり・請求書・顧客一覧・商品一覧', 'url' => $u('keiri')),
             array('color' => 'timecard', 'icon' => '⏱️', 'label' => 'タイムカード', 'desc' => '出勤・退勤を打刻します', 'url' => $u('timecard')),
-            array('color' => 'myleave', 'icon' => '🌴', 'label' => '給与照会', 'desc' => '自分の給与明細・有給休暇の残日数を確認します', 'url' => ''),
+            array('color' => 'myleave', 'icon' => '🌴', 'label' => '給与照会', 'desc' => '自分の給与明細・有給休暇の残日数を確認します', 'url' => $u('myleave')),
             array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト', 'desc' => '公開されたシフトの確認・希望休の提出', 'url' => $u(!empty($user['staff_id']) && current_user_can('shift_submit_requests') ? 'me/requests' : 'me/schedule')),
         );
         $admin_cards = array();
@@ -264,7 +267,8 @@ final class SS_Router {
                 array('color' => 'touroku', 'icon' => '👤', 'label' => '従業員登録', 'desc' => '従業員の登録・社員番号とパスワード・CSVの取り込み', 'url' => $u('staff')),
                 array('color' => 'shukei', 'icon' => '📈', 'label' => '管理者集計', 'desc' => '部署別・担当者別の実績を集計します', 'url' => $u('shukei')),
                 array('color' => 'shift', 'icon' => '🗓️', 'label' => 'シフト作成', 'desc' => '勤務区分・ルール・希望休の収集・シフト表の自動作成', 'url' => current_user_can('shift_manage_schedule') ? $u('schedules') : ''),
-                array('color' => 'kyuyo', 'icon' => '💰', 'label' => '給与計算', 'desc' => '給与明細・賞与・年末調整', 'url' => ''),
+                array('color' => 'kyuyo', 'icon' => '💰', 'label' => '給与計算', 'desc' => '給与明細・賞与・年末調整', 'url' => SS_Rest_Kyuyo::can_payroll() ? $u('kyuyo') : '', 'badge' => '契約者の許可が必要'),
+                array('color' => 'touroku', 'icon' => '🗂️', 'label' => '従業員の詳細', 'desc' => '生年月日・住所・口座・給与・手当・控除', 'url' => $u('meibo')),
                 array('color' => 'qr', 'icon' => '🔳', 'label' => 'QRコード生成', 'desc' => 'タイムカード用QRコードの発行', 'url' => $u('qr')),
                 array('color' => 'jisha', 'icon' => '🏢', 'label' => '自社情報', 'desc' => '会社情報・振込先・印影・書類の保管', 'url' => $u('jisha')),
             );
@@ -309,6 +313,9 @@ final class SS_Router {
             'qr'     => array('cap' => 'shift_manage_staff', 'office' => 'qr-generate.html', 'title' => 'タイムカード QRコード', 'label' => 'QRコード', 'menu' => false, 'scripts' => array('qrcode.js')),
             'keiri'  => array('cap' => 'shift_view', 'office' => 'kanri-keiri.html', 'title' => '経理', 'label' => '経理', 'menu' => false),
             'jisha'  => array('cap' => 'shift_manage_staff', 'office' => 'kanri-jisha.html', 'title' => '自社情報', 'label' => '自社情報', 'menu' => false),
+            'kyuyo'  => array('cap' => 'shift_manage_staff', 'payroll' => true, 'office' => 'kanri-kyuyo.html', 'title' => '給与計算', 'label' => '給与計算', 'menu' => false),
+            'meibo'  => array('cap' => 'shift_manage_staff', 'office' => 'employee-register.html', 'title' => '従業員の詳細', 'label' => '従業員の詳細', 'menu' => false),
+            'myleave' => array('cap' => 'shift_view', 'office' => 'my-leave.html', 'title' => '給与照会', 'label' => '給与照会', 'menu' => false),
         );
     }
 
@@ -318,10 +325,11 @@ final class SS_Router {
         $pid = $tenant['public_id'];
         $links = array('トップ' => SS_View::app_url($pid));
         // 画面内のリンク（「/日報/」など、マッシュオフィスシステムの固定ページ名）を、このサービスのURLへ向け直すための対応表
-        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計', 'timecard' => 'タイムカード', 'qr' => 'QRコード', 'keiri' => '経理', 'jisha' => '自社情報');
+        $labels = array('nippo' => '日報', 'yotei' => '予定進捗', 'chorei' => '朝礼', 'shukei' => '管理者集計', 'timecard' => 'タイムカード', 'qr' => 'QRコード', 'keiri' => '経理', 'jisha' => '自社情報',
+            'kyuyo' => '給与計算', 'myleave' => '有給照会');
         $menu = array(array('url' => SS_View::app_url($pid), 'label' => 'トップ', 'current' => false));
         foreach (self::office_pages() as $key => $p) {
-            if (current_user_can($p['cap'])) {
+            if (current_user_can($p['cap']) && (empty($p['payroll']) || SS_Rest_Kyuyo::can_payroll())) {
                 if (isset($labels[$key])) {
                     $links[$labels[$key]] = SS_View::app_url($pid, $key);
                 }
@@ -329,6 +337,9 @@ final class SS_Router {
                     $menu[] = array('url' => SS_View::app_url($pid, $key), 'label' => $p['label'], 'current' => $key === $path);
                 }
             }
+        }
+        if (current_user_can('shift_manage_staff')) {
+            $links['従業員登録'] = SS_View::app_url($pid, 'staff'); // 「従業員登録」は、このサービスのスタッフ管理
         }
         $menu[] = array('url' => SS_View::app_url($pid, current_user_can('shift_manage_schedule') ? 'schedules' : 'me/schedule'), 'label' => 'シフト', 'current' => false);
         SS_View::render_standalone('office-page', array(
@@ -338,7 +349,7 @@ final class SS_Router {
             'menu'        => $menu,
             'logout'      => $common['logout'],
             'readonly'    => !SS_Tenants::is_writable($tenant),
-            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && !in_array($path, array('shukei', 'qr', 'jisha', 'keiri'), true),
+            'need_staff_link' => !($staff && (int) $staff['active'] === 1) && !in_array($path, array('shukei', 'qr', 'jisha', 'keiri', 'kyuyo', 'meibo'), true),
             'office_html' => SS_View::office_html($def['office']),
             'scripts'     => isset($def['scripts']) ? array_map(function ($f) { return SS_URL . 'assets/' . $f . '?ver=' . SS_VERSION; }, $def['scripts']) : array(),
             'mo_config'   => array(

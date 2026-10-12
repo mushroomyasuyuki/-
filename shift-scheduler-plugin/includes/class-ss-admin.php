@@ -27,6 +27,8 @@ final class SS_Admin {
         add_action('admin_post_ss_save_terms', array(__CLASS__, 'save_terms'));
         add_action('admin_post_ss_test_end_trial', array(__CLASS__, 'test_end_trial'));
         add_action('admin_post_ss_test_time', array(__CLASS__, 'test_time'));
+        add_action('admin_post_ss_share_pay_tables', array(__CLASS__, 'share_pay_tables'));
+        add_action('admin_post_ss_delete_shared_pay_table', array(__CLASS__, 'delete_shared_pay_table'));
     }
 
     public static function menu() {
@@ -34,6 +36,7 @@ final class SS_Admin {
         add_submenu_page(self::PAGE, '利用状況・お客様一覧', '利用状況・お客様一覧', 'manage_options', self::PAGE, array(__CLASS__, 'stats_page'));
         add_submenu_page(self::PAGE, 'プラン・決済設定', 'プラン・決済設定', 'manage_options', self::PAGE_BILLING, array(__CLASS__, 'billing_page'));
         add_submenu_page(self::PAGE, 'ページのURL', 'ページのURL', 'manage_options', self::PAGE_URLS, array(__CLASS__, 'urls_page'));
+        add_submenu_page(self::PAGE, '共通の税額表・保険料額表', '共通の税額表', 'manage_options', 'ss-pay-tables', array(__CLASS__, 'pay_tables_page'));
     }
 
     /** プラグイン一覧の画面に、利用状況・登録ページのURLを案内する。 */
@@ -510,6 +513,72 @@ echo '<p><strong>金額（または税率）を変えると、PAY.JPに新しい
         $res = SS_Legal::save($input);
         self::flash($res['errors'] ? 'error' : 'ok', $res['errors'] ? implode(' ', $res['errors']) : 'リンク先を保存しました。');
         self::back_billing();
+    }
+
+    /**
+     * 共通の税額表・保険料額表（全お客様が、給与計算で読める表）。
+     * 運営者が、自社（お客様の1社）の給与計算の画面で表を登録し、ここで「共通にする」と、全お客様に写される。
+     */
+    public static function pay_tables_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        $flash = get_transient('ss_admin_flash_' . get_current_user_id());
+        if ($flash) {
+            delete_transient('ss_admin_flash_' . get_current_user_id());
+            printf('<div class="notice notice-%s"><p>%s</p></div>', $flash[0] === 'ok' ? 'success' : 'error', esc_html($flash[1]));
+        }
+        $labels = array('insurance' => '保険料額表', 'tax' => '源泉所得税額表（月額表）', 'bonus_tax' => '賞与の算出率表', 'daily_tax' => '源泉所得税額表（日額表）');
+        echo '<div class="wrap"><h1>共通の税額表・保険料額表</h1>';
+        echo '<p>ここにある表は、全お客様の「給与計算」で読めます（お客様からは変更・削除できません）。お客様が自分で登録した表も、これまでどおり使えます。</p>';
+        echo '<h2>1. 表を共通にする</h2>';
+        echo '<p>自社（お客様の1社）の「給与計算」の画面で、国税庁・協会けんぽのExcelから表を登録してから、その会社のページID（URLの /s/ のあとの12文字）を入れて押してください。登録済みの表が、すべて共通の表として写されます（同じ種類・年度・地域・題名の共通の表は置き換えます。元のExcelファイルは写しません）。</p>';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field('ss_share_pay_tables');
+        echo '<input type="hidden" name="action" value="ss_share_pay_tables">';
+        echo '<p><label>写す元の会社のページID <input type="text" name="public_id" maxlength="12" pattern="[a-z0-9]{12}" required></label> <button class="button button-primary">共通の表にする</button></p></form>';
+        echo '<h2>2. いまの共通の表</h2><table class="widefat striped" style="max-width:900px"><thead><tr><th>種類</th><th>年度</th><th>地域</th><th>題名</th><th>登録日時</th><th></th></tr></thead><tbody>';
+        $any = false;
+        foreach ($labels as $kind => $label) {
+            foreach (SS_System::shared_pay_tables($kind) as $r) {
+                $any = true;
+                $del = wp_nonce_url(admin_url('admin-post.php?action=ss_delete_shared_pay_table&id=' . (int) $r['id']), 'ss_delete_shared_pay_table');
+                printf('<tr><td>%s</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td><a href="%s" onclick="return confirm(\'この共通の表を削除しますか？\')">削除</a></td></tr>',
+                    esc_html($label), (int) $r['fiscal_year'], esc_html($r['region']), esc_html($r['title']), esc_html($r['created_at']), esc_url($del));
+            }
+        }
+        if (!$any) {
+            echo '<tr><td colspan="6">まだありません。</td></tr>';
+        }
+        echo '</tbody></table></div>';
+    }
+
+    private static function back_pay_tables() {
+        wp_safe_redirect(admin_url('admin.php?page=ss-pay-tables'));
+        exit;
+    }
+
+    public static function share_pay_tables() {
+        self::guard('ss_share_pay_tables');
+        $pid = isset($_POST['public_id']) ? sanitize_key(wp_unslash($_POST['public_id'])) : '';
+        $tenant = preg_match('/^[a-z0-9]{12}$/', $pid) ? SS_System::tenant_by_public_id($pid) : null;
+        if (!$tenant) {
+            self::flash('error', 'そのページIDの会社が見つかりません。');
+            self::back_pay_tables();
+        }
+        $n = SS_System::share_pay_tables((int) $tenant['id']);
+        self::flash($n ? 'ok' : 'error', $n ? $n . '件の表を、共通の表にしました。' : 'その会社には、まだ表が登録されていません。');
+        self::back_pay_tables();
+    }
+
+    public static function delete_shared_pay_table() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。', '', array('response' => 403));
+        }
+        check_admin_referer('ss_delete_shared_pay_table');
+        SS_System::delete_shared_pay_table(isset($_GET['id']) ? (int) $_GET['id'] : 0);
+        self::flash('ok', '共通の表を削除しました。');
+        self::back_pay_tables();
     }
 
     public static function save_terms() {
