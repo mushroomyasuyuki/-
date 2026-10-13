@@ -764,7 +764,6 @@
     });
     const hid = $('cc-palette-version');
     if (hid) hid.value = v;
-    try { localStorage.setItem('cfp_palette_version', v); } catch (e) { /* 保存できなくても使える */ }
     if (quiet) return;
     state.variantKey = null; // 3通りの変換の色を選び直す
     if ($('cc-original') ? $('cc-original').width : false) reprocessReduction();
@@ -4329,10 +4328,8 @@
     document.querySelectorAll('[data-var-btn]').forEach((b) => {
       if (!b.dataset.bound) { b.dataset.bound = '1'; b.addEventListener('click', () => applyVariant(b.getAttribute('data-var-btn'))); }
     });
-    // カラーパレットの版（初期は新パレット。前回選んだ版があればそれ）。チップを作る前に色を入れ替える
-    let pv = 'new';
-    try { pv = localStorage.getItem('cfp_palette_version') || 'new'; } catch (e) { pv = 'new'; }
-    applyPaletteVersion(pv, true);
+    // カラーパレットの版：開くたびに新パレットから始める。チップを作る前に色を入れ替える
+    applyPaletteVersion('new', true);
     initPalette();
     initWallPalette();
     document.querySelectorAll('.cfp-palver-btn').forEach((b) => { b.onclick = () => applyPaletteVersion(b.getAttribute('data-palver')); });
