@@ -307,8 +307,8 @@
   </div>
 
     <!-- ▼ カラーパレットの版（新・旧） ▼ -->
-    <input type="hidden" id="cc-palette-version" value="new">
-      <div class="cfp-palver"><span>カラーパレット：</span><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="new" aria-pressed="true">新パレット</button><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="old" aria-pressed="false">旧パレット</button><small>（カーペット・壁紙の両方に反映）</small></div>
+    <input type="hidden" id="cc-palette-version" value="old">
+      <div class="cfp-palver"><span>カラーパレット：</span><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="new" aria-pressed="false">新パレット</button><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="old" aria-pressed="true">旧パレット</button><small>（カーペット・壁紙の両方に反映）</small></div>
     <!-- ▼ 標準カラーパレット用セクション ▼ -->
     <div class="palette-box cc-pal-compact">
       <label>1. 標準カラーパレット（基本色 ＋ 無料オプションカラー OP-03・OP-05）</label>
@@ -380,7 +380,7 @@
       <div class="file-note" id="cw-repeat-note" style="margin-top:6px;"></div>
     </div>
 
-      <div class="cfp-palver"><span>カラーパレット：</span><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="new" aria-pressed="true">新パレット</button><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="old" aria-pressed="false">旧パレット</button><small>（カーペット・壁紙の両方に反映）</small></div>
+      <div class="cfp-palver"><span>カラーパレット：</span><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="new" aria-pressed="false">新パレット</button><button type="button" class="btn-chip-action cfp-palver-btn" data-palver="old" aria-pressed="true">旧パレット</button><small>（カーペット・壁紙の両方に反映）</small></div>
     <div class="palette-box">
       <label>1. 標準カラーパレット（基本色 ＋ 無料オプションカラー OP-03・OP-05）</label>
       <small>※壁紙シミュレーション用の減色に使用するカラーです（カーペット側とは独立して選択できます）。</small>
@@ -724,7 +724,7 @@
   ];
 
 
-  // カラーパレットの版：新パレット（初期）と旧パレット。色の名前・番号・価格は同じで、色（RGB）だけが違う。
+  // カラーパレットの版：新パレットと旧パレット（初期）。色の名前・番号・価格は同じで、色（RGB）だけが違う。
   // 旧パレットは上の FREE_PALETTE・OP_PALETTE_RAW の色
   const PALETTE_VERSIONS = {
     new: { label: '新パレット', rgb: {
@@ -747,7 +747,7 @@
   let paletteVersion = 'old';
   // パレットの版を切り替える：色を入れ替え、パレットのチップ・3通りの変換・手動の変換・見積もり・壁紙の変換を作り直す
   function applyPaletteVersion(v, quiet) {
-    if (!PALETTE_VERSIONS[v]) v = 'new';
+    if (!PALETTE_VERSIONS[v]) v = 'old';
     const map = PALETTE_VERSIONS[v].rgb;
     ALL_COLORS.forEach((c) => { if (map[c.name]) c.rgb = map[c.name].slice(); });
     OP_PALETTE_RAW.forEach((c) => { if (map[c.name]) c.rgb = map[c.name].slice(); });
@@ -4332,8 +4332,8 @@
     document.querySelectorAll('[data-var-btn]').forEach((b) => {
       if (!b.dataset.bound) { b.dataset.bound = '1'; b.addEventListener('click', () => applyVariant(b.getAttribute('data-var-btn'))); }
     });
-    // カラーパレットの版：開くたびに新パレットから始める。チップを作る前に色を入れ替える
-    applyPaletteVersion('new', true);
+    // カラーパレットの版：開くたびに旧パレットから始める（新パレットはボタンで切り替え）。チップを作る前に色を入れ替える
+    applyPaletteVersion('old', true);
     initPalette();
     initWallPalette();
     document.querySelectorAll('.cfp-palver-btn').forEach((b) => { b.onclick = () => applyPaletteVersion(b.getAttribute('data-palver')); });
