@@ -765,7 +765,9 @@
     const hid = $('cc-palette-version');
     if (hid) hid.value = v;
     if (quiet) return;
-    state.variantKey = null; // 3通りの変換の色を選び直す
+    // 3通りの変換の色は新しい色で選び直す（renderVariants の key にパレットの版を入れてある）。
+    // 選んでいた変換（①②③）はそのまま。手動で選んだ色の組合せなら、その色（名前）のまま新しい色で変換する
+    if (state.variantSets ? !Object.keys(VARIANTS).some((k) => sameSet(state.variantSets[k], state.activePaletteIndices)) : false) state.skipAutoVariant = true;
     if ($('cc-original') ? $('cc-original').width : false) reprocessReduction();
     calculateEstimate();
     if (typeof reprocessWallReduction === 'function') reprocessWallReduction();
@@ -1894,7 +1896,7 @@
     if (!original || !original.width || !$('cc-var-std')) return;
     try {
       // 画像そのものが変わったときだけ選び直す（CADの縮尺・サイズ変更で表示サイズが変わっても、選んだ変換は保つ）
-      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook() + '|' + (state.protect || []).map((c) => c.join(',')).join(';');
+      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook() + '|' + (state.protect || []).map((c) => c.join(',')).join(';') + '|' + paletteVersion;
       if (state.variantKey !== key) {
         // 同じ画像で「仕上がりの印象」だけ変えたときは、選んでいた変換（①②③）のまま選び直す
         const sameImg = state.variantKey ? state.variantKey.split('|')[0] === key.split('|')[0] : false;
