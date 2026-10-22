@@ -3402,7 +3402,7 @@
         + '<title>' + xmlEsc('確認用 ' + name) + '</title>\n' + fontCss + '\n'
         + '<defs><image id="pic" width="' + n3(FW * SC) + '" height="' + n3(H * SC) + '" preserveAspectRatio="none" href="' + picUrl + '" xlink:href="' + picUrl + '"/>' + svgDefs.join('') + '</defs>\n'
         + '<rect x="0" y="0" width="' + n3(pageW) + '" height="' + n3(pageH) + '" fill="#ffffff" sodipodi:insensitive="true"/>\n'
-        + bodies.map((b, i) => '<g id="layer' + (i + 1) + '" inkscape:groupmode="layer" inkscape:label="' + names[i] + '">\n' + b + '</g>\n').join('')
+        + bodies.map((b, i) => '<g id="' + names[i] + '" data-name="' + names[i] + '" inkscape:groupmode="layer" inkscape:label="' + names[i] + '">\n' + b + '</g>\n').join('')
         + '</svg>\n';
       if (o.onProgress) o.onProgress(1);
       return { name: fileBase + '.svg', blob: new Blob([svg], { type: 'image/svg+xml' }), width: FW, height: H, strips: N, svg: true, sheet: true, font: font ? font.name : '' };
@@ -3410,7 +3410,10 @@
     // ---- PDF にまとめる ----
     const ocgs = names.map((nm) => { const id = alloc(); put(id, ['<< /Type /OCG /Name <FEFF' + utf16(nm) + '> >>']); return id; });
     let content = '';
-    bodies.forEach((b, i) => { content += '/OC /L' + i + ' BDC\n' + b + 'EMC\n'; });
+    // レイヤーごとに、ページ全体の切り抜きで1つのまとまり（Illustrator ではクリップグループ）にする。
+    // Illustrator は PDF のレイヤーを読まないため、同梱のスクリプト（cfp-layers.jsx）がこのまとまりを順にレイヤーへ分ける
+    const pageClip = '0 0 ' + n3(pageW * kk) + ' ' + n3(Hp) + ' re W n\n';
+    bodies.forEach((b, i) => { content += '/OC /L' + i + ' BDC\nq ' + pageClip + b + 'Q\nEMC\n'; });
     const fontId = alloc(), cidId = alloc(), fdId = alloc();
     if (font) {
       // 使った文字だけのフォント（サブセット）を埋め込む（CIDFontType2・Identity-H・ToUnicode 付きで、文字として編集・検索できる）
