@@ -1895,8 +1895,10 @@
     const original = $('cc-original');
     if (!original || !original.width || !$('cc-var-std')) return;
     try {
-      // 画像そのものが変わったときだけ選び直す（CADの縮尺・サイズ変更で表示サイズが変わっても、選んだ変換は保つ）
-      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook() + '|' + (state.protect || []).map((c) => c.join(',')).join(';') + '|' + paletteVersion;
+      // 画像・印象・守る色・パレットの版・プレビューのサイズが変わったら選び直す（選んでいた変換①②③は保つ）
+      // 元画像のプレビュー（サイズ・画像の大きさ）が変わったときも選び直す（選んでいた変換①②③はそのまま）。
+      // こうしないと、サイズを変えたあとにパレットを切り替えたときだけ選び直され、同じパレットでも色が変わって見える
+      const key = (state.loadedImg ? state.loadedImg.src : '') + '|' + carpetLook() + '|' + (state.protect || []).map((c) => c.join(',')).join(';') + '|' + paletteVersion + '|' + original.width + 'x' + original.height + '|' + carpetImageScale();
       if (state.variantKey !== key) {
         // 同じ画像で「仕上がりの印象」だけ変えたときは、選んでいた変換（①②③）のまま選び直す
         const sameImg = state.variantKey ? state.variantKey.split('|')[0] === key.split('|')[0] : false;
@@ -1905,7 +1907,7 @@
         state.variantKey = key;
         state.variantSets = computeVariantSets(original);
         if (keep) state.variantKeep = keep;
-        else if (!state.skipAutoVariant) state.variantAutoApply = true;
+        else if (sameImg ? false : !state.skipAutoVariant) state.variantAutoApply = true; // 同じ画像で手動の色なら、手動のまま
         state.skipAutoVariant = false;
       }
       const ditherEl = $('cc-dither');
