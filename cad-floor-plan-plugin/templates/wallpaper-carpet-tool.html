@@ -1282,7 +1282,8 @@
   // カーペットの画像は、指定サイズ（横幅 × 縦幅。CADの部屋から算出したサイズも同じ）の上下左右に 5mm ずつ足した大きさで作る
   const CARPET_BLEED = 5;
   window.cfpCarpetBleed = CARPET_BLEED;
-  // 元画像を、縦横比を変えずに W × H いっぱいまで引き伸ばす（はみ出したところは切る）。
+  // 元画像を、縦横比を変えずに指定サイズ（W × H から上下左右の余白 5mm を除いた範囲）いっぱいまで引き伸ばし（はみ出したところは切る）、
+  // 外側の余白 5mm は、端の色をそのまま外へのばして埋める（近似色）。W × H は「指定サイズ＋上下左右5mm」を表す（画面は縮小表示）。
   // 「画像の大きさ」（100% = いっぱい）で拡大・縮小する。縮小して余白が出るところは色を付けない（透明。画面では白に見える）
   function carpetImageScale() {
     const v = parseFloat(($('cc-img-scale') || {}).value);
@@ -1292,9 +1293,33 @@
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     ctx.clearRect(0, 0, W, H);
     if (!iw || !ih) return;
-    const sc = Math.max(W / iw, H / ih) * carpetImageScale();
+    // 余白（5mm）の大きさ（この絵の px）：指定サイズに対する割合から
+    const sw = parseFloat(($('cc-width') || {}).value) || 1000, sh = parseFloat(($('cc-height') || {}).value) || 1000;
+    const bx = Math.round(W * CARPET_BLEED / (sw + CARPET_BLEED * 2)), by = Math.round(H * CARPET_BLEED / (sh + CARPET_BLEED * 2));
+    const IW = W - bx * 2, IH = H - by * 2;
+    if (IW < 1 ? true : IH < 1) return;
+    const sc = Math.max(IW / iw, IH / ih) * carpetImageScale();
     const w = iw * sc, h = ih * sc;
-    ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bx, by, IW, IH);
+    ctx.clip();
+    ctx.drawImage(img, bx + (IW - w) / 2, by + (IH - h) / 2, w, h);
+    ctx.restore();
+    if (bx < 1 ? by < 1 : false) return;
+    // 端の1列・1行を、余白の幅だけ外へのばす（上下 → 左右の順で、角も埋まる）
+    const smooth = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    const cv = ctx.canvas;
+    if (by >= 1) {
+      ctx.drawImage(cv, bx, by, IW, 1, bx, 0, IW, by);
+      ctx.drawImage(cv, bx, by + IH - 1, IW, 1, bx, by + IH, IW, H - by - IH);
+    }
+    if (bx >= 1) {
+      ctx.drawImage(cv, bx, 0, 1, H, 0, 0, bx, H);
+      ctx.drawImage(cv, bx + IW - 1, 0, 1, H, bx + IW, 0, W - bx - IW, H);
+    }
+    ctx.imageSmoothingEnabled = smooth;
   }
 
   function updateCarpetCanvas() {
