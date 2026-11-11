@@ -1,0 +1,527 @@
+<!--
+  ============================================================
+  管理者チャット画面(WordPress DB版 / Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「ヨコセオフィス業務システム(WordPress DB版)」プラグインを
+  有効化しておく必要があります。
+
+  従業員を選ぶと、その人の日報ページ(ログイン後)に表示される
+  チャットスレッドと同じ内容を読み書きできます。
+  管理者側にはログインの仕組みがまだ無いため、他の管理者向け
+  画面(管理者集計など)と同様、URLを知っている人は誰でも
+  使える状態です。
+  ============================================================
+-->
+<!-- ============================================================
+     管理者ログインゲート(共通)
+     WordPressのパスワード保護は使わず、日報ページの従業員ログインと
+     同じ「パスワード入力→トークン発行」の仕組みで管理者だけを通す。
+     従業員登録・管理者チャット・管理者集計の3ページで共通のログイン状態
+     (localStorageのmush_admin_auth)を共有するので、1回ログインすれば
+     3ページとも入れるようになる。
+     ============================================================ -->
+<div id="mushAdminGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">管理者ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">このページは管理者のみ閲覧できます。<br>ご自身のお名前とパスワードでログインしてください。</p>
+    <select id="mushAdminStaff" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="">-- 読み込み中… --</option>
+    </select>
+    <input type="password" id="mushAdminPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushAdminErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushAdminSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var STORAGE_KEY = 'mush_admin_auth';
+
+  function loadAuth(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(auth){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushAdminGate');
+  if(loadAuth()){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var pwInput = document.getElementById('mushAdminPw');
+  var errEl = document.getElementById('mushAdminErr');
+  var btn = document.getElementById('mushAdminSubmit');
+  var staffSelect = document.getElementById('mushAdminStaff');
+  var DEPTS = ['営業', 'デザイン', '製作', '事務'];
+
+  function loadStaffOptions(){
+    fetch(API_BASE + '/employees').then(function(res){
+      return res.json();
+    }).then(function(rows){
+      if(!Array.isArray(rows)) rows = [];
+      // 「従業員登録」で追加した新しい部署の従業員も選べるよう、所属している部署を一覧に加える。
+      for(var x=0; x<rows.length; x++){ var dn = rows[x].department; if(dn){ if(DEPTS.indexOf(dn) === -1){ DEPTS.push(dn); } } }
+      var html = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+      for(var d=0; d<DEPTS.length; d++){
+        var dept = DEPTS[d];
+        var opts = '';
+        for(var i=0; i<rows.length; i++){
+          var r = rows[i];
+          if(r.department === dept){
+            opts += '<option value="' + r.id + '">' + String(r.name).replace(/[&<>"]/g, function(c){
+              return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+            }) + '</option>';
+          }
+        }
+        if(opts){ html += '<optgroup label="' + dept + '">' + opts + '</optgroup>'; }
+      }
+      staffSelect.innerHTML = html;
+    }).catch(function(e){
+      staffSelect.innerHTML = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+    });
+  }
+  loadStaffOptions();
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var staffId = staffSelect.value;
+    var isStaffLogin = !!staffId;
+    var url = isStaffLogin ? (API_BASE + '/auth/login') : (API_BASE + '/admin/login');
+    var body = isStaffLogin ? { staffId: staffId, password: password } : { password: password };
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(url, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){
+        var msg = 'ログインに失敗しました。';
+        if(result.data){ if(result.data.error){ msg = result.data.error; } }
+        throw new Error(msg);
+      }
+      if(isStaffLogin){
+        if(!result.data.isAdmin){ throw new Error('このアカウントには管理者権限がありません。'); }
+      }
+      saveAuth({ token: result.data.token, expiresAt: Date.now() + (result.data.expiresIn * 1000) });
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushAdminAuthed')); }catch(e){}
+    }).catch(function(e){
+      var msg = '';
+      if(e){ if(e.message){ msg = e.message; } }
+      errEl.textContent = msg || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+<div id="kanri-chat-app">読み込み中…</div>
+
+<style>
+  #kanri-chat-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 720px; margin: 0 auto;
+  }
+  #kanri-chat-app * { box-sizing: border-box; }
+  #kanri-chat-app .header { background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0; }
+  #kanri-chat-app .header .app-title { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  #kanri-chat-app .header p { margin: 0; font-size: 13px; color: #94a3b8; }
+
+  #kanri-chat-app .picker { padding: 14px 16px 0; }
+  #kanri-chat-app .picker label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  #kanri-chat-app .picker select {
+    width: 100%; border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px; font-size: 14px;
+    font-family: inherit; background: #fff; color: var(--ink);
+  }
+
+  #kanri-chat-app .chat-panel { margin: 14px 16px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; }
+  #kanri-chat-app .chat-empty { font-size: 13px; color: var(--muted); text-align: center; padding: 30px 10px; }
+  #kanri-chat-app .chat-body { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
+  #kanri-chat-app .chat-bubble-row { display: flex; }
+  #kanri-chat-app .chat-bubble-row.staff { justify-content: flex-start; }
+  #kanri-chat-app .chat-bubble-row.admin { justify-content: flex-end; }
+  #kanri-chat-app .chat-bubble { max-width: 78%; padding: 7px 10px; border-radius: 10px; font-size: 13px; line-height: 1.5; word-break: break-word; }
+  #kanri-chat-app .chat-bubble.staff { background: #eef2f7; color: var(--ink); border-bottom-left-radius: 2px; }
+  #kanri-chat-app .chat-bubble.admin { background: #1e293b; color: #fff; border-bottom-right-radius: 2px; }
+  #kanri-chat-app .chat-time { font-size: 10px; opacity: .6; margin-top: 3px; }
+  #kanri-chat-app .chat-read { font-size: 10px; color: var(--muted); align-self: flex-end; margin: 0 6px 2px; white-space: nowrap; }
+  #kanri-chat-app .chat-read.unread { color: #ea580c; }
+  #kanri-chat-app .unread-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  #kanri-chat-app .unread-chip { background: #fff1f2; border: 1px solid #fecdd3; color: #be123c; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #kanri-chat-app .chat-input-row { display: flex; gap: 6px; margin-top: 12px; }
+  #kanri-chat-app .chat-input-row input { flex: 1; border: 1px solid var(--border); border-radius: 3px; padding: 8px 10px; font-size: 14px; font-family: inherit; }
+  #kanri-chat-app .chat-input-row button { background: #1e293b; color: #fff; border: none; border-radius: 3px; padding: 0 18px; font-size: 13px; cursor: pointer; }
+  #kanri-chat-app .chat-input-row button:disabled { background: #94a3b8; cursor: not-allowed; }
+  #kanri-chat-app .msg-error { color: #ea580c; font-size: 13px; margin-top: 8px; }
+  #kanri-chat-app .back-link { text-align: center; padding: 4px 16px 20px; }
+  #kanri-chat-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  #kanri-chat-app .broadcast-panel { margin: 14px 16px 0; background: #fff7ed; border: 1px solid #fdba74; border-radius: 4px; padding: 12px 14px; }
+  #kanri-chat-app .broadcast-panel .broadcast-title { font-size: 13px; font-weight: 700; color: #9a3412; margin-bottom: 6px; }
+  #kanri-chat-app .broadcast-panel .broadcast-desc { font-size: 11.5px; color: #9a3412; margin: 0 0 8px; line-height: 1.6; }
+  #kanri-chat-app .broadcast-panel textarea {
+    width: 100%; box-sizing: border-box; border: 1px solid #fdba74; border-radius: 3px; padding: 8px 10px;
+    font-size: 13.5px; font-family: inherit; resize: vertical; min-height: 54px;
+  }
+  #kanri-chat-app .broadcast-row { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 8px; }
+  #kanri-chat-app .broadcast-row button {
+    background: #c2410c; color: #fff; border: none; border-radius: 3px; padding: 8px 18px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  #kanri-chat-app .broadcast-row button:disabled { background: #94a3b8; cursor: not-allowed; }
+  #kanri-chat-app .broadcast-msg { font-size: 12px; color: #3F8F6B; }
+  #kanri-chat-app .broadcast-msg.err { color: #ea580c; }
+</style>
+
+<script>
+  // ============================================================
+  // データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+  // 「ヨコセオフィス業務システム(WordPress DB版)」プラグインが提供する
+  // REST APIを呼び出します。
+  // ============================================================
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+  // 管理者または従業員のログイントークンを付けてAPIを呼ぶ(ログイン必須のAPI用)。
+  function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = JSON.parse(localStorage.getItem("mush_nippo_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    return fetch(url, o);
+  }
+
+
+  const DEPTS = ["営業", "デザイン", "製作", "事務"];
+  let STAFF = [];
+
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  const state = {
+    staffId: "",
+    messages: [],
+    unread: {}, // 従業員IDごとの「従業員からの未読メッセージ」件数
+    loading: false,
+    error: "",
+    input: "",
+    sending: false,
+    // 全員へのお知らせ(各従業員の個人チャットへ一斉送信する)
+    broadcastInput: "",
+    broadcastSending: false,
+    broadcastMsg: "",
+  };
+
+  async function loadStaffList() {
+    try {
+      const res = await fetch(`${API_BASE}/employees`);
+      const rows = await res.json();
+      STAFF = rows.map(r => ({ id: String(r.id), name: r.name, dept: r.department }));
+    } catch (e) {
+      STAFF = [];
+    }
+  }
+
+  async function loadUnread() {
+    try {
+      const res = await apiFetch(`${API_BASE}/chat-messages/admin-unread`);
+      state.unread = res.ok ? await res.json() : {};
+    } catch (e) {
+      state.unread = {};
+    }
+  }
+
+  async function loadChat() {
+    if (!state.staffId) { state.messages = []; await loadUnread(); render(); return; }
+    state.loading = true;
+    render();
+    try {
+      const res = await apiFetch(`${API_BASE}/chat-messages?staffId=${encodeURIComponent(state.staffId)}`);
+      if (!res.ok) throw new Error("取得に失敗しました");
+      state.messages = await res.json();
+      state.error = "";
+      // 開いたスレッドの、従業員からの未読メッセージを既読にする
+      if (state.messages.some(m => m.sender === "staff" && !m.isRead)) {
+        await apiFetch(`${API_BASE}/chat-messages/mark-read`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ staffId: state.staffId, reader: "admin" }),
+        }).catch(() => {});
+      }
+      await loadUnread();
+    } catch (e) {
+      state.error = "チャットの取得に失敗しました。";
+    }
+    state.loading = false;
+    render();
+  }
+
+  // 30秒ごとに、開いているスレッドを自動更新する(他のページと同じ間隔に統一)
+  setInterval(() => { if (state.staffId) { loadChat(); } else { loadUnread().then(render); } }, 60000);
+
+  async function sendMessage() {
+    const message = state.input.trim();
+    if (!message || state.sending || !state.staffId) return;
+    state.sending = true;
+    state.error = "";
+    render();
+    try {
+      const res = await apiFetch(`${API_BASE}/chat-messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId: state.staffId, sender: "admin", message }),
+      });
+      if (!res.ok) throw new Error("送信に失敗しました");
+      state.input = "";
+      await loadChat();
+    } catch (e) {
+      state.error = "送信に失敗しました。もう一度お試しください。";
+    }
+    state.sending = false;
+    render();
+  }
+
+  window.__kanriChat = {
+    setStaff(id) {
+      state.staffId = id;
+      state.messages = [];
+      loadChat();
+    },
+    setInput(val) { state.input = val; },
+    send() { sendMessage(); },
+    setBroadcastInput(val) {
+      // 入力のたびに全体を再描画するとテキストエリアのカーソル位置やIME入力が
+      // 崩れるため、ここではstateの更新と送信ボタンの有効/無効の切り替えだけを行う。
+      state.broadcastInput = val;
+      state.broadcastMsg = "";
+      const btn = document.querySelector(".broadcast-row button");
+      if (btn) btn.disabled = !val.trim() || state.broadcastSending;
+    },
+    async sendBroadcast() {
+      const message = state.broadcastInput.trim();
+      if (!message || STAFF.length === 0) return;
+      state.broadcastSending = true;
+      state.broadcastMsg = "";
+      render();
+      try {
+        const results = await Promise.all(STAFF.map(s =>
+          apiFetch(`${API_BASE}/chat-messages`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ staffId: s.id, sender: "admin", message }),
+          })
+        ));
+        const failed = results.filter(r => !r.ok).length;
+        if (failed > 0) throw new Error(`${failed}名への送信に失敗しました。`);
+        state.broadcastInput = "";
+        state.broadcastMsg = `送信しました(${STAFF.length}名全員のチャットに送信)`;
+        if (state.staffId) await loadChat();
+      } catch (e) {
+        state.broadcastMsg = e.message || "送信に失敗しました。通信環境をご確認ください。";
+      }
+      state.broadcastSending = false;
+      render();
+    },
+  };
+
+  function render() {
+    const staffOptionsByDept = DEPTS.map(dept => {
+      const opts = STAFF.filter(s => s.dept === dept)
+        .map(s => `<option value="${s.id}" ${s.id===state.staffId?"selected":""}>${state.unread[s.id] ? "● " : ""}${escapeHtml(s.name)}${state.unread[s.id] ? `(未読${state.unread[s.id]})` : ""}</option>`).join("");
+      return opts ? `<optgroup label="${dept}">${opts}</optgroup>` : "";
+    }).join("");
+
+    const staff = STAFF.find(s => s.id === state.staffId);
+
+    const bodyHtml = !state.staffId ? `<div class="chat-empty">従業員を選んでください。</div>`
+      : state.loading ? `<p style="font-size:12.5px;color:#8a8577;">読み込み中…</p>`
+      : state.messages.length === 0 ? `<div class="chat-empty">まだメッセージはありません。<br>下の入力欄からメッセージを送れます。</div>`
+      : state.messages.map(m => `
+        <div class="chat-bubble-row ${m.sender}">
+          ${m.sender === "admin" ? `<span class="chat-read ${m.isRead ? "" : "unread"}">${m.isRead ? "既読" : "未読"}</span>` : ""}
+          <div class="chat-bubble ${m.sender}">
+            <div>${escapeHtml(m.message)}</div>
+            <div class="chat-time">${(m.createdAt||"").replace("T"," ").slice(0,16)}</div>
+          </div>
+        </div>
+      `).join("");
+
+    const unreadStaff = STAFF.filter(s => state.unread[s.id]);
+    const unreadHtml = unreadStaff.length === 0 ? "" : `
+        <div class="unread-list">
+          ${unreadStaff.map(s => `<button type="button" class="unread-chip" onclick="__kanriChat.setStaff('${s.id}')">● ${escapeHtml(s.name)}さんから未読${state.unread[s.id]}件</button>`).join("")}
+        </div>`;
+
+    document.getElementById("kanri-chat-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a></div>
+      <div class="header">
+        <div class="app-title">連絡用チャット</div>
+        <p>従業員を選んで、日報ページ上のチャットと同じスレッドでやり取りできます(送ったメッセージには既読・未読が表示されます)</p>
+      </div>
+      <div class="broadcast-panel">
+        <div class="broadcast-title">📢 全員に送信(お知らせ)</div>
+        <p class="broadcast-desc">送信すると、全従業員それぞれの個人チャットに同じメッセージが一斉送信されます。</p>
+        <textarea placeholder="全従業員へのお知らせを入力" oninput="__kanriChat.setBroadcastInput(this.value)">${escapeHtml(state.broadcastInput)}</textarea>
+        <div class="broadcast-row">
+          ${state.broadcastMsg ? `<span class="broadcast-msg ${state.broadcastMsg.startsWith("送信しました") ? "" : "err"}">${escapeHtml(state.broadcastMsg)}</span>` : ""}
+          <button type="button" onclick="__kanriChat.sendBroadcast()" ${(!state.broadcastInput.trim() || state.broadcastSending) ? "disabled" : ""}>${state.broadcastSending ? "送信中…" : "全員に送信"}</button>
+        </div>
+      </div>
+      <div class="picker">
+        <label>従業員を選択(個人宛チャット)</label>
+        <select onchange="__kanriChat.setStaff(this.value)">
+          <option value="">-- 選択してください --</option>
+          ${staffOptionsByDept}
+        </select>
+        ${unreadHtml}
+      </div>
+      <div class="chat-panel">
+        <div class="chat-body" id="chat-body">${bodyHtml}</div>
+        ${state.error ? `<p class="msg-error">${state.error}</p>` : ""}
+        <div class="chat-input-row">
+          <input type="text" id="f-admin-chat-input" autocomplete="off" placeholder="${staff ? staff.name + "さんにメッセージを送る" : "従業員を選んでください"}"
+            value="${escapeHtml(state.input)}" ${state.staffId ? "" : "disabled"}
+            oninput="__kanriChat.setInput(this.value)"
+            onkeydown="if(event.key==='Enter') __kanriChat.send();">
+          <button type="button" onclick="__kanriChat.send()" ${(!state.staffId || state.sending)?"disabled":""}>${state.sending?"送信中…":"送信"}</button>
+        </div>
+      </div>
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a>
+      </div>
+    `;
+
+    const chatBody = document.getElementById("chat-body");
+    if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  // 「従業員登録」で追加した新しい部署を、標準の4部署の後ろに加え、その色(CSS)も用意する。
+  async function loadDepartments() {
+    let list = [];
+    try {
+      const res = await fetch(`${API_BASE}/departments`);
+      const j = res.ok ? await res.json() : [];
+      if (Array.isArray(j)) { list = j; }
+    } catch (e) { list = []; }
+    list.forEach(d => { if (DEPTS.indexOf(d.name) === -1) { DEPTS.push(d.name); } });
+    STAFF.forEach(s => { if (s.dept) { if (DEPTS.indexOf(s.dept) === -1) { DEPTS.push(s.dept); } } });
+  }
+
+  async function init() {
+    await loadStaffList();
+    await loadDepartments();
+    await loadUnread();
+    render();
+  }
+  // 管理者ログイン直後(ページ表示時はまだ未ログインのことがある)に未読件数を取り直す
+  window.addEventListener("mushAdminAuthed", () => { loadUnread().then(render); });
+  init();
+</script>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

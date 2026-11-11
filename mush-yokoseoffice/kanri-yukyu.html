@@ -1,0 +1,377 @@
+<!--
+  ============================================================
+  有給取得一覧(管理者用・WordPress DB版)
+  「ヨコセオフィス業務システム(WordPress DB版)」プラグインが固定ページ「有給取得一覧」として自動で作成します。
+  全従業員(「その他」部門を除く)の有給休暇の付与合計・取得済み日数・取得予定・時効消滅・残日数・
+  次回失効・年5日取得義務の状況を一覧にします。行をクリックすると、取得した日・取得予定日・付与履歴を表示します。
+  取得日数は勤怠(日ごとの区分)が「有休」の日を数えます(個別スケジュールの業務区分「休暇取得」もここに入ります)。
+  ============================================================
+-->
+<!-- ============================================================
+     管理者ログインゲート(共通)
+     WordPressのパスワード保護は使わず、日報ページの従業員ログインと
+     同じ「パスワード入力→トークン発行」の仕組みで管理者だけを通す。
+     従業員登録・管理者チャット・管理者集計の3ページで共通のログイン状態
+     (localStorageのmush_admin_auth)を共有するので、1回ログインすれば
+     3ページとも入れるようになる。
+     ============================================================ -->
+<div id="mushAdminGate" style="position:fixed;inset:0;z-index:99999;background:#f7f6f3;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',sans-serif;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:32px 28px;max-width:340px;width:90%;box-shadow:0 2px 10px rgba(0,0,0,.06);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1E2A4A;">管理者ログイン</h2>
+    <p style="margin:0 0 16px;font-size:12px;color:#6B7280;line-height:1.6;">このページは管理者のみ閲覧できます。<br>ご自身のお名前とパスワードでログインしてください。</p>
+    <select id="mushAdminStaff" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="">-- 読み込み中… --</option>
+    </select>
+    <input type="password" id="mushAdminPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:10px;box-sizing:border-box;font-family:inherit;">
+    <div id="mushAdminErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <button id="mushAdminSubmit" style="width:100%;padding:11px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i=els.length-1;i>=0;i--){
+      var url = els[i].href || els[i].src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1) return u.pathname.substring(0, idx);
+      }catch(e){}
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href) return link.href.replace(/\/$/, '');
+    return getSiteBasePath() + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var STORAGE_KEY = 'mush_admin_auth';
+
+  function loadAuth(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth || !auth.token || !auth.expiresAt || Date.now() > auth.expiresAt) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAuth(auth){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var gate = document.getElementById('mushAdminGate');
+  if(loadAuth()){
+    gate.style.display = 'none';
+    return;
+  }
+
+  var pwInput = document.getElementById('mushAdminPw');
+  var errEl = document.getElementById('mushAdminErr');
+  var btn = document.getElementById('mushAdminSubmit');
+  var staffSelect = document.getElementById('mushAdminStaff');
+  var DEPTS = ['営業', 'デザイン', '製作', '事務'];
+
+  function loadStaffOptions(){
+    fetch(API_BASE + '/employees').then(function(res){
+      return res.json();
+    }).then(function(rows){
+      if(!Array.isArray(rows)) rows = [];
+      // 「従業員登録」で追加した新しい部署の従業員も選べるよう、所属している部署を一覧に加える。
+      for(var x=0; x<rows.length; x++){ var dn = rows[x].department; if(dn){ if(DEPTS.indexOf(dn) === -1){ DEPTS.push(dn); } } }
+      var html = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+      for(var d=0; d<DEPTS.length; d++){
+        var dept = DEPTS[d];
+        var opts = '';
+        for(var i=0; i<rows.length; i++){
+          var r = rows[i];
+          if(r.department === dept){
+            opts += '<option value="' + r.id + '">' + String(r.name).replace(/[&<>"]/g, function(c){
+              return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+            }) + '</option>';
+          }
+        }
+        if(opts){ html += '<optgroup label="' + dept + '">' + opts + '</optgroup>'; }
+      }
+      staffSelect.innerHTML = html;
+    }).catch(function(e){
+      staffSelect.innerHTML = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+    });
+  }
+  loadStaffOptions();
+
+  function tryLogin(){
+    var password = pwInput.value;
+    if(!password){ errEl.textContent = 'パスワードを入力してください。'; return; }
+    var staffId = staffSelect.value;
+    var isStaffLogin = !!staffId;
+    var url = isStaffLogin ? (API_BASE + '/auth/login') : (API_BASE + '/admin/login');
+    var body = isStaffLogin ? { staffId: staffId, password: password } : { password: password };
+    btn.disabled = true; btn.textContent = '確認中…';
+    fetch(url, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){
+        var msg = 'ログインに失敗しました。';
+        if(result.data){ if(result.data.error){ msg = result.data.error; } }
+        throw new Error(msg);
+      }
+      if(isStaffLogin){
+        if(!result.data.isAdmin){ throw new Error('このアカウントには管理者権限がありません。'); }
+      }
+      saveAuth({ token: result.data.token, expiresAt: Date.now() + (result.data.expiresIn * 1000) });
+      gate.style.display = 'none';
+      try{ window.dispatchEvent(new Event('mushAdminAuthed')); }catch(e){}
+    }).catch(function(e){
+      var msg = '';
+      if(e){ if(e.message){ msg = e.message; } }
+      errEl.textContent = msg || 'ログインに失敗しました。';
+    }).then(function(){
+      btn.disabled = false; btn.textContent = 'ログイン';
+    });
+  }
+
+  btn.addEventListener('click', tryLogin);
+  pwInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') tryLogin(); });
+  pwInput.focus();
+})();
+</script>
+
+<div id="yukyu-app">読み込み中…</div>
+
+<style>
+  #yukyu-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577; --navy: #1E2A4A;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 1100px; margin: 0 auto; padding-bottom: 10px;
+  }
+  #yukyu-app * { box-sizing: border-box; }
+  #yukyu-app .header { background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #yukyu-app .header h1 { font-size: 18px; margin: 0 0 2px; font-weight: 600; color: #f8fafc; }
+  #yukyu-app .header p { margin: 0; font-size: 12.5px; color: #94a3b8; }
+  #yukyu-app .header-actions { display: flex; gap: 8px; }
+  #yukyu-app .header-actions button { background: #fff; color: var(--navy); border: none; border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  #yukyu-app .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 12px 16px 0; font-size: 13px; }
+  #yukyu-app .toolbar select, #yukyu-app .toolbar input { border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; font-size: 13px; font-family: inherit; background: #fff; }
+  #yukyu-app .toolbar label { display: flex; align-items: center; gap: 4px; color: #475569; }
+  #yukyu-app .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px 16px 0; }
+  #yukyu-app .summary .card { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 10px; text-align: center; }
+  #yukyu-app .summary .label { font-size: 11.5px; color: var(--muted); }
+  #yukyu-app .summary .value { font-size: 20px; font-weight: 700; color: var(--navy); margin-top: 2px; }
+  #yukyu-app .summary .value.warn { color: #dc2626; }
+  #yukyu-app .table-wrap { margin: 12px 16px 0; background: #fff; border: 1px solid var(--border); border-radius: 4px; overflow-x: auto; }
+  #yukyu-app table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #yukyu-app th { background: #f1f5f9; color: #334155; font-weight: 600; padding: 8px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; text-align: center; }
+  #yukyu-app td { padding: 8px 8px; border-bottom: 1px solid #eceae4; text-align: center; white-space: nowrap; }
+  #yukyu-app td.name { text-align: left; font-weight: 600; }
+  #yukyu-app tr.staff-row { cursor: pointer; }
+  #yukyu-app tr.staff-row:hover td { background: #f8fafc; }
+  #yukyu-app tr.staff-row.open td { background: #eef2ff; }
+  #yukyu-app .num { font-weight: 700; }
+  #yukyu-app .num.zero { color: #cbd5e1; font-weight: 400; }
+  #yukyu-app .num.warn { color: #dc2626; }
+  #yukyu-app .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+  #yukyu-app .badge.ok { background: #e7f3ed; color: #3F8F6B; }
+  #yukyu-app .badge.warning { background: #fef3e7; color: #b45309; }
+  #yukyu-app .badge.violated { background: #fdecea; color: #dc2626; }
+  #yukyu-app .badge.none { background: #f1f5f9; color: #94a3b8; }
+  #yukyu-app .badge.nogrant { background: #fff7ed; color: #c2410c; }
+  #yukyu-app tr.detail-row td { background: #fafaf8; text-align: left; white-space: normal; padding: 12px 16px; }
+  #yukyu-app .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  #yukyu-app .detail-grid h4 { margin: 0 0 6px; font-size: 12.5px; color: var(--navy); }
+  #yukyu-app .detail-grid ul { margin: 0; padding-left: 18px; font-size: 12.5px; line-height: 1.8; color: #334155; }
+  #yukyu-app .detail-grid .empty { font-size: 12px; color: var(--muted); }
+  #yukyu-app .note { font-size: 11.5px; color: var(--muted); padding: 10px 16px 0; line-height: 1.7; }
+  #yukyu-app .msg-error { color: #ea580c; font-size: 13px; padding: 16px; }
+  @media (max-width: 760px) {
+    #yukyu-app .summary { grid-template-columns: repeat(2, 1fr); }
+    #yukyu-app .detail-grid { grid-template-columns: 1fr; }
+  }
+  @media print {
+    #yukyu-app .no-print, #wpadminbar, header, footer, .header-container, #footer { display: none !important; }
+    #yukyu-app { background: #fff; max-width: none; }
+    #yukyu-app .header { background: #fff; color: #000; border-bottom: 2px solid #000; }
+    #yukyu-app .header h1 { color: #000; }
+    #yukyu-app .table-wrap { overflow: visible; border: none; }
+    #yukyu-app table { font-size: 10px; }
+    #yukyu-app th, #yukyu-app td { padding: 4px; }
+  }
+</style>
+
+<script>
+(function(){
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){ return u.pathname.substring(0, idx); }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){ return link.href.replace(/\/$/, ''); }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+  function apiFetch(url, opts) {
+    const o = Object.assign({}, opts || {});
+    let a = null;
+    try {
+      a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null");
+      if (!(a && a.token && a.expiresAt > Date.now())) a = null;
+    } catch (e) { a = null; }
+    o.headers = Object.assign({}, o.headers || {}, a ? { Authorization: "Bearer " + a.token } : {});
+    return fetch(url, o);
+  }
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  const WEEK = ["日","月","火","水","木","金","土"];
+  function dateWithWeek(d) {
+    const dt = new Date(String(d) + "T00:00:00");
+    return escapeHtml(d) + (isNaN(dt.getTime()) ? "" : "(" + WEEK[dt.getDay()] + ")");
+  }
+  function numCell(v, warn) {
+    const n = Number(v) || 0;
+    return `<span class="num ${n === 0 ? "zero" : (warn ? "warn" : "")}">${n}日</span>`;
+  }
+
+  const state = { loading: true, error: "", asOf: "", staff: [], openId: null, dept: "", keyword: "" };
+
+  async function load() {
+    state.loading = true; state.error = ""; render();
+    try {
+      const res = await apiFetch(`${API_BASE}/leave-summary`);
+      const data = await res.json().catch(() => null);
+      if (res.status === 401 || res.status === 403) throw new Error("管理者ログインが必要です。ページを再読み込みしてログインしてください。");
+      if (!res.ok || !data) throw new Error((data && data.error) || "取得に失敗しました。");
+      state.asOf = data.asOf || "";
+      state.staff = Array.isArray(data.staff) ? data.staff : [];
+    } catch (e) {
+      state.error = e.message || "取得に失敗しました。通信環境をご確認ください。";
+    }
+    state.loading = false; render();
+  }
+
+  // 年5日取得義務: 一番期限の近い未達分を優先して表示する。
+  function fiveDayBadge(s) {
+    const checks = s.fiveDayCheck || [];
+    if (!checks.length) return '<span class="badge none">対象外</span>';
+    const bad = checks.find(c => c.status === "violated") || checks.find(c => c.status === "warning");
+    if (!bad) return '<span class="badge ok">達成済み</span>';
+    const label = bad.status === "violated" ? "未達(期限超過)" : "未達";
+    return `<span class="badge ${bad.status}" title="付与${escapeHtml(bad.grantDate)}分・期限${escapeHtml(bad.deadline)}">${label} あと${Number(bad.shortfall) || 0}日</span>`;
+  }
+
+  function detailHtml(s) {
+    const used = (s.usedDetails || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const usedList = used.length
+      ? `<ul>${used.map(u => `<li>${dateWithWeek(u.date)}${u.grantDate ? ` <span style="color:#94a3b8;">(${escapeHtml(u.grantDate)}付与分)</span>` : ' <span style="color:#c2410c;">(付与なし)</span>'}</li>`).join("")}</ul>`
+      : '<div class="empty">まだありません</div>';
+    const planned = s.plannedDates || [];
+    const plannedList = planned.length ? `<ul>${planned.map(d => `<li>${dateWithWeek(d)}</li>`).join("")}</ul>` : '<div class="empty">ありません</div>';
+    const grants = s.grants || [];
+    const grantList = grants.length
+      ? `<ul>${grants.map(g => `<li>${escapeHtml(g.grantDate)} ${Number(g.days)}日 <span style="color:#94a3b8;">(失効 ${escapeHtml(g.expiry)})</span>${g.note ? " " + escapeHtml(g.note) : ""}</li>`).join("")}</ul>`
+      : '<div class="empty">付与記録がありません(給与計算ページの「有休管理」から登録できます)</div>';
+    return `<div class="detail-grid">
+      <div><h4>取得した日(${used.length}日)</h4>${usedList}</div>
+      <div><h4>取得予定(明日以降・${planned.length}日)</h4>${plannedList}</div>
+      <div><h4>付与履歴</h4>${grantList}</div>
+    </div>`;
+  }
+
+  function filtered() {
+    const kw = state.keyword.trim();
+    return state.staff.filter(s => (!state.dept || s.department === state.dept) && (!kw || String(s.name).indexOf(kw) !== -1));
+  }
+
+  function render() {
+    const app = document.getElementById("yukyu-app");
+    if (!app) return;
+    const base = getSiteBasePath();
+    const backBtn = `<div class="no-print" style="text-align:center;padding:10px 16px 0;"><a href="${base}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a></div>`;
+    const header = `<div class="header">
+        <div><h1>有給取得一覧</h1><p>全従業員の有給休暇の付与・取得・残日数${state.asOf ? `(${escapeHtml(state.asOf)} 時点)` : ""}</p></div>
+        <div class="header-actions no-print"><button type="button" onclick="__yukyu.reload()">↻ 再読み込み</button><button type="button" onclick="window.print()">🖨 印刷</button></div>
+      </div>`;
+    if (state.loading) { app.innerHTML = backBtn + header + '<p style="padding:24px;text-align:center;color:#8a8577;font-size:13px;">読み込み中…</p>'; return; }
+    if (state.error) { app.innerHTML = backBtn + header + `<p class="msg-error">${escapeHtml(state.error)}</p>`; return; }
+
+    const list = filtered();
+    const depts = [...new Set(state.staff.map(s => s.department).filter(Boolean))];
+    const sum = (k) => list.reduce((t, s) => t + (Number(s[k]) || 0), 0);
+    const warnCount = list.filter(s => (s.fiveDayCheck || []).some(c => c.status !== "ok")).length;
+    const rows = list.map(s => {
+      const open = String(state.openId) === String(s.staffId);
+      const noGrant = !(Number(s.granted) > 0);
+      const plannedN = (s.plannedDates || []).length;
+      return `<tr class="staff-row ${open ? "open" : ""}" onclick="__yukyu.toggle('${s.staffId}')" title="クリックで取得した日・付与履歴を表示">
+          <td>${escapeHtml(s.employeeNo)}</td>
+          <td class="name">${open ? "▲" : "▼"} ${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(s.department)}</td>
+          <td>${s.hireDate ? escapeHtml(s.hireDate) : '<span style="color:#cbd5e1;">未登録</span>'}</td>
+          <td>${noGrant ? '<span class="badge nogrant">付与なし</span>' : numCell(s.granted)}</td>
+          <td>${numCell(s.used)}</td>
+          <td>${numCell(plannedN)}</td>
+          <td>${numCell(s.expired, true)}</td>
+          <td><span class="num" style="font-size:14px;">${Number(s.remaining) || 0}日</span></td>
+          <td>${s.nextExpiry ? `${escapeHtml(s.nextExpiry.date)}<br><span style="font-size:11px;color:#b45309;">${Number(s.nextExpiry.days)}日分</span>` : '<span style="color:#cbd5e1;">-</span>'}</td>
+          <td>${fiveDayBadge(s)}</td>
+        </tr>${open ? `<tr class="detail-row"><td colspan="11">${detailHtml(s)}</td></tr>` : ""}`;
+    }).join("");
+
+    app.innerHTML = backBtn + header + `
+      <div class="toolbar no-print">
+        <label>部門 <select onchange="__yukyu.setDept(this.value)"><option value="">すべて</option>${depts.map(d => `<option value="${escapeHtml(d)}" ${d === state.dept ? "selected" : ""}>${escapeHtml(d)}</option>`).join("")}</select></label>
+        <label>氏名 <input type="text" id="yukyu-kw" value="${escapeHtml(state.keyword)}" placeholder="名前で絞り込み" oninput="__yukyu.setKeyword(this.value)"></label>
+        <span style="color:#94a3b8;">${list.length}名</span>
+      </div>
+      <div class="summary">
+        <div class="card"><div class="label">取得済み合計</div><div class="value">${sum("used")}日</div></div>
+        <div class="card"><div class="label">取得予定合計(明日以降)</div><div class="value">${list.reduce((t, s) => t + (s.plannedDates || []).length, 0)}日</div></div>
+        <div class="card"><div class="label">残日数合計</div><div class="value">${sum("remaining")}日</div></div>
+        <div class="card"><div class="label">年5日取得義務 未達</div><div class="value ${warnCount ? "warn" : ""}">${warnCount}名</div></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>No.</th><th>氏名</th><th>部門</th><th>入社日</th><th>付与合計</th><th>取得済み</th><th>取得予定</th><th>時効消滅</th><th>残日数</th><th>次回失効</th><th>年5日取得義務</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="11" style="color:#94a3b8;padding:20px;">該当する従業員がいません</td></tr>'}</tbody>
+        </table>
+      </div>
+      <p class="note">・取得済みは、勤怠(日ごとの区分)が「有休」の日のうち本日までの日数です。個別スケジュールで業務区分「休暇取得」にした日も含みます。<br>
+      ・取得予定は、明日以降で「有休」になっている日です(その日になると取得済みに移ります)。<br>
+      ・付与・入社日の登録は「給与計算」ページの「有休管理・固定控除額の設定」から行います。付与日から2年たった分は時効消滅として残日数から除きます。</p>
+      ${backBtn.replace('padding:10px 16px 0;', 'padding:14px 16px 6px;')}`;
+  }
+
+  window.__yukyu = {
+    reload: load,
+    toggle(id) { state.openId = String(state.openId) === String(id) ? null : id; render(); },
+    setDept(v) { state.dept = v; state.openId = null; render(); },
+    // 入力中に再描画するとカーソルが外れるため、描画後に入力欄へフォーカスを戻す。
+    setKeyword(v) {
+      state.keyword = v; render();
+      const el = document.getElementById("yukyu-kw");
+      if (el) { el.focus(); el.setSelectionRange(v.length, v.length); }
+    },
+  };
+
+  window.addEventListener("mushAdminAuthed", load);
+  let authed = false;
+  try { const a = JSON.parse(localStorage.getItem("mush_admin_auth") || "null"); authed = !!(a && a.token && a.expiresAt > Date.now()); } catch (e) {}
+  if (authed) { load(); } else { state.loading = false; state.error = ""; document.getElementById("yukyu-app").innerHTML = ""; }
+})();
+</script>

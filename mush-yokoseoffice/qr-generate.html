@@ -1,0 +1,146 @@
+<!--
+  ============================================================
+  タイムカード用QRコード生成画面(管理者用/WordPress DB版・Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「ヨコセオフィス業務システム(WordPress DB版)」プラグインを有効化しておく必要があります。
+  ============================================================
+-->
+<div id="qr-app"></div>
+
+<style>
+  #qr-app {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: #1f2937; max-width: 900px; margin: 0 auto;
+  }
+  #qr-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+  }
+  #qr-app .header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  #qr-app .header .sub { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  #qr-app .print-btn {
+    background: #f8fafc; color: #1e293b; border: none; border-radius: 4px; padding: 8px 16px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  #qr-app .grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; padding: 16px; background: #f0efe9;
+  }
+  @media (min-width: 700px) { #qr-app .grid { grid-template-columns: repeat(4, 1fr); } }
+  #qr-app .qr-card {
+    background: #fff; border: 1px solid #d6d3cb; border-radius: 6px; padding: 16px; text-align: center;
+  }
+  #qr-app .qr-card .dept-pill {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 3px; margin-bottom: 8px;
+  }
+  #qr-app .dept-pill.営業 { background: #e0f2fe; color: #0369a1; }
+  #qr-app .dept-pill.デザイン { background: #ede9fe; color: #6d28d9; }
+  #qr-app .dept-pill.製作 { background: #d1fae5; color: #047857; }
+  #qr-app .dept-pill.事務 { background: #fef3c7; color: #b45309; }
+  #qr-app .qr-box { display: flex; justify-content: center; margin: 6px 0 10px; }
+  #qr-app .staff-name { font-size: 15px; font-weight: 700; }
+  #qr-app .qr-box a { display: inline-flex; }
+  #qr-app .back-link { text-align: center; padding: 16px; }
+  #qr-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  @media print {
+    #qr-app .header, #qr-app .back-link, #qr-app .print-btn { display: none !important; }
+    #qr-app .grid { background: #fff; grid-template-columns: repeat(2, 1fr); }
+    #qr-app .qr-card { break-inside: avoid; border: 1px solid #ccc; }
+  }
+</style>
+
+<script>
+  // ============================================================
+  // データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+  // 「ヨコセオフィス業務システム(WordPress DB版)」プラグインが提供するREST APIを呼び出します。
+  //
+  // QRコードの生成について:
+  // 以前使用していたJSライブラリ(qrcode.js)が環境によって読み込めず、
+  // QRコードが表示されないことがあったため、画像として直接QRコードを生成してくれる
+  // 外部サービス(QRコード生成API)の<img>タグ方式に変更しました。
+  // JSライブラリの読み込みに依存しないため、より確実に表示されます。
+  // ============================================================
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+
+  // タイムカード画面の実際のURL。固定ページのスラッグを変更した場合はここも合わせて変更してください。
+  const TIMECARD_BASE_URL = window.location.origin + getSiteBasePath() + '/タイムカード/';
+
+  function qrImageUrl(text){
+    return `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(text)}`;
+  }
+
+  async function render() {
+    const res = await fetch(`${API_BASE}/employees`);
+    const rows = await res.json();
+    const STAFF = rows.map(r => ({ id: String(r.id), name: r.name, dept: r.department }));
+    // 「従業員登録」で追加した新しい部署の色(CSS)を用意する。
+    try {
+      const dres = await fetch(`${API_BASE}/departments`);
+      const dlist = dres.ok ? await dres.json() : [];
+      const css = (Array.isArray(dlist) ? dlist : []).filter(d => !d.builtin).map(d => `#qr-app .dept-pill.${CSS.escape(d.name)} { background: ${d.bg}; color: ${d.fg}; }`).join("\n");
+      let st = document.getElementById("dept-extra-style");
+      if (!st) { st = document.createElement("style"); st.id = "dept-extra-style"; document.head.appendChild(st); }
+      st.textContent = css;
+    } catch (e) { /* 色が取れなくても表示はできる */ }
+
+    if (STAFF.length === 0) {
+      document.getElementById("qr-app").innerHTML = `
+        <div class="header"><div><h1>タイムカード QRコード</h1></div></div>
+        <div class="grid"><p style="padding:16px;color:#ea580c;">従業員登録がまだありません。先に従業員登録画面から登録してください。</p></div>
+      `;
+      return;
+    }
+
+    document.getElementById("qr-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a></div>
+      <div class="header">
+        <div>
+          <h1>タイムカード QRコード</h1>
+          <div class="sub">各自のQRコードを印刷して、出退勤の打刻に使用してください</div>
+        </div>
+        <button class="print-btn" onclick="window.print()">🖨 印刷する</button>
+      </div>
+      <div class="grid">
+        ${STAFF.map(s => `
+          <div class="qr-card">
+            <span class="dept-pill ${s.dept}">${s.dept}</span>
+            <div class="qr-box">
+              <a href="${TIMECARD_BASE_URL}?staff=${s.id}">
+                <img src="${qrImageUrl(`${TIMECARD_BASE_URL}?staff=${s.id}`)}" width="150" height="150" alt="${s.name}さんのQRコード" loading="lazy">
+              </a>
+            </div>
+            <div class="staff-name">${s.name}</div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a>
+      </div>
+    `;
+  }
+
+  render();
+</script>

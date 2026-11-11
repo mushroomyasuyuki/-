@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>業務システム</title>
+<style>
+  :root{
+    --navy:#1E2A4A;
+    --navy-light:#2C3B63;
+    --paper:#F7F6F3;
+    --card:#FFFFFF;
+    --ink:#20242E;
+    --ink-soft:#6B7280;
+    --line:#E4E2DC;
+    --dept-sales:#3B5BA5;
+    --dept-design:#7A5CB0;
+    --dept-make:#3F8F6B;
+    --dept-office:#C08A1E;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+  }
+  .topbar{
+    background:var(--navy);
+    color:#fff;
+    padding:28px 24px 24px;
+    text-align:center;
+  }
+  .topbar .title{
+    font-size:19px;
+    font-weight:600;
+    margin:0;
+    letter-spacing:.02em;
+  }
+  .container{
+    max-width:640px;
+    margin:0 auto;
+    padding:26px 20px 60px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+  @media (max-width:480px){
+    .grid{grid-template-columns:1fr;}
+  }
+  a.nav-card{
+    display:block;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:22px 18px;
+    text-decoration:none;
+    color:var(--ink);
+    border-top:4px solid var(--navy);
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  a.nav-card:hover{
+    box-shadow:0 4px 14px rgba(30,42,74,0.10);
+    transform:translateY(-1px);
+  }
+  a.nav-card .icon{
+    font-size:22px;
+    margin-bottom:10px;
+    display:block;
+  }
+  a.nav-card .label{
+    font-size:15px;
+    font-weight:700;
+    color:var(--navy);
+    margin-bottom:4px;
+  }
+  a.nav-card .desc{
+    font-size:12px;
+    color:var(--ink-soft);
+    line-height:1.5;
+  }
+  .nav-card.c-nippo{border-top-color:var(--dept-sales);}
+  .nav-card.c-chorei{border-top-color:var(--dept-make);}
+  .nav-card.c-touroku{border-top-color:var(--dept-office);}
+  .nav-card.c-shukei{border-top-color:#0f766e;}
+  .nav-card.c-chat{border-top-color:#4C4A9C;}
+  .nav-card.c-keiri{border-top-color:#A13D4C;}
+  .nav-card.c-myleave{border-top-color:#0d9488;}
+  .nav-card.c-timecard{border-top-color:#b45309;}
+  .nav-card.c-qr{border-top-color:#6b7280;}
+  .nav-card.c-kyuyo{border-top-color:#15803d;}
+  .nav-card.c-yukyu{border-top-color:#0891b2;}
+  .nav-card.c-jisha{border-top-color:#7c3aed;}
+
+  .footer-note{
+    text-align:center;
+    font-size:11px;
+    color:#9AA0AC;
+    margin-top:26px;
+  }
+  .section-title{
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink-soft);
+    margin:0 0 12px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--line);
+  }
+  .section + .section{
+    margin-top:28px;
+  }
+  .admin-toggle-btn{
+    display:block;
+    width:100%;
+    text-align:left;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:12px 14px;
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink-soft);
+    cursor:pointer;
+    font-family:inherit;
+    margin-bottom:12px;
+  }
+  .admin-toggle-btn:hover{
+    background:#f3f2ee;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="title">業務システム</div>
+</div>
+
+<div class="container">
+
+  <div class="section">
+    <div class="section-title">従業員ページ</div>
+    <div class="grid">
+
+      <a class="nav-card c-nippo" id="linkNippo" href="#">
+        <span class="icon">📝</span>
+        <div class="label">個別スケジュール</div>
+        <div class="desc">本日の予定・実績を入力します</div>
+      </a>
+
+      <a class="nav-card c-chorei" id="linkChorei" href="#">
+        <span class="icon">☀️</span>
+        <div class="label">全体スケジュール</div>
+        <div class="desc">本日の全体予定・未提出者を確認します</div>
+      </a>
+
+    </div>
+  </div>
+
+  <div class="section">
+    <button type="button" class="admin-toggle-btn" id="adminToggleBtn" onclick="toggleAdminSection()">管理者ページ ▼</button>
+    <div class="grid" id="adminGrid" style="display:none;">
+
+      <a class="nav-card c-touroku" id="linkTouroku" href="#">
+        <span class="icon">👤</span>
+        <div class="label">従業員登録</div>
+        <div class="desc">従業員の登録・管理(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-shukei" id="linkShukei" href="#">
+        <span class="icon">📈</span>
+        <div class="label">管理者集計</div>
+        <div class="desc">部署別・担当者別の実績と勤怠を集計(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-chat" id="linkChat" href="#">
+        <span class="icon">💬</span>
+        <div class="label">連絡用チャット</div>
+        <div class="desc">従業員を選んでメッセージをやり取り(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-qr" id="linkQr" href="#">
+        <span class="icon">🔳</span>
+        <div class="label">QRコード生成</div>
+        <div class="desc">タイムカード用QRコードの発行(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-timecard" id="linkTimecard" href="#">
+        <span class="icon">⏱️</span>
+        <div class="label">タイムカード</div>
+        <div class="desc">出勤・退勤を打刻します</div>
+      </a>
+
+      <a class="nav-card c-kyuyo" id="linkKyuyo" href="#">
+        <span class="icon">💰</span>
+        <div class="label">給与計算</div>
+        <div class="desc">保険料額表のアップロード・控除額計算(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-yukyu" id="linkYukyu" href="#">
+        <span class="icon">📋</span>
+        <div class="label">有給取得一覧</div>
+        <div class="desc">全従業員の有給の付与・取得・残日数の一覧(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-myleave" id="linkMyLeave" href="#">
+        <span class="icon">🌴</span>
+        <div class="label">給与・有給休暇照会</div>
+        <div class="desc">自分の給与明細・有給休暇の残日数・失効予定を確認します</div>
+      </a>
+
+      <a class="nav-card c-keiri" id="linkKeiri" href="#">
+        <span class="icon">🧾</span>
+        <div class="label">経理</div>
+        <div class="desc">見積もり・顧客一覧・商品一覧(管理者用)</div>
+      </a>
+
+      <a class="nav-card c-jisha" id="linkJisha" href="#">
+        <span class="icon">🏢</span>
+        <div class="label">自社情報</div>
+        <div class="desc">会社情報・振込先・管理者パスワード・書類の保管(管理者用)</div>
+      </a>
+
+    </div>
+  </div>
+
+  <div class="footer-note">社内業務システム</div>
+</div>
+
+<div id="adminLoginModal" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.4);align-items:center;justify-content:center;">
+  <div style="background:#fff;border:1px solid #e4e2dc;border-radius:10px;padding:28px 24px;max-width:320px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.15);box-sizing:border-box;">
+    <h2 style="margin:0 0 6px;font-size:15px;color:#1E2A4A;">管理者ログイン</h2>
+    <p style="margin:0 0 14px;font-size:12px;color:#6B7280;line-height:1.6;">管理者ページの一覧を表示するには、ご自身のお名前とパスワードでログインしてください。</p>
+    <select id="adminLoginStaff" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:8px;box-sizing:border-box;font-family:inherit;background:#fff;">
+      <option value="">-- 読み込み中… --</option>
+    </select>
+    <input type="password" id="adminLoginPw" placeholder="パスワード" autocomplete="off" style="width:100%;padding:10px 12px;border:1px solid #E4E2DC;border-radius:7px;font-size:14px;margin-bottom:8px;box-sizing:border-box;font-family:inherit;">
+    <div id="adminLoginErr" style="color:#E4572E;font-size:12px;margin-bottom:10px;min-height:14px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button type="button" id="adminLoginCancel" style="flex:1;padding:10px;background:#f1f0eb;color:#1E2A4A;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">キャンセル</button>
+      <button type="button" id="adminLoginSubmit" style="flex:1;padding:10px;background:#1E2A4A;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">ログイン</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // リンク先URLを、アクセスしているサイトの実際の設置場所(ドメイン直下 or サブディレクトリ)に
+  // 応じて自動的に生成する。(例: yokoseoffice.sakura.ne.jp/yokose/ 経由でアクセスした場合、
+  // /yokose/ を補って正しいリンク先にする)
+  function getSiteBasePath(){
+    var els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (var i = 0; i < els.length; i++){
+      var el = els[i];
+      var url = el.href || el.src;
+      if(!url) continue;
+      try{
+        var u = new URL(url, window.location.href);
+        var idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  var base = getSiteBasePath();
+  // 各固定ページの実際のスラッグ(URLの末尾部分)。運用中に固定ページのスラッグを
+  // 変更した場合は、ここも合わせて書き換えてください。
+  document.getElementById('linkNippo').href     = base + '/日報/';
+  document.getElementById('linkChorei').href    = base + '/朝礼/';
+  document.getElementById('linkTouroku').href   = base + '/従業員登録/';
+  document.getElementById('linkShukei').href    = base + '/管理者集計/';
+  document.getElementById('linkChat').href      = base + '/管理者チャット/';
+  document.getElementById('linkKeiri').href     = base + '/経理/';
+  document.getElementById('linkMyLeave').href   = base + '/有給照会/';
+  document.getElementById('linkTimecard').href  = base + '/タイムカード/';
+  document.getElementById('linkQr').href        = base + '/QRコード/';
+  document.getElementById('linkKyuyo').href     = base + '/給与計算/';
+  document.getElementById('linkYukyu').href     = base + '/有給取得一覧/';
+  document.getElementById('linkJisha').href     = base + '/自社情報/';
+
+  // 「管理者ページ」ボタンは、従業員に管理者用メニューを見せないよう
+  // パスワード認証(他の管理者画面と共通のlocalStorageトークン)を通過した
+  // 場合だけ一覧を開く。
+  function getRestApiBase(){
+    var link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link){ if(link.href){ return link.href.replace(/\/$/, ''); } }
+    return base + '/wp-json';
+  }
+  var API_BASE = getRestApiBase() + '/mush-office/v1';
+  var ADMIN_AUTH_KEY = 'mush_admin_auth';
+
+  // 見出し・タイトル・フッターに、自社情報に登録した会社名を差し込む
+  // (未ログインでも表示するページなので、会社名だけを返す公開エンドポイントを使う)。
+  // 会社名が未設定の間は、社名なしの表記のままにしておく。
+  fetch(API_BASE + '/company-name').then(function(res){
+    return res.ok ? res.json() : null;
+  }).then(function(data){
+    var name = (data || {}).name || '';
+    if(!name) return;
+    document.title = name + ' 業務システム';
+    var titleEl = document.querySelector('.topbar .title');
+    if(titleEl) titleEl.textContent = name + ' 業務システム';
+    var footerEl = document.querySelector('.footer-note');
+    if(footerEl) footerEl.textContent = name + ' 社内業務システム';
+  }).catch(function(e){ /* 取得できなくても既定の表記のままでよい */ });
+
+  function loadAdminAuth(){
+    try{
+      var raw = localStorage.getItem(ADMIN_AUTH_KEY);
+      if(!raw) return null;
+      var auth = JSON.parse(raw);
+      if(!auth) return null;
+      if(!auth.token) return null;
+      if(!auth.expiresAt) return null;
+      if(auth.expiresAt <= Date.now()) return null;
+      return auth;
+    }catch(e){ return null; }
+  }
+  function saveAdminAuth(auth){
+    try{ localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(auth)); }catch(e){}
+  }
+
+  var adminGrid = document.getElementById('adminGrid');
+  var adminBtn = document.getElementById('adminToggleBtn');
+  var adminModal = document.getElementById('adminLoginModal');
+  var adminStaffSelect = document.getElementById('adminLoginStaff');
+  var adminPwInput = document.getElementById('adminLoginPw');
+  var adminErrEl = document.getElementById('adminLoginErr');
+  var adminSubmitBtn = document.getElementById('adminLoginSubmit');
+  var adminCancelBtn = document.getElementById('adminLoginCancel');
+  var ADMIN_DEPTS = ['営業', 'デザイン', '製作', '事務'];
+
+  function loadAdminStaffOptions(){
+    fetch(API_BASE + '/employees').then(function(res){
+      return res.json();
+    }).then(function(rows){
+      if(!Array.isArray(rows)) rows = [];
+      // 「従業員登録」で追加した新しい部署の従業員も選べるよう、所属している部署を一覧に加える。
+      for(var x=0; x<rows.length; x++){ var dn = rows[x].department; if(dn){ if(ADMIN_DEPTS.indexOf(dn) === -1){ ADMIN_DEPTS.push(dn); } } }
+      var html = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+      for(var d=0; d<ADMIN_DEPTS.length; d++){
+        var dept = ADMIN_DEPTS[d];
+        var opts = '';
+        for(var i=0; i<rows.length; i++){
+          var r = rows[i];
+          if(r.department === dept){
+            opts += '<option value="' + r.id + '">' + String(r.name).replace(/[&<>"]/g, function(c){
+              return c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&quot;';
+            }) + '</option>';
+          }
+        }
+        if(opts){ html += '<optgroup label="' + dept + '">' + opts + '</optgroup>'; }
+      }
+      adminStaffSelect.innerHTML = html;
+    }).catch(function(e){
+      adminStaffSelect.innerHTML = '<option value="">-- 共通の管理者パスワードでログイン --</option>';
+    });
+  }
+  loadAdminStaffOptions();
+
+  function showAdminGrid(){
+    adminGrid.style.display = '';
+    adminBtn.textContent = '管理者ページ ▲';
+  }
+  function hideAdminGrid(){
+    adminGrid.style.display = 'none';
+    adminBtn.textContent = '管理者ページ ▼';
+  }
+  function closeAdminModal(){
+    adminModal.style.display = 'none';
+    adminPwInput.value = '';
+    adminErrEl.textContent = '';
+    adminStaffSelect.value = '';
+  }
+  function toggleAdminSection(){
+    var isHidden = adminGrid.style.display === 'none';
+    if(!isHidden){
+      hideAdminGrid();
+      return;
+    }
+    var auth = loadAdminAuth();
+    if(auth){
+      showAdminGrid();
+      return;
+    }
+    adminModal.style.display = 'flex';
+    adminPwInput.focus();
+  }
+  function submitAdminLogin(){
+    var password = adminPwInput.value;
+    if(!password){
+      adminErrEl.textContent = 'パスワードを入力してください。';
+      return;
+    }
+    var staffId = adminStaffSelect.value;
+    var isStaffLogin = !!staffId;
+    var url = isStaffLogin ? (API_BASE + '/auth/login') : (API_BASE + '/admin/login');
+    var body = isStaffLogin ? { staffId: staffId, password: password } : { password: password };
+    adminSubmitBtn.disabled = true;
+    adminSubmitBtn.textContent = '確認中…';
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function(res){
+      return res.json().then(function(data){ return { ok: res.ok, data: data }; });
+    }).then(function(result){
+      if(!result.ok){
+        var msg = 'ログインに失敗しました。';
+        if(result.data){ if(result.data.error){ msg = result.data.error; } }
+        throw new Error(msg);
+      }
+      if(isStaffLogin){
+        if(!result.data.isAdmin){ throw new Error('このアカウントには管理者権限がありません。'); }
+      }
+      saveAdminAuth({ token: result.data.token, expiresAt: Date.now() + (result.data.expiresIn * 1000) });
+      closeAdminModal();
+      showAdminGrid();
+    }).catch(function(e){
+      var msg = '';
+      if(e){ if(e.message){ msg = e.message; } }
+      if(!msg){ msg = 'ログインに失敗しました。'; }
+      adminErrEl.textContent = msg;
+    }).then(function(){
+      adminSubmitBtn.disabled = false;
+      adminSubmitBtn.textContent = 'ログイン';
+    });
+  }
+  adminSubmitBtn.addEventListener('click', submitAdminLogin);
+  adminCancelBtn.addEventListener('click', closeAdminModal);
+  adminPwInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ submitAdminLogin(); }
+  });
+</script>
+
+</body>
+</html>
+
+<script>
+  // ============================================================
+  // ログアウトボタン(管理者・従業員どちらでも)。ログイン中だけ、画面の右上に出す。
+  // 押すと、このブラウザに保存してあるログイン情報(管理者・従業員)を消して、ページを開き直す。
+  // ※この範囲では論理積(アンパサンド2つ)や山かっこの比較を使わない(WordPressの表示処理が記号を壊すことがあるため)。
+  // ============================================================
+  (function () {
+    if (window.__mushLogoutInstalled) { return; }
+    window.__mushLogoutInstalled = true;
+    var KEYS = ['mush_admin_auth', 'mush_nippo_auth'];
+    function isValid(key) {
+      try {
+        var a = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!a) { return false; }
+        if (!a.token) { return false; }
+        return a.expiresAt > Date.now();
+      } catch (e) { return false; }
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'mush-logout-btn';
+    btn.style.cssText = 'position:fixed;top:44px;right:12px;z-index:99998;display:none;background:#1e293b;color:#fff;border:1px solid #475569;border-radius:4px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25);font-family:inherit;';
+    btn.addEventListener('click', function () {
+      if (!confirm('ログアウトしますか?')) { return; }
+      KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      location.reload();
+    });
+    function update() {
+      var admin = isValid(KEYS[0]);
+      var emp = isValid(KEYS[1]);
+      if (admin || emp) {
+        btn.textContent = admin ? '管理者ログアウト' : 'ログアウト';
+        btn.style.display = 'block';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+    function attach() {
+      if (!document.body) { return; }
+      document.body.appendChild(btn);
+      update();
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', attach); } else { attach(); }
+    ['mushAdminAuthed', 'mushLoginAuthed', 'mushNippoAuthed', 'mushKeiriAuthed'].forEach(function (ev) {
+      window.addEventListener(ev, function () { setTimeout(update, 300); });
+    });
+    window.addEventListener('storage', update);
+    setInterval(update, 3000); // ログイン・ログアウトの状態を見るだけ(画面の読み込みはしない)
+  })();
+</script>

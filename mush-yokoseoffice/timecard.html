@@ -1,0 +1,371 @@
+<!--
+  ============================================================
+  タイムカード(出勤・退勤打刻)画面(WordPress DB版 / Firestore不使用)
+  Cocoon(WordPress)の固定ページ「カスタムHTML」ブロックに
+  このファイルの中身をそのまま貼り付けて使用します。
+  「ヨコセオフィス業務システム(WordPress DB版)」プラグインを有効化しておく必要があります。
+  ============================================================
+-->
+<div id="timecard-app">読み込み中…</div>
+
+<style>
+  #timecard-app {
+    --bg: #f0efe9; --card: #ffffff; --ink: #1f2937; --border: #d6d3cb; --muted: #8a8577;
+    --done: #10b981; --done-bg: #ecfdf5;
+    --carry: #f97316; --carry-bg: #fff7ed;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--ink); background: var(--bg); max-width: 480px; margin: 0 auto;
+  }
+  #timecard-app * { box-sizing: border-box; }
+  #timecard-app .header {
+    background: #1e293b; color: #f8fafc; padding: 16px 20px; border-radius: 4px 4px 0 0; text-align: center;
+  }
+  #timecard-app .header h1 { font-size: 18px; margin: 0 0 2px; font-weight: 600; }
+  #timecard-app .header .sub { font-size: 12px; color: #94a3b8; }
+  #timecard-app .clock-panel { background: #fff; border: 1px solid var(--border); padding: 24px 20px; text-align: center; }
+  #timecard-app .now-time { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  #timecard-app .now-date { font-size: 13px; color: var(--muted); margin-top: 2px; margin-bottom: 20px; }
+  #timecard-app .status-row { display: flex; justify-content: center; gap: 24px; margin-bottom: 20px; font-size: 13px; }
+  #timecard-app .status-item .label { color: var(--muted); font-size: 11px; }
+  #timecard-app .status-item .val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #timecard-app .status-item .val.empty { color: #c7c3b8; font-weight: 400; font-size: 14px; }
+  #timecard-app .punch-btn {
+    width: 100%; padding: 20px; font-size: 18px; font-weight: 700; border: none; border-radius: 8px;
+    color: #fff; cursor: pointer;
+  }
+  #timecard-app .punch-btn.in { background: var(--done); }
+  #timecard-app .punch-btn.out { background: var(--carry); }
+  #timecard-app .punch-btn:disabled { background: #d6d3cb; color: #8a8577; cursor: default; }
+  #timecard-app .msg { font-size: 13px; margin-top: 14px; }
+  #timecard-app .msg.error { color: #ea580c; }
+  #timecard-app .msg.ok { color: var(--done); }
+  #timecard-app .gps-note { font-size: 11.5px; color: #8a8577; margin-top: 12px; line-height: 1.6; }
+  #timecard-app .history-panel { background: #fff; border: 1px solid var(--border); border-top: none; padding: 14px 18px; }
+  #timecard-app .history-panel h3 { font-size: 13px; margin: 0 0 10px; }
+  #timecard-app .history-row {
+    display: flex; justify-content: space-between; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid #f1f0eb;
+  }
+  #timecard-app .history-row:last-child { border-bottom: none; }
+  #timecard-app .history-row .d { color: var(--muted); }
+  #timecard-app .no-history { font-size: 12.5px; color: var(--muted); padding: 6px 0; }
+  #timecard-app .back-link { text-align: center; padding: 16px; }
+  #timecard-app .back-link a { color: #8a8577; font-size: 13px; text-decoration: underline; }
+
+  #timecard-app .auto-panel { padding: 40px 20px; }
+  #timecard-app .auto-icon {
+    width: 72px; height: 72px; border-radius: 50%; margin: 0 auto 18px; display: flex; align-items: center;
+    justify-content: center; font-size: 32px; font-weight: 700; color: #fff;
+  }
+  #timecard-app .auto-icon.in { background: var(--done); }
+  #timecard-app .auto-icon.out { background: var(--carry); }
+  #timecard-app .auto-icon.done { background: #94a3b8; }
+  #timecard-app .auto-icon.error { background: #ea580c; }
+  #timecard-app .auto-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  #timecard-app .auto-time { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); margin-bottom: 6px; }
+  #timecard-app .auto-sub { font-size: 13px; color: var(--muted); }
+</style>
+
+<script>
+  // ============================================================
+  // データ保存先: WordPress自体のデータベース(Firestoreは使用しません)
+  // 「ヨコセオフィス業務システム(WordPress DB版)」プラグインが提供するREST APIを呼び出します。
+  // ============================================================
+  function getSiteBasePath(){
+    const els = document.querySelectorAll('link[href*="/wp-content/"], script[src*="/wp-content/"]');
+    for (const el of els){
+      const url = el.href || el.src;
+      if(!url) continue;
+      try{
+        const u = new URL(url, window.location.href);
+        const idx = u.pathname.indexOf('/wp-content/');
+        if(idx !== -1){
+          return u.pathname.substring(0, idx);
+        }
+      }catch(e){ /* 無視して次を試す */ }
+    }
+    return '';
+  }
+  function getRestApiBase(){
+    const link = document.querySelector('link[rel="https://api.w.org/"]');
+    if(link && link.href){
+      return link.href.replace(/\/$/, '');
+    }
+    return getSiteBasePath() + '/wp-json';
+  }
+  const API_BASE = getRestApiBase() + '/mush-office/v1';
+
+  let STAFF = [];
+  async function loadStaffList() {
+    try {
+      const res = await fetch(`${API_BASE}/employees`);
+      const rows = await res.json();
+      STAFF = rows.map(r => ({ id: String(r.id), name: r.name, dept: r.department }));
+    } catch (e) {
+      STAFF = [];
+    }
+  }
+
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  function nowTimeStr() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }
+  function nowFullStr() {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+  }
+  function dateLabel() {
+    const d = new Date();
+    const w = ["日","月","火","水","木","金","土"][d.getDay()];
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}(${w})`;
+  }
+
+  const state = { staffId: null, today: null, history: [], loading: true, busy: false, msg: "", msgType: "", autoMode: false, autoResult: null };
+
+  function currentStaff() { return STAFF.find(s => s.id === state.staffId) || STAFF[0]; }
+
+  function getStaffIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("staff");
+    return STAFF.some(s => s.id === id) ? id : null;
+  }
+
+  async function loadToday() {
+    // 打刻直後の「記録しました」メッセージを残すため、ここではstate.msgを消さない。
+    state.loading = true;
+    render();
+    try {
+      const res = await fetch(`${API_BASE}/time-cards?date=${encodeURIComponent(todayStr())}&staffId=${encodeURIComponent(state.staffId)}`);
+      const rows = await res.json();
+      state.today = rows.length > 0 ? rows[0] : null;
+
+      const hRes = await fetch(`${API_BASE}/time-cards?staffId=${encodeURIComponent(state.staffId)}&limit=7`);
+      state.history = hRes.ok ? await hRes.json() : [];
+    } catch (e) {
+      state.msg = "データの取得に失敗しました。通信環境をご確認ください。";
+      state.msgType = "error";
+    }
+    state.loading = false;
+    render();
+  }
+
+  // 打刻した場所(GPS)を取得する。許可されない・取得できない場合はnullを返し、打刻自体は続ける。
+  function getPunchLocation() {
+    return new Promise(resolve => {
+      if (!navigator.geolocation || !window.isSecureContext) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }
+
+  // kind: "in"(出勤)/"out"(退勤)。その打刻の位置情報を一緒に送る。戻り値は位置を記録できたかどうか。
+  async function punch(clockIn, clockOut, kind) {
+    const location = await getPunchLocation();
+    const body = {
+      date: todayStr(), staffId: state.staffId, staffName: currentStaff().name, dept: currentStaff().dept,
+      clockIn, clockOut,
+    };
+    if (location) body[kind === "in" ? "clockInLocation" : "clockOutLocation"] = location;
+    const res = await fetch(`${API_BASE}/time-cards/upsert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error("打刻に失敗しました。");
+    await res.json();
+    return !!location;
+  }
+
+  function locationNote(located) {
+    return located ? "(打刻場所も記録しました)" : "(位置情報は取得できませんでした)";
+  }
+
+  async function doAutoPunch() {
+    state.loading = true;
+    render();
+    try {
+      const res = await fetch(`${API_BASE}/time-cards?date=${encodeURIComponent(todayStr())}&staffId=${encodeURIComponent(state.staffId)}`);
+      const rows = await res.json();
+      const existing = rows.length > 0 ? rows[0] : null;
+
+      if (existing && existing.clockIn && existing.clockOut) {
+        state.autoResult = { type: "already", clockIn: existing.clockIn, clockOut: existing.clockOut };
+      } else if (existing && existing.clockIn) {
+        const t = nowTimeStr();
+        const located = await punch(existing.clockIn, t, "out");
+        state.autoResult = { type: "out", time: t, located };
+      } else {
+        const t = nowTimeStr();
+        const located = await punch(t, existing?.clockOut || "", "in");
+        state.autoResult = { type: "in", time: t, located };
+      }
+    } catch (e) {
+      state.autoResult = { type: "error" };
+    }
+    state.loading = false;
+    render();
+  }
+
+  function renderAuto() {
+    const staff = currentStaff();
+    let body = "";
+    if (state.loading) {
+      body = `<div class="now-time" style="font-size:20px;">打刻を処理しています…</div>`;
+    } else if (state.autoResult.type === "in") {
+      body = `
+        <div class="auto-icon in">✓</div>
+        <div class="auto-title">出勤を記録しました</div>
+        <div class="auto-time">${state.autoResult.time}</div>
+        <div class="auto-sub">${locationNote(state.autoResult.located)}</div>`;
+    } else if (state.autoResult.type === "out") {
+      body = `
+        <div class="auto-icon out">✓</div>
+        <div class="auto-title">退勤を記録しました</div>
+        <div class="auto-time">${state.autoResult.time}</div>
+        <div class="auto-sub">お疲れさまでした${locationNote(state.autoResult.located)}</div>`;
+    } else if (state.autoResult.type === "already") {
+      body = `
+        <div class="auto-icon done">済</div>
+        <div class="auto-title">本日の打刻は完了しています</div>
+        <div class="auto-time">${state.autoResult.clockIn} 〜 ${state.autoResult.clockOut}</div>`;
+    } else {
+      body = `
+        <div class="auto-icon error">!</div>
+        <div class="auto-title">打刻に失敗しました</div>
+        <div class="auto-sub">通信環境をご確認のうえ、QRコードをもう一度読み込んでください</div>`;
+    }
+
+    document.getElementById("timecard-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a></div>
+      <div class="header">
+        <h1>タイムカード</h1>
+        <div class="sub">${dateLabel()} ・ ${staff.name}さん</div>
+      </div>
+      <div class="clock-panel auto-panel">
+        ${body}
+      </div>
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a>
+      </div>
+    `;
+  }
+
+  window.__timecard = {
+    async clockIn() {
+      if (state.busy) return;
+      state.busy = true; state.msg = ""; render();
+      try {
+        const located = await punch(nowTimeStr(), state.today?.clockOut || "", "in");
+        state.msg = "出勤を記録しました。" + locationNote(located);
+        state.msgType = "ok";
+        state.busy = false;
+        await loadToday();
+      } catch (e) {
+        state.busy = false;
+        state.msg = "打刻に失敗しました。もう一度お試しください。";
+        state.msgType = "error";
+        render();
+      }
+    },
+    async clockOut() {
+      if (state.busy) return;
+      state.busy = true; state.msg = ""; render();
+      try {
+        const located = await punch(state.today?.clockIn || "", nowTimeStr(), "out");
+        state.msg = "退勤を記録しました。お疲れさまでした。" + locationNote(located);
+        state.msgType = "ok";
+        state.busy = false;
+        await loadToday();
+      } catch (e) {
+        state.busy = false;
+        state.msg = "打刻に失敗しました。もう一度お試しください。";
+        state.msgType = "error";
+        render();
+      }
+    },
+  };
+
+  function render() {
+    const staff = currentStaff();
+    const clockIn = state.today?.clockIn || "";
+    const clockOut = state.today?.clockOut || "";
+
+    let btnHtml = "";
+    if (state.busy) {
+      btnHtml = `<button class="punch-btn" disabled>位置情報を取得して打刻しています…</button>`;
+    } else if (state.loading) {
+      btnHtml = `<button class="punch-btn" disabled>読み込み中…</button>`;
+    } else if (!clockIn) {
+      btnHtml = `<button class="punch-btn in" onclick="__timecard.clockIn()">出勤する</button>`;
+    } else if (!clockOut) {
+      btnHtml = `<button class="punch-btn out" onclick="__timecard.clockOut()">退勤する</button>`;
+    } else {
+      btnHtml = `<button class="punch-btn" disabled>本日の打刻は完了しています</button>`;
+    }
+
+    const historyHtml = state.history.length === 0 ? '<div class="no-history">記録がありません</div>' :
+      state.history.map(h => `
+        <div class="history-row">
+          <span class="d">${h.date}</span>
+          <span>${h.clockIn || "--:--"} 〜 ${h.clockOut || "--:--"}</span>
+        </div>`).join("");
+
+    document.getElementById("timecard-app").innerHTML = `
+      <div style="text-align:center;padding:10px 16px 0;"><a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a></div>
+      <div class="header">
+        <h1>タイムカード</h1>
+        <div class="sub">${staff.name}さん(${staff.dept})</div>
+      </div>
+      <div class="clock-panel">
+        <div class="now-time" id="nowTime">${nowFullStr()}</div>
+        <div class="now-date">${dateLabel()} ・ ${staff.name}さん</div>
+        <div class="status-row">
+          <div class="status-item"><div class="label">出勤</div><div class="val ${clockIn?"":"empty"}">${clockIn || "未打刻"}</div></div>
+          <div class="status-item"><div class="label">退勤</div><div class="val ${clockOut?"":"empty"}">${clockOut || "未打刻"}</div></div>
+        </div>
+        ${btnHtml}
+        ${state.msg ? `<div class="msg ${state.msgType}">${state.msg}</div>` : ""}
+        <div class="gps-note">📍 打刻時に位置情報(GPS)も記録します。確認が表示されたら「許可」を選んでください。</div>
+      </div>
+      <div class="history-panel">
+        <h3>直近の記録</h3>
+        ${historyHtml}
+      </div>
+      <div class="back-link">
+        <a href="${getSiteBasePath()}/トップ/" style="display:inline-block;padding:12px 30px;margin:6px 0;background:#1E2A4A;color:#fff;font-size:15px;font-weight:700;text-decoration:none;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.18);line-height:1.4;">← トップに戻る</a>
+      </div>
+    `;
+  }
+
+  setInterval(() => {
+    const el = document.getElementById("nowTime");
+    if (el) el.textContent = nowFullStr();
+  }, 1000);
+
+  async function init() {
+    await loadStaffList();
+    if (STAFF.length === 0) {
+      document.getElementById("timecard-app").innerHTML =
+        '<div class="clock-panel"><p style="font-size:13px;color:#ea580c;">従業員登録がまだありません。先に従業員登録画面から登録してください。</p></div>';
+      return;
+    }
+    const qrStaffId = getStaffIdFromUrl();
+    if (!qrStaffId) {
+      document.getElementById("timecard-app").innerHTML = `
+        <div class="header"><h1>タイムカード</h1></div>
+        <div class="clock-panel">
+          <p style="font-size:13px;color:#ea580c;">このページはQRコードから開いてください。</p>
+        </div>`;
+      return;
+    }
+    state.staffId = qrStaffId;
+    loadToday();
+  }
+  init();
+</script>
