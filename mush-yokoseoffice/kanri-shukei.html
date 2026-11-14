@@ -480,6 +480,8 @@
     timecardFilter: { staff: "", dept: "" }, // 勤怠(タイムカード)集計の検索条件(氏名・部署)
     detailEdit: null, // 案件の編集ウィンドウの入力中の値(保存前)。{ date, category, client, project, status, start, end, dueDate, isOutside, area, prefecture, travelType, note, saving, msg, msgOk }
     caseFilter: { date: "", staff: "", dept: "", caseText: "", status: "", days: "" }, // 案件一覧の項目ごとの検索条件
+    expandDept: null, // 部署別集計で詳細を開いている部署名(nullなら閉じている)
+    expandStaffId: null, // 担当者別集計で詳細を開いている従業員のid(nullなら閉じている)
     lightboxUrl: null, // 画像サムネイルをクリックしたときに拡大表示する画像URL(nullなら非表示)
     timecardEditStaffId: null, // タイムカード編集ウィンドウの対象従業員(nullなら非表示)
     timecardEditDays: [], // [{date, clockIn, clockOut}, ...] 編集ウィンドウの作業用コピー
@@ -941,6 +943,8 @@
     rateColor(pct) { return rateColor(pct); },
     setTimecardFilter(key, val) { state.timecardFilter[key] = val; applyTimecardFilter(); },
     clearTimecardFilter() { state.timecardFilter = { staff: "", dept: "" }; render(); },
+    toggleDeptDetail(dept) { state.expandDept = state.expandDept === dept ? null : dept; render(); },
+    toggleStaffDetail(id) { state.expandStaffId = String(state.expandStaffId) === String(id) ? null : id; render(); },
     setCaseFilter(key, val) { state.caseFilter[key] = val; applyCaseFilter(); },
     clearCaseFilter() { state.caseFilter = { date: "", staff: "", dept: "", caseText: "", status: "", days: "" }; render(); },
     setActivityFilter(v) { state.activityLog.filter = v === "task" ? "task" : "all"; render(); },
@@ -1289,6 +1293,40 @@
     `;
   }
 
+  // 部署別・担当者別の集計で行をクリックしたときに開く、その部署・担当者の案件の内訳(期間内)。
+  // 日報の案件はクリックで編集ウィンドウを開く。進捗ページの案件は表示のみ。
+  function breakdownHtml(recs, sched, colspan) {
+    const items = [
+      ...recs.map(r => ({
+        sortKey: `${r.date || ""}_${r.start || "99"}`,
+        html: `<tr class="clickable-row" onclick="__kanri.showRecordDetail(${r.id})">
+          <td>${escapeHtml(r.date || "")}</td>
+          <td>${escapeHtml(r.staffName || "")}</td>
+          <td>${escapeHtml(r.category || "")}<br><span style="color:var(--muted);font-size:11.5px;">${escapeHtml(r.bulkMode ? `まとめ${r.bulkCount}件` : ([r.client, r.project].filter(Boolean).join(" / ") || "(顧客・案件なし)"))}</span></td>
+          <td><span class="status-pill ${r.status}">${r.status}</span></td>
+          <td>${escapeHtml(formatDayCount(r))}</td>
+        </tr>`,
+      })),
+      ...sched.map(t => ({
+        sortKey: `${t.date || ""}_${t.start || "99"}`,
+        html: `<tr>
+          <td>${escapeHtml(t.date || "")}</td>
+          <td>${escapeHtml(t.staffName || "")}</td>
+          <td>進捗ページ<br><span style="color:var(--muted);font-size:11.5px;">${escapeHtml(t.name || "")}</span></td>
+          <td><span class="status-pill ${scheduleStatusText(t.progress)}">${scheduleStatusText(t.progress)}</span></td>
+          <td>${t.progress}%</td>
+        </tr>`,
+      })),
+    ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+    const body = items.length === 0
+      ? `<div class="empty" style="padding:10px;">この期間の案件はありません</div>`
+      : `<table style="margin:0;">
+          <thead><tr><th>日付</th><th>担当者</th><th>案件</th><th>状態</th><th>日数・進捗</th></tr></thead>
+          <tbody>${items.map(x => x.html).join("")}</tbody>
+        </table>`;
+    return `<tr class="breakdown-row"><td colspan="${colspan}" style="background:#f8f7f3;padding:8px 12px 12px;">${body}</td></tr>`;
+  }
+
   function render() {
     const scheduleTaskList = state.scheduleTaskList;
 
@@ -1316,16 +1354,17 @@
       const dDone = deptRecs.filter(r => r.status === "完了").length
         + deptSched.filter(t => t.status === "完了").length;
       const dRate = dTotal === 0 ? 0 : Math.round((dDone / dTotal) * 100);
+      const dOpen = state.expandDept === dept;
       return `
-        <tr>
-          <td><span class="dept-pill ${dept}">${dept}</span></td>
+        <tr class="clickable-row" title="クリックで案件の内訳を${dOpen ? "閉じる" : "開く"}" onclick="__kanri.toggleDeptDetail('${escapeHtml(dept)}')">
+          <td>${dOpen ? "▾" : "▸"} <span class="dept-pill ${dept}">${dept}</span></td>
           <td>${dTotal}件</td>
           <td>${dDone}件</td>
           <td>
             <span class="rate-bar-track"><span class="rate-bar-fill" style="width:${dRate}%;background:${rateColor(dRate)}"></span></span>
             <span class="rate-pct" style="color:${rateColor(dRate)}">${dRate}%</span>
           </td>
-        </tr>`;
+        </tr>${dOpen ? breakdownHtml(deptRecs, deptSched, 4) : ""}`;
     }).join("");
 
     const staffRows = STAFF.map(s => {
@@ -1336,9 +1375,10 @@
         + sched.filter(t => t.status === "完了").length;
       const sCarry = recs.filter(r => r.status === "繰越").length;
       const sRate = sTotal === 0 ? 0 : Math.round((sDone / sTotal) * 100);
+      const sOpen = state.expandStaffId === s.id;
       return `
-        <tr>
-          <td>${s.name}</td>
+        <tr class="clickable-row" title="クリックで案件の内訳を${sOpen ? "閉じる" : "開く"}" onclick="__kanri.toggleStaffDetail('${escapeHtml(String(s.id))}')">
+          <td>${sOpen ? "▾" : "▸"} ${s.name}</td>
           <td><span class="dept-pill ${s.dept}">${s.dept}</span></td>
           <td>${sTotal}件</td>
           <td>${sDone}件</td>
@@ -1347,7 +1387,7 @@
             <span class="rate-bar-track"><span class="rate-bar-fill" style="width:${sRate}%;background:${rateColor(sRate)}"></span></span>
             <span class="rate-pct" style="color:${rateColor(sRate)}">${sRate}%</span>
           </td>
-        </tr>`;
+        </tr>${sOpen ? breakdownHtml(recs, sched, 6) : ""}`;
     }).join("");
 
     const nippoProjectRows = state.records.map(r => {
