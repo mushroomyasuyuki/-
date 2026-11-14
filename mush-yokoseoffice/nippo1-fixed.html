@@ -586,6 +586,7 @@
       currentDay: 1, totalDays: 1, overrideStaffId: state.staffId || "",
       dueDate: "", startDate: dateStrOffset(0),
       earlyWork: false, nightWork: false, holidayWork: false, flagsTouched: false,
+      pendingImages: [], // 保存と同時にアップロードする画像(File)。最大10枚
     };
   }
 
@@ -1247,7 +1248,8 @@
     try {
       // pickedIndex/pickedInfo/overrideStaffId/startDateはフォーム内部状態なので保存データには含めない
       // (startDateは下のdateとして送る)
-      const { pickedIndex, pickedInfo, overrideStaffId, startDate, endTouched, statusTouched, allDay, allDayManual, savedStart, savedEnd, flagsTouched, ...saveData } = f;
+      const { pickedIndex, pickedInfo, overrideStaffId, startDate, endTouched, statusTouched, allDay, allDayManual, savedStart, savedEnd, flagsTouched, pendingImages, ...saveData } = f;
+      const imageFiles = f.bulkMode ? [] : (pendingImages || []);
 
       // 保存(新規作成 or 同じ日・顧客名/案件名があれば更新)は、サーバー側で1回のDBクエリとして
       // アトミックに行われるため、連続保存による重複は起きない。
@@ -1269,13 +1271,31 @@
         throw new Error(errData.error || "保存に失敗しました。");
       }
 
+      // 選んでおいた画像を、保存できた案件にアップロードする(失敗した分だけ、あとで案件カードから追加できるよう知らせる)。
+      let imageFailed = 0;
+      if (imageFiles.length > 0) {
+        const saved = await res.json().catch(() => null);
+        const savedId = saved && saved.id;
+        if (!savedId) { imageFailed = imageFiles.length; }
+        else {
+          for (const file of imageFiles) {
+            try {
+              const fd = new FormData();
+              fd.append("file", file);
+              const ir = await fetch(`${API_BASE}/task-records/${savedId}/images`, { method: "POST", headers: authHeaders(), body: fd });
+              if (!ir.ok) { imageFailed++; }
+            } catch (e) { imageFailed++; }
+          }
+        }
+      }
+
       state.forms[day] = emptyForm(currentStaff().dept, day);
       __nippo.updateAutoChecks(day);
       // 続けて同じ担当者に追加しやすいよう、直前に選んでいた担当者を保持しておく。
       if (showStaffPicker) state.forms[day].overrideStaffId = targetStaffId;
       // 「今日の分」は保存後、新規入力画面を閉じて一覧表示に戻す。
       if (day === "today") state.showTodayForm = false;
-      state.saveMsg[day] = "保存しました。";
+      state.saveMsg[day] = imageFailed > 0 ? `保存しました。ただし画像${imageFailed}枚のアップロードに失敗しました(案件の「＋ 画像を追加」から追加してください)。` : "保存しました。";
       state.saving[day] = false;
       render();
       await (day === "today" ? loadTodayRecords() : loadRecords(day));
@@ -1284,7 +1304,7 @@
       if (monthStrOf(state.dates[day]) === state.calendar.month) {
         loadMonthRecords();
       }
-      setTimeout(() => { state.saveMsg[day] = ""; render(); }, 3000);
+      setTimeout(() => { state.saveMsg[day] = ""; render(); }, imageFailed > 0 ? 8000 : 3000);
     } catch (e) {
       console.error("[日報] 保存に失敗しました:", e);
       state.errorMsg[day] = `保存に失敗しました。もう一度お試しください。(詳細: ${e && e.message ? e.message : e})`;
@@ -1423,6 +1443,19 @@
     closeLightbox() { state.lightboxUrl = null; render(); },
     updateRecordStatus(day, id, status) { updateRecordStatus(day, id, status); },
     toggleRecordFlag(day, id, key, val) { toggleRecordFlag(day, id, key, val); },
+    addPendingImages(day, input) {
+      const f = state.forms[day];
+      const files = Array.from(input.files || []);
+      input.value = "";
+      const room = 10 - (f.pendingImages || []).length;
+      if (files.length > room) { alert("画像は1案件につき10枚までです。超えた分は追加しませんでした。"); }
+      f.pendingImages = (f.pendingImages || []).concat(files.slice(0, Math.max(room, 0)));
+      render();
+    },
+    removePendingImage(day, index) {
+      state.forms[day].pendingImages.splice(index, 1);
+      render();
+    },
     async uploadTaskImage(day, recordId, input) {
       const file = input.files && input.files[0];
       if (!file) { return; }
@@ -1792,6 +1825,15 @@
           <input type="checkbox" style="width:auto;margin:0;" ${f.isOutside?"checked":""} onchange="__nippo.toggleOutside('${day}', this.checked)"> 外出を伴う業務
         </label>
         ${outsideBox}
+        ${!f.bulkMode ? `
+        <label>画像(任意・最大10枚。保存と同時にアップロードします)</label>
+        <div class="record-images" style="margin-top:0;">
+          ${(f.pendingImages || []).length > 0 ? `<div class="images-note" style="margin:0 0 6px;">${f.pendingImages.map((file, i) => `<span style="display:inline-flex;align-items:center;gap:4px;margin:0 8px 4px 0;">${escapeHtml(file.name)}<button type="button" class="image-thumb-del" style="position:static;" onclick="__nippo.removePendingImage('${day}', ${i})">×</button></span>`).join("")}</div>` : ""}
+          ${(f.pendingImages || []).length < 10 ? `<label class="image-upload-btn">＋ 画像を選ぶ(${(f.pendingImages || []).length}/10)
+            <input type="file" accept="image/*" multiple style="display:none;" onchange="__nippo.addPendingImages('${day}', this)">
+          </label>` : `<p class="images-note">画像は上限(10枚)に達しています</p>`}
+          <p class="images-note">※「完了」にすると、30日後に画像は自動的に削除されます</p>
+        </div>` : ""}
         <label>備考(任意)</label>
         <textarea rows="2" id="f-note-${day}" oninput="__nippo.setField('${day}','note', this.value)">${f.note}</textarea>
         ${state.validationMsg[day] ? `<p class="msg-error">${state.validationMsg[day]}</p>` : ""}
