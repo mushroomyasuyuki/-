@@ -1393,7 +1393,10 @@
       const sTotal = recs.length + sched.length;
       const sDone = recs.filter(r => r.status === "完了").length
         + sched.filter(t => t.status === "完了").length;
-      const sCarry = recs.filter(r => r.status === "繰越").length;
+      const sProgress = recs.filter(r => r.status === "進行中" || r.status === "継続").length
+        + sched.filter(t => t.status === "進行中").length;
+      const sIncomplete = recs.filter(r => r.status !== "完了" && r.status !== "キャンセル").length
+        + sched.filter(t => t.status !== "完了" && t.status !== "キャンセル").length;
       const sRate = sTotal === 0 ? 0 : Math.round((sDone / sTotal) * 100);
       const sOpen = state.expandStaffId === s.id;
       return `
@@ -1402,12 +1405,13 @@
           <td><span class="dept-pill ${s.dept}">${s.dept}</span></td>
           <td>${sTotal}件</td>
           <td>${sDone}件</td>
-          <td>${sCarry}件</td>
+          <td>${sProgress}件</td>
+          <td>${sIncomplete}件</td>
           <td>
             <span class="rate-bar-track"><span class="rate-bar-fill" style="width:${sRate}%;background:${rateColor(sRate)}"></span></span>
             <span class="rate-pct" style="color:${rateColor(sRate)}">${sRate}%</span>
           </td>
-        </tr>${sOpen ? breakdownHtml(recs, sched, 6) : ""}`;
+        </tr>${sOpen ? breakdownHtml(recs, sched, 7) : ""}`;
     }).join("");
 
     const nippoProjectRows = state.records.map(r => {
@@ -1613,7 +1617,7 @@
         </div>
         ${total === 0 ? '<div class="empty">この期間のデータがありません</div>' : `
         <table>
-          <thead><tr><th>氏名</th><th>部署</th><th>件数</th><th>完了</th><th>繰越</th><th>完了率</th></tr></thead>
+          <thead><tr><th>氏名</th><th>部署</th><th>件数</th><th>完了</th><th>進行中</th><th>未完了</th><th>完了率</th></tr></thead>
           <tbody>${staffRows}</tbody>
         </table>`}
       </div>
