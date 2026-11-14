@@ -477,12 +477,12 @@
     return `${current}/${total}日`;
   }
 
-  // 案件カードの画像欄。完了から1週間が過ぎて削除済みならその旨だけ表示し、それ以外はサムネイル(最大10枚)と
+  // 案件カードの画像欄。完了から30日が過ぎて削除済みならその旨だけ表示し、それ以外はサムネイル(最大10枚)と
   // アップロード欄を表示する。readOnly(全員カレンダーで他人の予定を閲覧中)の場合は
   // サムネイルのクリック(原寸表示)だけ残し、追加・削除はできないようにする。
   function renderTaskImages(day, r, readOnly) {
     if (r.imagesCleared) {
-      return `<div class="record-images"><p class="images-note">完了から1週間が過ぎたため画像は削除されました</p></div>`;
+      return `<div class="record-images"><p class="images-note">完了から30日が過ぎたため画像は削除されました</p></div>`;
     }
     const images = r.images || [];
     const thumbs = images.length > 0 ? `
@@ -498,10 +498,10 @@
       <label class="image-upload-btn">＋ 画像を追加(${images.length}/10)
         <input type="file" accept="image/*" style="display:none;" onchange="__nippo.uploadTaskImage('${day}', ${r.id}, this)">
       </label>` : `<p class="images-note">画像は上限(10枚)に達しています</p>`);
-    // 完了した案件の画像は、完了から1週間後に自動で削除される(削除予定日はサーバーから届く)。
+    // 完了した案件の画像は、完了から30日後に自動で削除される(削除予定日はサーバーから届く)。
     const expire = images.map(img => img.expiresAt).filter(Boolean).sort()[0] || "";
-    const notice = expire ? `<p class="images-note">※完了から1週間が過ぎる ${expire} に、画像は自動的に削除されます</p>`
-      : (readOnly ? "" : `<p class="images-note">※「完了」にすると、1週間後に画像は自動的に削除されます</p>`);
+    const notice = expire ? `<p class="images-note">※完了から30日が過ぎる ${expire} に、画像は自動的に削除されます</p>`
+      : (readOnly ? "" : `<p class="images-note">※「完了」にすると、30日後に画像は自動的に削除されます</p>`);
     if (!thumbs && !uploadWidget) { return ""; }
     return `<div class="record-images">${thumbs}${uploadWidget}${notice}</div>`;
   }
@@ -1054,7 +1054,7 @@
     const time = (!r.bulkMode && (r.start || r.end)) ? `${timeRangeText(r.start, r.end, " 〜 ")}` : "";
     const outside = r.isOutside ? escapeHtml([r.area, r.prefecture, r.travelType].filter(Boolean).join("・")) : "";
     const images = r.images || [];
-    const imagesHtml = r.imagesCleared ? `<div class="detail-empty">完了から1週間が過ぎたため画像は削除されました</div>`
+    const imagesHtml = r.imagesCleared ? `<div class="detail-empty">完了から30日が過ぎたため画像は削除されました</div>`
       : images.length === 0 ? `<div class="detail-empty">画像はありません</div>`
       : `<div class="detail-imgs">${images.map(img => `<img class="detail-img" src="${img.url}" alt="" onclick="__nippo.openLightbox('${img.url}')">`).join("")}</div>`;
     const dayBtn = state.detail.day === "calendar" && r.date ? `<button type="button" class="primary" onclick="__nippo.openDetailDay()">この日の予定を開く</button>` : "";
@@ -1832,7 +1832,7 @@
           ${(f.pendingImages || []).length < 10 ? `<label class="image-upload-btn">＋ 画像を選ぶ(${(f.pendingImages || []).length}/10)
             <input type="file" accept="image/*" multiple style="display:none;" onchange="__nippo.addPendingImages('${day}', this)">
           </label>` : `<p class="images-note">画像は上限(10枚)に達しています</p>`}
-          <p class="images-note">※「完了」にすると、1週間後に画像は自動的に削除されます</p>
+          <p class="images-note">※「完了」にすると、30日後に画像は自動的に削除されます</p>
         </div>` : ""}
         <label>備考(任意)</label>
         <textarea rows="2" id="f-note-${day}" oninput="__nippo.setField('${day}','note', this.value)">${f.note}</textarea>
