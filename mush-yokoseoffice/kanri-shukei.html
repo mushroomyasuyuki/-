@@ -747,8 +747,15 @@
   function fitCaseScroll() { fitScrollBox("caseScroll", "tbody tr[data-case-row]"); }
   // 勤怠(タイムカード)集計も同じく、15人ぶんの高さまで表示し、それより多いときは枠内のスクロールで見る。
   function fitTimecardScroll() { fitScrollBox("timecardScroll", "tbody tr[data-tc-row]"); }
+  // 部署別・担当者別の内訳は、10件以上のときに10件ぶんの高さで止めて、枠内のスクロールで見る。
+  const BREAKDOWN_VISIBLE_ROWS = 10;
+  function fitBreakdownScroll() {
+    document.querySelectorAll("#kanri-app .bd-scroll").forEach(box => fitScrollEl(box, "tbody tr[data-bd-row]", BREAKDOWN_VISIBLE_ROWS));
+  }
   function fitScrollBox(boxId, rowSelector) {
-    const box = document.getElementById(boxId);
+    fitScrollEl(document.getElementById(boxId), rowSelector, CASE_LIST_VISIBLE_ROWS);
+  }
+  function fitScrollEl(box, rowSelector, maxRows) {
     if (!box) return;
     const headRows = box.querySelectorAll("thead tr");
     let headH = 0;
@@ -758,9 +765,9 @@
       headH += tr.getBoundingClientRect().height;
     });
     const visible = Array.from(box.querySelectorAll(rowSelector)).filter(tr => tr.style.display !== "none");
-    if (visible.length <= CASE_LIST_VISIBLE_ROWS) { box.style.maxHeight = ""; return; }
+    if (visible.length <= maxRows) { box.style.maxHeight = ""; return; }
     let h = headH;
-    visible.slice(0, CASE_LIST_VISIBLE_ROWS).forEach(tr => { h += tr.getBoundingClientRect().height; });
+    visible.slice(0, maxRows).forEach(tr => { h += tr.getBoundingClientRect().height; });
     box.style.maxHeight = Math.ceil(h + 2) + "px";
   }
 
@@ -1299,7 +1306,7 @@
     const items = [
       ...recs.map(r => ({
         sortKey: `${r.date || ""}_${r.start || "99"}`,
-        html: `<tr class="clickable-row" onclick="__kanri.showRecordDetail(${r.id})">
+        html: `<tr class="clickable-row" data-bd-row="1" onclick="__kanri.showRecordDetail(${r.id})">
           <td>${escapeHtml(r.date || "")}</td>
           <td>${escapeHtml(r.staffName || "")}</td>
           <td>${escapeHtml(r.category || "")}<br><span style="color:var(--muted);font-size:11.5px;">${escapeHtml(r.bulkMode ? `まとめ${r.bulkCount}件` : ([r.client, r.project].filter(Boolean).join(" / ") || "(顧客・案件なし)"))}</span></td>
@@ -1309,7 +1316,7 @@
       })),
       ...sched.map(t => ({
         sortKey: `${t.date || ""}_${t.start || "99"}`,
-        html: `<tr>
+        html: `<tr data-bd-row="1">
           <td>${escapeHtml(t.date || "")}</td>
           <td>${escapeHtml(t.staffName || "")}</td>
           <td>進捗ページ<br><span style="color:var(--muted);font-size:11.5px;">${escapeHtml(t.name || "")}</span></td>
@@ -1320,10 +1327,10 @@
     ].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
     const body = items.length === 0
       ? `<div class="empty" style="padding:10px;">この期間の案件はありません</div>`
-      : `<table style="margin:0;">
+      : `<div class="case-scroll bd-scroll"><table style="margin:0;">
           <thead><tr><th>日付</th><th>担当者</th><th>案件</th><th>状態</th><th>日数・進捗</th></tr></thead>
           <tbody>${items.map(x => x.html).join("")}</tbody>
-        </table>`;
+        </table></div>`;
     return `<tr class="breakdown-row"><td colspan="${colspan}" style="background:#f8f7f3;padding:8px 12px 12px;">${body}</td></tr>`;
   }
 
@@ -1669,6 +1676,7 @@
         </div>
       ` : ""}
     `;
+    fitBreakdownScroll(); // 部署別・担当者別の内訳(10件以上はスクロール)
     applyCaseFilter(); // 案件一覧の件数表示を更新する
     applyTimecardFilter(); // 勤怠集計の人数表示を更新する
   }
