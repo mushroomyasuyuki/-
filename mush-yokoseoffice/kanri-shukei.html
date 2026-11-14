@@ -1197,7 +1197,7 @@
           <tr><th>都道府県</th><td>${input("prefecture", "text")}</td></tr>
           <tr><th>移動</th><td>${sel("travelType", ["", "直行", "直帰", "直行・直帰"])}</td></tr>` : "";
     const imagesRow = r.imagesCleared
-      ? `<tr><th>画像</th><td class="detail-image-note">完了から30日が過ぎたため画像は削除されました</td></tr>`
+      ? `<tr><th>画像</th><td class="detail-image-note">完了から1週間が過ぎたため画像は削除されました</td></tr>`
       : (r.images && r.images.length > 0
         ? `<tr><th>画像(${r.images.length}/10)</th><td>
             <div class="detail-image-thumbs">
@@ -1359,7 +1359,7 @@
             ${r.images.slice(0, 3).map(img => `<img src="${img.url}" alt="" title="クリックで拡大表示" onclick="event.stopPropagation(); __kanri.openLightbox('${img.url}')">`).join("")}
             ${r.images.length > 3 ? `<span class="image-count-badge">+${r.images.length - 3}</span>` : ""}
           </div>`
-        : (r.imagesCleared ? `<span class="image-count-badge cleared" title="完了から30日が過ぎたため画像は削除されました">📷 削除済</span>` : "");
+        : (r.imagesCleared ? `<span class="image-count-badge cleared" title="完了から1週間が過ぎたため画像は削除されました">📷 削除済</span>` : "");
       return {
         sortKey: `${r.date || ""}_${r.start || "99"}`,
         html: `

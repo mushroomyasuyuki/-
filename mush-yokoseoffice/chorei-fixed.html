@@ -639,7 +639,7 @@
       const time = (!r.bulkMode && (r.start || r.end)) ? timeRangeText(r.start, r.end, " 〜 ") : "";
       const outside = r.isOutside ? escapeHtml([r.area, r.prefecture, r.travelType].filter(Boolean).join("・")) : "";
       const images = r.images || [];
-      const imagesHtml = r.imagesCleared ? `<div class="detail-empty">完了から30日が過ぎたため画像は削除されました</div>`
+      const imagesHtml = r.imagesCleared ? `<div class="detail-empty">完了から1週間が過ぎたため画像は削除されました</div>`
         : images.length === 0 ? `<div class="detail-empty">画像はありません</div>`
         : `<div class="detail-imgs">${images.map(img => `<img class="detail-img" src="${img.url}" alt="" onclick="__chorei.openLightbox('${img.url}')">`).join("")}</div>`;
       head = `<span class="detail-title">${escapeHtml(r.category || "")}</span><span class="rec-tag status-${r.status}">${r.status}</span><span class="rec-tag">${escapeHtml(r.staffName || "")}</span>`;

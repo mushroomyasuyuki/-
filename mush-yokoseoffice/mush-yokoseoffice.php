@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ヨコセオフィス業務システム(WordPress DB版)
  * Description: Firebase/Firestoreを使わず、WordPress自体のデータベースだけで従業員登録・日報などのデータを管理するプラグインです。固定ページの「カスタムHTML」ブロックから、このプラグインが提供するREST APIを呼び出して使います。
- * Version: 2.7.25
+ * Version: 2.7.26
  * Author: 社内システム
  */
 
@@ -626,7 +626,7 @@ function mush_office_install() {
     dbDelta( $sql_yed );
 
     // 日報の案件(mush_task_records)に添付する画像。1案件につき最大10枚まで
-    // (アップロード時にAPI側で件数を制限する)。案件が「完了」になると、その30日後(expires_at)に自動で削除する。
+    // (アップロード時にAPI側で件数を制限する)。案件が「完了」になると、その1週間後(expires_at)に自動で削除する。
     $task_image_table = $wpdb->prefix . 'mush_task_images';
     $sql21 = "CREATE TABLE {$task_image_table} (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -651,7 +651,7 @@ function mush_office_install() {
         update_option( 'mush_office_chat_staff_read_migrated', 1 );
     }
 
-    // 完了した案件の画像を30日後に削除する処理(1日1回)。
+    // 完了した案件の画像を1週間後に削除する処理(1日1回)。
     if ( ! wp_next_scheduled( 'mush_office_purge_images_event' ) ) {
         wp_schedule_event( time() + 600, 'daily', 'mush_office_purge_images_event' );
     }
@@ -3220,7 +3220,7 @@ function mush_office_get_task_records( WP_REST_Request $request ) {
     global $wpdb;
     $table_name = $wpdb->prefix . 'mush_task_records';
 
-    // 完了から30日が過ぎた画像の削除。cronが動かない環境でも消えるよう、一覧取得時にも1時間に1回まで実行する。
+    // 完了から1週間が過ぎた画像の削除。cronが動かない環境でも消えるよう、一覧取得時にも1時間に1回まで実行する。
     if ( ! get_transient( 'mush_office_image_purge_lock' ) ) {
         set_transient( 'mush_office_image_purge_lock', 1, HOUR_IN_SECONDS );
         mush_office_purge_expired_task_images();
@@ -3303,17 +3303,17 @@ function mush_office_fetch_task_images_map( $task_ids ) {
         $map[ $tid ][] = array(
             'id'        => intval( $r['id'] ),
             'url'       => $r['file_url'],
-            'expiresAt' => ! empty( $r['expires_at'] ) ? substr( $r['expires_at'], 0, 10 ) : '', // 完了から30日後の削除予定日
+            'expiresAt' => ! empty( $r['expires_at'] ) ? substr( $r['expires_at'], 0, 10 ) : '', // 完了から1週間後の削除予定日
         );
     }
     return $map;
 }
 
-// 完了した案件の画像は、完了から30日間は残し、その後に自動で削除する。
-// 案件のステータスが「完了」になったとき、画像に削除予定日時(expires_at = 今から30日後)を付ける。
+// 完了した案件の画像は、完了から1週間は残し、その後に自動で削除する。
+// 案件のステータスが「完了」になったとき、画像に削除予定日時(expires_at = 今から1週間後)を付ける。
 // すでに削除予定日がある画像は、完了のまま再保存しても延ばさない。
 // 「完了」から別のステータスに戻したときは、削除予定を取り消す(画像はそのまま残す)。
-define( 'MUSH_OFFICE_TASK_IMAGE_KEEP_DAYS', 30 );
+define( 'MUSH_OFFICE_TASK_IMAGE_KEEP_DAYS', 7 );
 function mush_office_update_task_image_expiry( $task_record_id, $status ) {
     global $wpdb;
     $image_table = $wpdb->prefix . 'mush_task_images';
@@ -3326,7 +3326,7 @@ function mush_office_update_task_image_expiry( $task_record_id, $status ) {
 }
 
 // 削除予定日時を過ぎた画像(ファイル・DB行とも)を削除し、その案件には images_cleared を立てる
-// (「完了から30日が過ぎたため削除された」ことを画面に表示するため)。1日1回のcronと、案件一覧の取得時(1時間に1回まで)に実行する。
+// (「完了から1週間が過ぎたため削除された」ことを画面に表示するため)。1日1回のcronと、案件一覧の取得時(1時間に1回まで)に実行する。
 function mush_office_purge_expired_task_images() {
     global $wpdb;
     $image_table = $wpdb->prefix . 'mush_task_images';
@@ -3742,7 +3742,7 @@ function mush_office_upload_task_image( WP_REST_Request $request ) {
             'created_at'      => current_time( 'mysql' ),
         )
     );
-    // すでに完了している案件に画像を足した場合も、完了から30日後ではなく、足した日から30日後に削除する。
+    // すでに完了している案件に画像を足した場合も、完了から1週間後ではなく、足した日から1週間後に削除する。
     mush_office_update_task_image_expiry( $task_record_id, $task['status'] );
 
     $task_full = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$task_table} WHERE id = %d", $task_record_id ), ARRAY_A );
