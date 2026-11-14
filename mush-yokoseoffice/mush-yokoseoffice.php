@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ヨコセオフィス業務システム(WordPress DB版)
  * Description: Firebase/Firestoreを使わず、WordPress自体のデータベースだけで従業員登録・日報などのデータを管理するプラグインです。固定ページの「カスタムHTML」ブロックから、このプラグインが提供するREST APIを呼び出して使います。
- * Version: 2.7.34
+ * Version: 2.7.35
  * Author: 社内システム
  */
 

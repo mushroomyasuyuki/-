@@ -1373,6 +1373,12 @@
       const dTotal = deptRecs.length + deptSched.length;
       const dDone = deptRecs.filter(r => r.status === "完了").length
         + deptSched.filter(t => t.status === "完了").length;
+      const dProgress = deptRecs.filter(r => r.status === "進行中" || r.status === "継続").length
+        + deptSched.filter(t => t.status === "進行中").length;
+      const dIncomplete = deptRecs.filter(r => r.status !== "完了" && r.status !== "キャンセル").length
+        + deptSched.filter(t => t.status !== "完了" && t.status !== "キャンセル").length;
+      const dCancel = deptRecs.filter(r => r.status === "キャンセル").length
+        + deptSched.filter(t => t.status === "キャンセル").length;
       const dRate = dTotal === 0 ? 0 : Math.round((dDone / dTotal) * 100);
       const dOpen = state.expandDept === dept;
       return `
@@ -1380,11 +1386,14 @@
           <td>${dOpen ? "▾" : "▸"} <span class="dept-pill ${dept}">${dept}</span></td>
           <td>${dTotal}件</td>
           <td>${dDone}件</td>
+          <td>${dProgress}件</td>
+          <td>${dIncomplete}件</td>
+          <td>${dCancel}件</td>
           <td>
             <span class="rate-bar-track"><span class="rate-bar-fill" style="width:${dRate}%;background:${rateColor(dRate)}"></span></span>
             <span class="rate-pct" style="color:${rateColor(dRate)}">${dRate}%</span>
           </td>
-        </tr>${dOpen ? breakdownHtml(deptRecs, deptSched, 4) : ""}`;
+        </tr>${dOpen ? breakdownHtml(deptRecs, deptSched, 7) : ""}`;
     }).join("");
 
     const staffRows = STAFF.map(s => {
@@ -1608,7 +1617,7 @@
       <div class="panel">
         <div class="panel-head">部署別集計</div>
         <table>
-          <thead><tr><th>部署</th><th>件数</th><th>完了件数</th><th>完了率</th></tr></thead>
+          <thead><tr><th>部署</th><th>件数</th><th>完了件数</th><th>進行中</th><th>未完了</th><th>キャンセル</th><th>完了率</th></tr></thead>
           <tbody>${deptRows}</tbody>
         </table>
       </div>
