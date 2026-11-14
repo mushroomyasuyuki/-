@@ -27,7 +27,7 @@ WordPress固定ページの「カスタムHTML」ブロックにHTML/JSを貼り
 | `top-page.html` | トップページ(各ページへのリンク集) | ✅完成 |
 | `employee-register.html` | 従業員登録(管理者用) | ✅完成 |
 | `nippo1-fixed.html` | 日報(今日・明日の予定/実績入力) | ✅完成 |
-| `yotei-jisseki-input.html` | 進捗(個人の予定・実績、進捗バー、繰越対応) | ✅完成 |
+| ~~`yotei-jisseki-input.html`~~ | 進捗ページ(**使用停止**。v2.7.30でファイルを同梱から外し、朝礼・管理者集計にも出さない。データ(`wp_mush_schedule_tasks`)とAPIは残してあり、バックアップにも含まれる) | ⏹停止 |
 | `chorei-fixed.html` | 朝礼(本日の全体予定・未登録者確認) | ✅完成 |
 | `kanri-shukei.html` | 管理者集計(部署別・担当者別実績、勤怠集計、案件の複製/削除/重複統合) | ✅完成 |
 | `timecard.html` | タイムカード(出勤・退勤打刻、QRコード読み取り対応) | ✅完成 |

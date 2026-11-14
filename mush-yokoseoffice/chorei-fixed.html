@@ -436,6 +436,8 @@
   }
 
 
+  // 進捗ページ(予定進捗)は使わないため、その案件は全体スケジュールに出さない。再び使うときだけtrueにする。
+  const USE_PROGRESS_PAGE = false;
   const DEPTS = ["営業", "デザイン", "製作", "事務"];
   // 部門の欄・タブに出さない部門(ヨコセでは管理部門の欄を出さない)。
   const HIDDEN_COLUMN_DEPTS = ["管理部門"];
@@ -542,6 +544,7 @@
 
     // 進捗ページ(schedule-tasks)で保存されている、その日付分のデータも合わせて表示する
     try {
+      if (!USE_PROGRESS_PAGE) { throw new Error("progress page disabled"); }
       const res2 = await apiFetch(`${API_BASE}/schedule-tasks?date=${encodeURIComponent(state.date)}`);
       state.scheduleRecords = res2.ok ? await res2.json() : [];
     } catch (e) {
@@ -568,6 +571,7 @@
       state.allRecords = res.ok ? onlyCurrentStaff(await res.json()) : [];
     } catch (e) { state.allRecords = []; }
     try {
+      if (!USE_PROGRESS_PAGE) { throw new Error("progress page disabled"); }
       const res2 = await apiFetch(`${API_BASE}/schedule-tasks`);
       state.allScheduleRecords = res2.ok ? onlyCurrentStaff(await res2.json()) : [];
     } catch (e) { state.allScheduleRecords = []; }

@@ -461,6 +461,7 @@
     return "未着手";
   }
 
+  const USE_PROGRESS_PAGE = false;
   const state = {
     from: startOfMonth(),
     to: tomorrowStr(),
@@ -636,8 +637,13 @@
       const tRes = await apiFetch(`${API_BASE}/time-cards?dateFrom=${encodeURIComponent(state.from)}&dateTo=${encodeURIComponent(state.to)}`);
       state.timeCards = tRes.ok ? await tRes.json() : [];
 
-      const sRes = await apiFetch(`${API_BASE}/schedule-tasks?dateFrom=${encodeURIComponent(state.from)}&dateTo=${encodeURIComponent(state.to)}`);
-      state.scheduleTaskList = sRes.ok ? await sRes.json() : [];
+      // 進捗ページ(予定進捗)は使わないため、その案件は集計に含めない。再び使うときだけUSE_PROGRESS_PAGEをtrueにする。
+      if (USE_PROGRESS_PAGE) {
+        const sRes = await apiFetch(`${API_BASE}/schedule-tasks?dateFrom=${encodeURIComponent(state.from)}&dateTo=${encodeURIComponent(state.to)}`);
+        state.scheduleTaskList = sRes.ok ? await sRes.json() : [];
+      } else {
+        state.scheduleTaskList = [];
+      }
     } catch (e) {
       state.errorMsg = "データの取得に失敗しました。通信環境をご確認ください。";
       state.records = [];
