@@ -1670,7 +1670,7 @@
       <div class="outside-box">
         <label>活動エリア</label>
         <div class="btn-row">
-          ${["県内","県外","出張","夜間","休日出勤"].map(a => `<div class="chip ${f.area===a?"active":""}" onclick="__nippo.setArea('${day}','${a}')">${a}</div>`).join("")}
+          ${["県内","県外","出張"].map(a => `<div class="chip ${f.area===a?"active":""}" onclick="__nippo.setArea('${day}','${a}')">${a}</div>`).join("")}
         </div>
         ${f.area === "県外" ? `<input type="text" id="f-prefecture-${day}" placeholder="訪問先の都道府県(任意)" value="${f.prefecture}" oninput="__nippo.setField('${day}','prefecture', this.value)">` : ""}
         <label>直行・直帰</label>
