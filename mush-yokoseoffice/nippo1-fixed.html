@@ -1888,14 +1888,16 @@
   // 案件を「開始日(record_date)〜終了予定日(dueDate)」の期間バーとして
   // カレンダーに表示する(終了予定日が無い/開始日より前の場合は単日として扱う)。
   function calendarEventLabel(r) {
-    // 「全員」カレンダーは帯が多いので、案件名は出さず、顧客名だけを出す(自分・従業員を選んだカレンダーは、これまで通り顧客名・案件名)。
-    const names = state.calendarScope === "all" ? [r.client] : [r.client, r.project];
+    // 「全員」カレンダーは、全体スケジュールのカレンダーと同じ表示にする:
+    // 「氏名: ✓顧客名」(顧客名が無い案件だけ業務区分、まとめ入力は「まとめN件」)。案件名・状態の文字は出さない。
+    if (state.calendarScope === "all") {
+      const label = r.bulkMode ? `まとめ${r.bulkCount}件` : (r.client ? r.client : r.category);
+      return (r.staffName || "") + ": " + (r.status === "完了" ? "✓" : "") + label;
+    }
     const base = r.bulkMode
       ? `${r.category}(まとめ${r.bulkCount}件)`
-      : `${r.category}${names.filter(Boolean).length > 0 ? " " + names.filter(Boolean).join("・") : ""}`;
-    // 「全員」カレンダーでは、誰の予定か分かるよう氏名を先頭に付ける。
-    const marked = r.status === "完了" ? `✓ ${base}` : r.status === "保留" ? `保留 ${base}` : base;
-    return state.calendarScope === "all" && r.staffName ? `${r.staffName}: ${marked}` : marked;
+      : `${r.category}${[r.client, r.project].filter(Boolean).length > 0 ? " " + [r.client, r.project].filter(Boolean).join("・") : ""}`;
+    return r.status === "完了" ? `✓ ${base}` : r.status === "保留" ? `保留 ${base}` : base;
   }
 
   // カレンダーの枠の外に置く「日報を更新」ボタン。
@@ -1920,12 +1922,22 @@
     const monthStart = `${month}-01`;
     const monthEnd = `${month}-${String(lastDay).padStart(2,"0")}`;
 
+    const isAllScope = state.calendarScope === "all";
+    // 「全員」カレンダーは、全体スケジュールと同じく、部門の順 → 従業員の順 → 開始日(同じなら期間の長い順)に帯を並べる。
+    const deptOrder = DEPT_LEGEND.map(l => l[0]);
+    const staffOrder = {};
+    deptOrder.forEach((dn, di) => {
+      STAFF.filter(st => st.dept === dn).forEach((st, i) => { staffOrder[st.id] = di * 1000 + i; });
+    });
     const events = state.calendar.records.map(r => {
       const start = r.date > monthStart ? r.date : monthStart;
       let end = (r.dueDate && r.dueDate >= r.date) ? r.dueDate : r.date;
       if (end > monthEnd) end = monthEnd;
-      return { id: r.id, start, end, label: calendarEventLabel(r), status: r.status, dept: r.dept, holWork: !!r.holidayWork };
-    }).sort((a, b) => a.start.localeCompare(b.start) || b.end.localeCompare(a.end));
+      const order = staffOrder[String(r.staffId)] !== undefined ? staffOrder[String(r.staffId)] : 99 * 1000 + 500;
+      return { id: r.id, start, end, label: calendarEventLabel(r), status: r.status, dept: r.dept, holWork: !!r.holidayWork, order, name: r.staffName || "" };
+    }).sort(isAllScope
+      ? (a, b) => a.order - b.order || a.name.localeCompare(b.name, "ja") || a.start.localeCompare(b.start) || b.end.localeCompare(a.end)
+      : (a, b) => a.start.localeCompare(b.start) || b.end.localeCompare(a.end));
 
     // 月全体の日付を、週(7日)ごとの配列にまとめる(前後月の余白はnull)
     const weeks = [];
