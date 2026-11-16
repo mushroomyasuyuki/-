@@ -1822,7 +1822,7 @@
           <input type="checkbox" style="width:auto;margin:0;" ${f.holidayWork?"checked":""} onchange="__nippo.setFlag('${day}','holidayWork', this.checked)"> 休日出勤
         </label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;">
-          <input type="checkbox" style="width:auto;margin:0;" ${f.isOutside?"checked":""} onchange="__nippo.toggleOutside('${day}', this.checked)"> 外出を伴う業務
+          <input type="checkbox" style="width:auto;margin:0;" ${f.isOutside?"checked":""} onchange="__nippo.toggleOutside('${day}', this.checked)"> 外出を伴う業務（直行・直帰etc）
         </label>
         ${outsideBox}
         ${!f.bulkMode ? `
