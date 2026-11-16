@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.91.3
+ * Version: 2.91.4
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.91.3');
+define('CFP_VERSION', '2.91.4');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -288,7 +288,7 @@ final class CAD_Floor_Plan_Plugin {
      * the media library whose title contains the mark name (e.g. "seiden_mark_制電マーク.jpg").
      * A missing image is removed so that no broken-image icon is shown.
      */
-    private function fill_badges($html) {
+    public function fill_badges($html) {
         $marks = [
             'SEIDEN' => ['seiden', ['制電マーク', 'seiden']],
             'BOUEN'  => ['bouen', ['防炎マーク', 'bouen', 'boen']],
@@ -310,7 +310,7 @@ final class CAD_Floor_Plan_Plugin {
      * Order: assets/img/<name>.(jpg|jpeg|png|webp), then a media library file named <name>.* (e.g. uploads/2026/10/carpet-cut-pile.jpg).
      * With no image the whole <figure> is removed, so that no broken image shows.
      */
-    private function fill_photos($html) {
+    public function fill_photos($html) {
         $photos = ['CUT' => 'carpet-cut-pile', 'LOOP' => 'carpet-loop-pile'];
         foreach ($photos as $marker => $name) {
             $token = '{{CFP_PHOTO_' . $marker . '}}';

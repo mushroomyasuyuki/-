@@ -372,6 +372,15 @@ class CFP_Carpet_Order {
         $html = file_get_contents($file);
         // 品質基準の全文は、シミュレーターと同じ文面を使う
         $html = str_replace('{{CFP_QUALITY_DOC}}', self::quality_doc(), $html);
+        // 説明の画像（参考例・パイルの写真・制電／防炎マーク）と、無料サンプル請求のメール
+        $html = str_replace('{{CFP_ASSET_URL}}', esc_url(CFP_PLUGIN_URL . 'assets/'), $html);
+        $html = CAD_Floor_Plan_Plugin::instance()->fill_badges($html);
+        $html = CAD_Floor_Plan_Plugin::instance()->fill_photos($html);
+        foreach (['CUT' => 'カットパイル', 'LOOP' => 'ループパイル'] as $k => $label) {
+            $mail = 'mailto:' . self::admin_email() . '?subject=' . rawurlencode('【無料サンプル請求】' . $label)
+                . '&body=' . rawurlencode($label . " の無料サンプルを希望します。\n\nお名前：\nお届け先ご住所：\n電話番号：\n\n※サンプルの発送には数日いただく場合があります。");
+            $html = str_replace('{{CFP_SAMPLE_' . $k . '}}', esc_attr($mail), $html);
+        }
         return $html;
     }
 
