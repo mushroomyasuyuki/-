@@ -63,27 +63,42 @@
   let img = null;
   function drawPreview() {
     const cv = $('co-canvas');
-    if (!img) { cv.width = 0; cv.height = 0; return; }
     const w = parseFloat($('co-width').value) || 500, h = parseFloat($('co-height').value) || 500;
     const max = 640, k = Math.min(max / w, max / h);
     const W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
     cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d');
-    // 指定サイズいっぱいに（縦横比を変えず、はみ出す部分は切り取る）
-    const s = Math.max(W / img.width, H / img.height);
-    const dw = img.width * s, dh = img.height * s;
-    ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    ctx.strokeStyle = 'rgba(255,255,255,.8)';
-    ctx.lineWidth = 1;
-    for (let x = 500; x < w; x += 500) { ctx.beginPath(); ctx.moveTo(Math.round(x * k) + 0.5, 0); ctx.lineTo(Math.round(x * k) + 0.5, H); ctx.stroke(); }
-    for (let y = 500; y < h; y += 500) { ctx.beginPath(); ctx.moveTo(0, Math.round(y * k) + 0.5); ctx.lineTo(W, Math.round(y * k) + 0.5); ctx.stroke(); }
+    if (img) {
+      // 指定サイズいっぱいに（縦横比を変えず、はみ出す部分は切り取る）
+      const s = Math.max(W / img.width, H / img.height);
+      const dw = img.width * s, dh = img.height * s;
+      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    } else {
+      // 画像を選ぶ前：タイルの並びだけを見せる
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, W, H);
+    }
+    // タイル（500mm）の区切り：どんな絵柄の上でも見えるよう、白と紺の2本
+    const line = (x1, y1, x2, y2) => {
+      ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(8,42,73,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    };
+    for (let x = 500; x < w; x += 500) { const X = Math.round(x * k) + 0.5; line(X, 0, X, H); }
+    for (let y = 500; y < h; y += 500) { const Y = Math.round(y * k) + 0.5; line(0, Y, W, Y); }
+    ctx.strokeStyle = '#082A49'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, W - 2, H - 2);
+    if (!img) {
+      ctx.fillStyle = '#3E5670';
+      ctx.font = '500 ' + Math.round(Math.max(18, W / 22)) + 'px "Zen Kaku Gothic New", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('画像を選ぶと、ここに配置が出ます', W / 2, H / 2);
+    }
   }
 
   function estimate() {
     const m = $('co-material').value, w = parseFloat($('co-width').value) || 0, h = parseFloat($('co-height').value) || 0;
     const p = price(m, w, h, $('co-region').value);
     $('co-tiles').textContent = '合計 ' + p.tiles + '枚（横' + p.tx + '枚 × 縦' + p.ty + '枚）・' + p.boxes + '箱';
-    $('co-e-material').textContent = (m === 'cut' ? 'カットパイル' : 'ループパイル') + '（¥' + p.unit.toLocaleString() + '/㎡ 税別）';
+    $('co-e-material').textContent = (m === 'cut' ? 'カットパイル' : 'ループパイル') + ' ¥' + p.unit.toLocaleString() + '/㎡';
     $('co-e-area').textContent = p.area.toFixed(2) + '㎡・' + p.tiles + '枚';
     $('co-e-base').textContent = yen(p.base);
     $('co-e-ship').textContent = yen(p.shipping) + '（' + p.boxes + '箱）';
@@ -107,10 +122,10 @@
     const doc = $('co-quality-doc'), chk = $('co-quality'), btn = $('co-quality-open'), st = $('co-quality-status');
     if (!doc) { chk.disabled = false; return; }
     const atEnd = () => doc.scrollTop + doc.clientHeight >= doc.scrollHeight - 6;
-    const read = () => { chk.disabled = false; st.textContent = '✅ 最後まで読みました。チェックできます。'; st.className = 'co-qs-status ok'; };
+    const read = () => { chk.disabled = false; st.textContent = '最後まで読みました。同意のチェックができます。'; st.className = 'co-qs-status ok'; };
     btn.onclick = () => {
       doc.hidden = !doc.hidden;
-      btn.textContent = doc.hidden ? '📄 品質基準を読む（最後までスクロールするとチェックできます）' : '📄 品質基準を閉じる';
+      btn.textContent = doc.hidden ? '品質基準を読む（最後まで読むとチェックできます）' : '品質基準を閉じる';
       if (!doc.hidden) { doc.focus({ preventScroll: true }); if (atEnd()) read(); }
     };
     doc.addEventListener('scroll', () => { if (atEnd()) read(); });
@@ -159,10 +174,10 @@
         address: $('co-address').value, memo: $('co-memo').value, receipt: $('co-receipt').checked ? '1' : '',
         copyright_ok: '1', quality_ok: '1', page_url: cfg.page_url, image: f
       }, (r) => status(st, 'info', '送信しています… ' + Math.round(r * 100) + '%'));
-      status(st, 'ok', '✅ ご注文を受け付けました（ご注文番号：' + res.no + '）。\n確認のメールをお送りしました。担当者が色の変換プレビューを作成し、あらためてメールでお送りします。');
+      status(st, 'ok', 'ご注文を受け付けました（ご注文番号：' + res.no + '）。\n確認のメールをお送りしました。担当者が色の変換プレビューを作成し、あらためてメールでお送りします。');
       btn.textContent = '受け付けました';
     } catch (e) {
-      status(st, 'err', '❌ ' + e.message);
+      status(st, 'err', ''+ e.message);
       btn.disabled = false;
     }
   }
@@ -184,7 +199,7 @@
     if (o.status === 'paid') {
       $('co-sel-actions').hidden = true;
       $('co-pay').hidden = true;
-      status($('co-sel-status'), 'ok', '✅ お支払いが完了し、正式にご注文を承りました。ありがとうございます。\n製作に入り、発送の準備ができましたらご連絡いたします。');
+      status($('co-sel-status'), 'ok', 'お支払いが完了し、正式にご注文を承りました。ありがとうございます。\n製作に入り、発送の準備ができましたらご連絡いたします。');
       return;
     }
     if (o.status === 'rejected') {
@@ -212,12 +227,15 @@
       d.querySelector('img').alt = v.label + 'のプレビュー';
       d.querySelector('.co-note').textContent = v.colors + '色・' + paid;
       d.querySelector('.co-var-price').textContent = yen(v.total);
+      d.tabIndex = 0;
+      d.setAttribute('role', 'button');
+      d.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); d.click(); } });
       d.onclick = () => {
         chosen = v.key;
         box.querySelectorAll('.co-var').forEach((x) => x.classList.remove('on'));
         d.classList.add('on');
         $('co-choose').disabled = false;
-        $('co-choose').textContent = v.label + '（' + yen(v.total) + '）で注文する（お支払いへ）';
+        $('co-choose').textContent = v.label.split('：')[0] + 'で注文する（' + yen(v.total) + '）';
       };
       box.appendChild(d);
     });
@@ -240,7 +258,7 @@
       status(st, '', '');
       showPay();
     } catch (e) {
-      status(st, 'err', '❌ ' + e.message);
+      status(st, 'err', ''+ e.message);
     }
     $('co-choose').disabled = false;
   }
@@ -253,7 +271,7 @@
       order = res.order;
       renderSelect();
     } catch (e) {
-      status(st, 'err', '❌ ' + e.message);
+      status(st, 'err', ''+ e.message);
     }
   }
 
@@ -302,7 +320,7 @@
       renderSelect();
       window.scrollTo({ top: $('cfp-co').offsetTop, behavior: 'smooth' });
     } catch (e) {
-      status(st, 'err', '❌ ' + (e && e.message ? e.message : 'お支払いできませんでした。'));
+      status(st, 'err', ''+ (e && e.message ? e.message : 'お支払いできませんでした。'));
       btn.disabled = false;
     }
   }
