@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.91.1
+ * Version: 2.91.2
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.91.1');
+define('CFP_VERSION', '2.91.2');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -97,6 +97,10 @@ final class CAD_Floor_Plan_Plugin {
                 self::apply_page_meta($id);
             }
         }
+        // 2.91.2: create the public carpet order page (新ページ) on update, too.
+        if ($stored && version_compare($stored, '2.91.2', '<')) {
+            CFP_Carpet_Order::ensure_page();
+        }
         update_option('cad_floor_plan_version', CFP_VERSION);
     }
 
@@ -142,7 +146,7 @@ final class CAD_Floor_Plan_Plugin {
      * Cocoon page settings: "本文のみ（フルワイド）", hide title, reading time and table of contents.
      * Other themes ignore these custom fields.
      */
-    private static function page_meta() {
+    public static function page_meta() {
         return [
             'page_type'                   => 'content_only_full_wide',
             'the_page_title_novisible'    => 1,
@@ -727,10 +731,14 @@ register_activation_hook(__FILE__, function () {
         CFP_Domailer::activate();
     }
     CAD_Floor_Plan_Plugin::ensure_page();
+    require_once CFP_PLUGIN_DIR . 'includes/class-cfp-carpet-order.php';
+    CFP_Carpet_Order::ensure_page();
 });
 
 register_deactivation_hook(__FILE__, function () {
     CAD_Floor_Plan_Plugin::remove_page();
+    require_once CFP_PLUGIN_DIR . 'includes/class-cfp-carpet-order.php';
+    CFP_Carpet_Order::remove_page();
     require_once CFP_PLUGIN_DIR . 'includes/class-cfp-resume.php';
     CFP_Resume::unschedule();
     if (!defined('DOMAILER_VERSION')) {

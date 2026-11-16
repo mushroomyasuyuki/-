@@ -73,6 +73,7 @@ class CFP_Carpet_Order {
         add_action('admin_menu', [$this, 'admin_menu'], 20);
         add_action('admin_post_cfp_co_settings', [$this, 'handle_settings']);
         add_action('admin_post_cfp_co_status', [$this, 'handle_status']);
+        add_action('admin_post_cfp_co_create_page', [$this, 'handle_create_page']);
     }
 
     public function register_post_type() {
@@ -125,7 +126,70 @@ class CFP_Carpet_Order {
 
     /** The URL of the page with [cfp_carpet_order] (the public 新ページ). */
     public static function order_page_url() {
-        return self::find_page_with('[' . self::SHORTCODE);
+        $id = self::page_id();
+        return $id ? get_permalink($id) : self::find_page_with('[' . self::SHORTCODE);
+    }
+
+    /** The order page this plugin manages (0 if none). */
+    private static function page_id() {
+        $id = (int) get_option('cfp_co_page_id');
+        $page = $id ? get_post($id) : null;
+        return ($page && $page->post_type === 'page' && $page->post_status !== 'trash') ? $id : 0;
+    }
+
+    /**
+     * Returns the ID of the public order page (固定ページ「カーペットのご注文」), creating it if needed.
+     * A page that already has [cfp_carpet_order] is used as it is (and is not deleted on deactivation).
+     */
+    public static function ensure_page() {
+        $id = self::page_id();
+        if ($id) {
+            return $id;
+        }
+        global $wpdb;
+        $existing = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'page' AND post_status IN ('publish','private','draft','pending','future') AND post_content LIKE %s ORDER BY ID ASC LIMIT 1",
+            '%' . $wpdb->esc_like('[' . self::SHORTCODE) . '%'
+        ));
+        if ($existing) {
+            update_option('cfp_co_page_id', $existing);
+            update_option('cfp_co_page_created', 0);
+            return $existing;
+        }
+        $new_id = wp_insert_post([
+            'post_type'    => 'page',
+            'post_status'  => 'publish',
+            'post_title'   => 'カーペットのご注文',
+            'post_name'    => 'carpet-order',
+            'post_content' => '<!-- wp:shortcode -->[' . self::SHORTCODE . ']<!-- /wp:shortcode -->',
+            'meta_input'   => CAD_Floor_Plan_Plugin::page_meta(),
+        ], true);
+        if (is_wp_error($new_id)) {
+            return 0;
+        }
+        update_option('cfp_co_page_id', $new_id);
+        update_option('cfp_co_page_created', 1);
+        return (int) $new_id;
+    }
+
+    /** Deletes the order page if this plugin created it (orders and settings are kept). */
+    public static function remove_page() {
+        $id = (int) get_option('cfp_co_page_id');
+        if ($id && get_option('cfp_co_page_created') && get_post_type($id) === 'page') {
+            wp_delete_post($id, true);
+        }
+        delete_option('cfp_co_page_id');
+        delete_option('cfp_co_page_created');
+    }
+
+    public function handle_create_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。');
+        }
+        check_admin_referer('cfp_co_create_page');
+        $id = self::ensure_page();
+        wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=' . ($id ? 'page' : 'page_error')));
+        exit;
     }
 
     /**
@@ -843,15 +907,34 @@ class CFP_Carpet_Order {
         $s = self::settings();
         $msg = isset($_GET['cfp_co']) ? sanitize_key($_GET['cfp_co']) : '';
         $orders = get_posts(['post_type' => self::POST_TYPE, 'post_status' => 'any', 'numberposts' => 100, 'orderby' => 'ID', 'order' => 'DESC', 'fields' => 'ids']);
-        $order_page = self::find_page_with('[' . self::SHORTCODE);
+        $order_page = self::order_page_url();
+        $order_page_id = self::page_id();
         $patent = self::patent_page_url();
         ?>
         <div class="wrap">
             <h1>カーペット注文</h1>
             <?php if ($msg === 'saved') : ?><div class="notice notice-success"><p>保存しました。</p></div><?php endif; ?>
             <?php if ($msg === 'status') : ?><div class="notice notice-success"><p>状態を変えました。</p></div><?php endif; ?>
-            <p>公開の注文ページ（新ページ）：<?php echo $order_page ? '<a href="' . esc_url($order_page) . '" target="_blank" rel="noopener">' . esc_html($order_page) . '</a>' : '未作成（固定ページに <code>[' . esc_html(self::SHORTCODE) . ']</code> を置いてください）'; ?><br>
-            色変換の特許ページ（管理者だけ）：<?php echo $patent ? '<a href="' . esc_url($patent) . '" target="_blank" rel="noopener">' . esc_html($patent) . '</a>' : '未作成'; ?></p>
+            <?php if ($msg === 'page') : ?><div class="notice notice-success"><p>注文ページ（固定ページ）を用意しました。</p></div><?php endif; ?>
+            <?php if ($msg === 'page_error') : ?><div class="notice notice-error"><p>注文ページを作成できませんでした。</p></div><?php endif; ?>
+            <h2>ページ</h2>
+            <p>公開の注文ページ（新ページ）：
+                <?php if ($order_page) : ?>
+                    <a href="<?php echo esc_url($order_page); ?>" target="_blank" rel="noopener"><?php echo esc_html(urldecode($order_page)); ?></a>
+                    <?php if ($order_page_id) : ?> | <a href="<?php echo esc_url(get_edit_post_link($order_page_id)); ?>">固定ページを編集</a><?php endif; ?>
+                <?php else : ?>
+                    まだありません。
+                <?php endif; ?>
+            </p>
+            <?php if (!$order_page_id) : ?>
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="cfp_co_create_page">
+                <?php wp_nonce_field('cfp_co_create_page'); ?>
+                <?php submit_button('注文ページ（固定ページ）を作成', 'primary', 'submit', false); ?>
+                <p class="description">固定ページ「カーペットのご注文」（URL：<code><?php echo esc_html(home_url('/carpet-order/')); ?></code>）を作って公開します。<code>[<?php echo esc_html(self::SHORTCODE); ?>]</code> を置いた固定ページがすでにあれば、それを使います。</p>
+            </form>
+            <?php endif; ?>
+            <p>色変換の特許ページ（管理者だけ）：<?php echo $patent ? '<a href="' . esc_url($patent) . '" target="_blank" rel="noopener">' . esc_html(urldecode($patent)) . '</a>' : '未作成'; ?></p>
 
             <h2>注文</h2>
             <table class="widefat striped">
