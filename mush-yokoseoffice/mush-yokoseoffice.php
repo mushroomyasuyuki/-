@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ヨコセオフィス業務システム(WordPress DB版)
  * Description: Firebase/Firestoreを使わず、WordPress自体のデータベースだけで従業員登録・日報などのデータを管理するプラグインです。固定ページの「カスタムHTML」ブロックから、このプラグインが提供するREST APIを呼び出して使います。
- * Version: 2.7.36
+ * Version: 2.7.37
  * Author: 社内システム
  */
 
@@ -1300,6 +1300,64 @@ function mush_office_page_matches_bundled_file( $post_id, $file ) {
  *           上書きするかどうかを選べる)。
  * 戻り値: [スラッグ => 'current'(最新) | 'updated'(更新した) | 'outdated'(更新が必要・未更新) | 'modified'(手動で変更あり) | 'missing'(ページなし)]
  */
+/**
+ * サイトのキャッシュ(ページキャッシュ)を、わかる範囲で削除する。
+ * 固定ページの内容を更新したのに、ログインしていない閲覧者(他のPCなど)に古いページが表示され続けるのを防ぐ。
+ * 入っているキャッシュ系プラグイン・テーマだけを対象にし(関数がなければ何もしない)、失敗しても何も起こさない。
+ * ※さくらのレンタルサーバの「Webアクセラレータ」など、サーバー側のキャッシュは、ここからは削除できない
+ *   (下のmush_office_nocache_for_pagesで、ページを保存させない指示を出すだけ)。
+ */
+function mush_office_purge_site_caches() {
+    try {
+        if ( class_exists( 'autoptimizeCache' ) && method_exists( 'autoptimizeCache', 'clearall' ) ) {
+            autoptimizeCache::clearall();
+        }
+        if ( function_exists( 'w3tc_flush_all' ) ) { w3tc_flush_all(); }
+        if ( function_exists( 'wp_cache_clear_cache' ) ) { wp_cache_clear_cache(); }          // WP Super Cache
+        if ( function_exists( 'rocket_clean_domain' ) ) { rocket_clean_domain(); }              // WP Rocket
+        if ( class_exists( 'WpFastestCache' ) ) { do_action( 'wpfc_clear_all_cache' ); }        // WP Fastest Cache
+        if ( function_exists( 'sg_cachepress_purge_cache' ) ) { sg_cachepress_purge_cache(); }  // SiteGround
+        do_action( 'litespeed_purge_all' );                                                      // LiteSpeed Cache
+        do_action( 'cache_enabler_clear_complete_cache' );                                       // Cache Enabler
+        if ( function_exists( 'delete_all_theme_caches' ) ) { delete_all_theme_caches(); }       // Cocoon
+        foreach ( mush_office_page_definitions() as $def ) {
+            $page = get_page_by_path( $def['slug'], OBJECT, 'page' );
+            if ( $page ) { clean_post_cache( $page->ID ); }
+        }
+    } catch ( \Throwable $e ) {
+        // キャッシュ削除は補助的な処理。失敗してもページの更新自体は成功扱いにする。
+    }
+}
+
+// このプラグインの業務ページ(ログインして使う画面)は、キャッシュに保存させない。
+// 古い内容がログインしていない閲覧者(他のPC)に表示され続けるのを防ぐため、キャッシュ系プラグイン向けの定数と、
+// ブラウザ・中継サーバー向けのno-cacheヘッダーを出す。
+add_action( 'template_redirect', function () {
+    if ( ! is_page() ) {
+        return;
+    }
+    $slugs = array();
+    foreach ( mush_office_page_definitions() as $def ) {
+        $slugs[] = $def['slug'];
+    }
+    $page = get_queried_object();
+    if ( ! $page || empty( $page->post_name ) ) {
+        return;
+    }
+    $is_ours = in_array( urldecode( $page->post_name ), $slugs, true )
+        || '' !== strval( get_post_meta( $page->ID, MUSH_OFFICE_PAGE_META, true ) );
+    if ( ! $is_ours ) {
+        return;
+    }
+    if ( ! defined( 'DONOTCACHEPAGE' ) ) { define( 'DONOTCACHEPAGE', true ); }
+    if ( ! defined( 'DONOTCACHEOBJECT' ) ) { define( 'DONOTCACHEOBJECT', true ); }
+    if ( ! defined( 'DONOTMINIFY' ) ) { define( 'DONOTMINIFY', true ); }
+    if ( ! headers_sent() ) {
+        nocache_headers();
+        header( 'Surrogate-Control: no-store' );
+    }
+}, 1 );
+
 function mush_office_normalize_page_html( $html ) {
     $html = str_replace( "\r\n", "\n", strval( $html ) );
     $html = preg_replace( '/^\s*<!-- wp:html -->/', '', $html );
@@ -1369,6 +1427,9 @@ function mush_office_sync_pages( $force = false, $apply = true ) {
         update_post_meta( $page->ID, '_mush_office_page_hash', $new_hash );
         $report[ $def['slug'] ] = 'updated';
     }
+    if ( $apply && in_array( 'updated', $report, true ) ) {
+        mush_office_purge_site_caches(); // 更新したページが、古い内容のまま表示され続けないようにする
+    }
     return $report;
 }
 
@@ -1395,6 +1456,7 @@ add_action( 'admin_post_mush_office_sync_pages', function () {
     check_admin_referer( 'mush_office_sync_pages' );
     $force  = ! empty( $_POST['mush_sync_force'] );
     $report = mush_office_sync_pages( $force, true );
+    mush_office_purge_site_caches(); // 更新がなくても、ボタンを押したときはキャッシュも削除する
     $count  = array_count_values( $report );
     $msg = sprintf( '固定ページを更新しました(更新 %d / すでに最新 %d / 手動で変更されていて未更新 %d / 見つからない %d)。',
         isset( $count['updated'] ) ? $count['updated'] : 0, isset( $count['current'] ) ? $count['current'] : 0,
