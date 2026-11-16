@@ -27,6 +27,57 @@ class CFP_Carpet_Order {
     const TAX_RATE = 0.10;
     const PRICE_PER_COLOR = 35000;
     const FREE_OP = ['OP-03', 'OP-05']; // オプション色のうち無償の色
+    // HPの初期（旧パレット）の色。特許ページの FREE_PALETTE・OP_PALETTE_RAW と同じ
+    const PALETTE_FREE = [
+        ['基本-01', '#EFEFEF'],
+        ['基本-02', '#E8AB82'],
+        ['基本-03', '#DB9514'],
+        ['基本-04', '#898989'],
+        ['基本-05', '#95B7E1'],
+        ['基本-06', '#C8161E'],
+        ['基本-07', '#DC5310'],
+        ['基本-08', '#FABE00'],
+        ['基本-09', '#218F49'],
+        ['基本-10', '#005EAD'],
+        ['基本-11', '#5B1131'],
+        ['基本-12', '#5D2B17'],
+        ['基本-13', '#322B29'],
+        ['基本-14', '#263F22'],
+        ['基本-15', '#082A49'],
+        ['基本-16', '#000000']
+    ];
+    const PALETTE_OPT = [
+        ['OP-01', '#FCC3DE'],
+        ['OP-02', '#F5A1C7'],
+        ['OP-03', '#DD4A96'],
+        ['OP-04', '#CF2884'],
+        ['OP-05', '#B60069'],
+        ['OP-06', '#F3A731'],
+        ['OP-07', '#F0810E'],
+        ['OP-08', '#762F15'],
+        ['OP-09', '#AB1D22'],
+        ['OP-10', '#620002'],
+        ['OP-11', '#FFFAC2'],
+        ['OP-12', '#FFE98C'],
+        ['OP-13', '#AAC351'],
+        ['OP-14', '#769D41'],
+        ['OP-15', '#578B33'],
+        ['OP-16', '#BEE9EF'],
+        ['OP-17', '#00B0CE'],
+        ['OP-18', '#00718C'],
+        ['OP-19', '#0B318F'],
+        ['OP-20', '#24374E'],
+        ['OP-21', '#8B5CA3'],
+        ['OP-22', '#63327D'],
+        ['OP-23', '#452566'],
+        ['OP-24', '#324125'],
+        ['OP-25', '#00362D'],
+        ['OP-26', '#C08741'],
+        ['OP-27', '#995325'],
+        ['OP-28', '#552E21'],
+        ['OP-29', '#2B0A05'],
+        ['OP-30', '#F7F7F7']
+    ];
 
     const REGIONS = [
         'honshu'                  => ['本州', 2000],
@@ -101,6 +152,14 @@ class CFP_Carpet_Order {
             'payjp_pk_live'  => '',
             'payjp_sk_live'  => '',
             'factory_on_paid' => 1,
+            // 販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）
+            'company_name'    => 'マッシュオフィス',
+            'company_rep'     => '佐藤康之',
+            'company_address' => '栃木県宇都宮市下川俣町24-1',
+            'company_tel'     => '050-5586-1657',
+            'company_email'   => 'yasu@mush-office.com',
+            'company_url'     => 'https://mush-office.com/',
+            'maker'           => '株式会社ヨコセ',
         ]);
     }
 
@@ -374,6 +433,8 @@ class CFP_Carpet_Order {
         $html = str_replace('{{CFP_QUALITY_DOC}}', self::quality_doc(), $html);
         // 説明の画像（参考例・パイルの写真・制電／防炎マーク）と、無料サンプル請求のメール
         $html = str_replace('{{CFP_ASSET_URL}}', esc_url(CFP_PLUGIN_URL . 'assets/'), $html);
+        $html = str_replace('{{CFP_PALETTE}}', self::palette_html(), $html);
+        $html = str_replace('{{CFP_COMPANY}}', self::company_html(), $html);
         $html = CAD_Floor_Plan_Plugin::instance()->fill_badges($html);
         $html = CAD_Floor_Plan_Plugin::instance()->fill_photos($html);
         foreach (['CUT' => 'カットパイル', 'LOOP' => 'ループパイル'] as $k => $label) {
@@ -382,6 +443,51 @@ class CFP_Carpet_Order {
             $html = str_replace('{{CFP_SAMPLE_' . $k . '}}', esc_attr($mail), $html);
         }
         return $html;
+    }
+
+    /** The colour chips: the 16 standard colours and the option colours (OP-03・OP-05 are free). */
+    private static function palette_html() {
+        // 無償の印は、オプションカラーのうち無償の色（OP-03・OP-05）にだけ付ける（標準色は見出しに無償と書く）
+        $chip = function ($c, $free_mark) {
+            return '<li><span class="co-sw" style="background:' . esc_attr($c[1]) . '"></span><b>' . esc_html($c[0]) . '</b>'
+                . ($free_mark ? '<i>無償</i>' : '') . '</li>';
+        };
+        $free = '';
+        foreach (self::PALETTE_FREE as $c) {
+            $free .= $chip($c, false);
+        }
+        $opt = '';
+        foreach (self::PALETTE_OPT as $c) {
+            $opt .= $chip($c, !self::is_paid_color($c[0]));
+        }
+        return '<h3>標準色（16色・無償）</h3><ul class="co-pal co-pal-free">' . $free . '</ul>'
+            . '<h3>オプションカラー（30色）</h3><ul class="co-pal">' . $opt . '</ul>';
+    }
+
+    /** 会社情報・特定商取引法に基づく表記（settings → 販売者情報）. */
+    private static function company_html() {
+        $s = self::settings();
+        $row = function ($k, $v, $raw = false) {
+            return $v === '' ? '' : '<dt>' . esc_html($k) . '</dt><dd>' . ($raw ? $v : esc_html($v)) . '</dd>';
+        };
+        $url = $s['company_url'] !== '' ? '<a href="' . esc_url($s['company_url']) . '" target="_blank" rel="noopener">' . esc_html($s['company_url']) . '</a>' : '';
+        $mail = is_email($s['company_email']) ? '<a href="' . esc_attr('mailto:' . $s['company_email']) . '">' . esc_html($s['company_email']) . '</a>' : '';
+        return '<dl>'
+            . $row('販売事業者', $s['company_name'])
+            . $row('代表', $s['company_rep'])
+            . $row('所在地', $s['company_address'])
+            . $row('電話', $s['company_tel'])
+            . $row('メール', $mail, true)
+            . $row('ホームページ', $url, true)
+            . $row('製造', $s['maker'])
+            . $row('販売価格', 'ご注文ページの価格表と、プレビューでお選びいただく案の金額（税込・送料込み）')
+            . $row('商品代金以外の費用', '送料（1箱あたり：本州 2,000円／北海道・四国・九州 2,500円／沖縄 5,500円・税別）、有償オプションカラー（1色 35,000円・税別）')
+            . $row('お支払い方法', 'クレジットカード（PAY.JP）')
+            . $row('お支払い時期', 'プレビューの案をお選びいただいた後、ご注文時にお支払いいただきます')
+            . $row('お届け時期', 'デザイン確定（お支払い完了）から2週間ほどで発送します（デザイン・サイズにより変わります）')
+            . $row('キャンセル', 'ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降はお受けできません')
+            . $row('返品・不良品', 'オーダーメイド品のため、お客様のご都合による返品はお受けできません。製品の不良は「品質基準について」に沿って対応します')
+            . '</dl>';
     }
 
     /** The 品質基準 text from the simulator template (one source for both pages). */
@@ -989,6 +1095,10 @@ class CFP_Carpet_Order {
                     <tr><th><label for="co-factory">工場のメール</label></th><td><input type="email" id="co-factory" name="factory_email" class="regular-text" value="<?php echo esc_attr($s['factory_email']); ?>"><p class="description">発注ボタンが押されたときに、納期確認のメール（元画像を添付）を送ります。</p></td></tr>
                     <tr><th><label for="co-factory-name">工場の宛名</label></th><td><input type="text" id="co-factory-name" name="factory_name" class="regular-text" value="<?php echo esc_attr($s['factory_name']); ?>"></td></tr>
                     <tr><th>決済完了時</th><td><label><input type="checkbox" name="factory_on_paid" value="1" <?php checked(!empty($s['factory_on_paid'])); ?>> 工場へ正式発注のメールも送る</label></td></tr>
+                    <tr><th colspan="2"><h3 style="margin:8px 0 0">販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）</h3></th></tr>
+                    <?php foreach (['company_name' => '販売事業者', 'company_rep' => '代表', 'company_address' => '所在地', 'company_tel' => '電話', 'company_email' => 'メール', 'company_url' => 'ホームページ', 'maker' => '製造'] as $k => $l) : ?>
+                    <tr><th><label for="co-<?php echo esc_attr($k); ?>"><?php echo esc_html($l); ?></label></th><td><input type="text" id="co-<?php echo esc_attr($k); ?>" name="<?php echo esc_attr($k); ?>" class="regular-text" value="<?php echo esc_attr($s[$k]); ?>"></td></tr>
+                    <?php endforeach; ?>
                     <tr><th>PAY.JP</th><td>
                         <label><input type="radio" name="payjp_mode" value="test" <?php checked($s['payjp_mode'], 'test'); ?>> テスト</label>
                         <label style="margin-left:12px"><input type="radio" name="payjp_mode" value="live" <?php checked($s['payjp_mode'], 'live'); ?>> 本番</label>
@@ -1015,6 +1125,11 @@ class CFP_Carpet_Order {
         $s['factory_name'] = sanitize_text_field(wp_unslash($_POST['factory_name'] ?? ''));
         $s['factory_on_paid'] = empty($_POST['factory_on_paid']) ? 0 : 1;
         $s['payjp_mode'] = ($_POST['payjp_mode'] ?? '') === 'live' ? 'live' : 'test';
+        foreach (['company_name', 'company_rep', 'company_address', 'company_tel', 'maker'] as $k) {
+            $s[$k] = sanitize_text_field(wp_unslash($_POST[$k] ?? ''));
+        }
+        $s['company_email'] = sanitize_email(wp_unslash($_POST['company_email'] ?? ''));
+        $s['company_url'] = esc_url_raw(wp_unslash($_POST['company_url'] ?? ''));
         foreach (['test', 'live'] as $m) {
             $s['payjp_pk_' . $m] = preg_replace('/[^A-Za-z0-9_]/', '', wp_unslash($_POST['payjp_pk_' . $m] ?? ''));
             $sk = preg_replace('/[^A-Za-z0-9_]/', '', wp_unslash($_POST['payjp_sk_' . $m] ?? ''));

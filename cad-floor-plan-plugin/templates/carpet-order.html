@@ -205,10 +205,23 @@
 #cfp-co .co-btn-inline{display:inline-block;width:auto;margin:0;padding:10px 22px;font-size:15px;text-decoration:none}
 #cfp-co .co-hero-links .co-link{font-size:14px}
 #cfp-co a.co-link{color:var(--blue)}
+#cfp-co .co-pal{list-style:none;margin:8px 0 22px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:12px 10px}
+#cfp-co .co-pal li{margin:0;display:flex;flex-direction:column;align-items:flex-start;font-size:12.5px;line-height:1.5}
+#cfp-co .co-sw{display:block;width:100%;aspect-ratio:1;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(8,42,73,.18);margin-bottom:5px;position:relative;overflow:hidden}
+#cfp-co .co-sw::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.10) 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.07) 0 1px,transparent 1px 5px)}
+#cfp-co .co-pal b{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+#cfp-co .co-pal i{font-style:normal;font-size:11px;font-weight:700;color:var(--ok)}
+#cfp-co .co-company{margin-top:56px}
+#cfp-co .co-company dl{grid-template-columns:11em 1fr;gap:0;max-width:880px;background:var(--paper);border-radius:6px;padding:6px 20px}
+#cfp-co .co-company dt,#cfp-co .co-company dd{padding:11px 0;border-bottom:1px solid var(--line)}
+#cfp-co .co-company dt:last-of-type,#cfp-co .co-company dd:last-of-type{border-bottom:0}
+#cfp-co .co-company dt{white-space:normal}
 @media (max-width:900px){
   #cfp-co .co-two,#cfp-co .co-piles,#cfp-co .co-uses,#cfp-co .co-install-steps{grid-template-columns:1fr}
   #cfp-co .co-ref-row{grid-template-columns:repeat(3,minmax(0,1fr))}
   #cfp-co .co-ref-name{grid-column:1/-1}
+  #cfp-co .co-company dl{grid-template-columns:1fr}
+  #cfp-co .co-company dt{border-bottom:0;padding-bottom:0}
 }
 @media (max-width:900px){
   #cfp-co .co-hero{grid-template-columns:1fr;gap:28px}
@@ -238,7 +251,7 @@
     <div class="co-hero-text">
       <h1>お手持ちの絵柄を、<wbr>50cm角の<wbr>タイルカーペットに。</h1>
       <p class="co-lead">デザイン画像とサイズを送ってください。担当者がカーペットの糸の色に置き換えたプレビューをメールでお送りします。仕上がりを見て案を選び、カードでお支払いいただいた時点で正式なご注文になります。</p>
-      <p class="co-hero-links"><a class="co-btn co-btn-inline" href="#co-form">ご注文フォームへ</a><a class="co-link" href="#co-colors">色の置き換えについて</a><a class="co-link" href="#co-spec">製品の仕様</a><a class="co-link" href="#co-price">価格</a></p>
+      <p class="co-hero-links"><a class="co-btn co-btn-inline" href="#co-form">ご注文フォームへ</a><a class="co-link" href="#co-colors">色の置き換えについて</a><a class="co-link" href="#co-palette">使える色</a><a class="co-link" href="#co-spec">製品の仕様</a><a class="co-link" href="#co-price">価格</a><a class="co-link" href="#co-about">会社情報</a></p>
     </div>
     <figure class="co-hero-art" style="margin:0">
       <div class="co-carpet" aria-hidden="true"><span style="--c:#EFEFEF;--i:0"></span><span style="--c:#E8AB82;--i:5"></span><span style="--c:#DB9514;--i:10"></span><span style="--c:#898989;--i:15"></span><span style="--c:#95B7E1;--i:1"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#DC5310;--i:11"></span><span style="--c:#FABE00;--i:12"></span><span style="--c:#218F49;--i:2"></span><span style="--c:#005EAD;--i:7"></span><span style="--c:#5B1131;--i:8"></span><span style="--c:#5D2B17;--i:13"></span><span style="--c:#322B29;--i:3"></span><span style="--c:#263F22;--i:4"></span><span style="--c:#082A49;--i:9"></span><span style="--c:#000000;--i:14"></span></div>
@@ -292,6 +305,13 @@
         <figure><img src="{{CFP_ASSET_URL}}img/ref-flower-more.jpg" alt="フラワー型・オプションカラー多め" loading="lazy"><figcaption>オプションカラー多め</figcaption></figure></div>
     </div>
     <p class="co-info-note">写真はイメージです。実際の色味は、モニターや撮影の条件によって異なります。</p>
+  </section>
+
+  <section class="co-info" id="co-palette">
+    <h2 class="co-info-h">使える色（カラーパレット）</h2>
+    <p class="co-info-lead">ご入稿の画像は、下の色（最大16色まで）に置き換えて染めます。標準色とOP-03・OP-05は無償、そのほかのオプションカラーは1色につき ¥35,000（税別・10㎡以上は3色まで無料）です。どの色を使うかは、プレビューの案でご確認いただけます。</p>
+    {{CFP_PALETTE}}
+    <p class="co-info-note">画面の色は目安です。実際の糸の色とは、モニターや光の当たり方で見え方が異なります。</p>
   </section>
 
   <section class="co-info" id="co-spec">
@@ -463,6 +483,11 @@
     </aside>
   </div>
 </div>
+
+<section class="co-info co-company" id="co-about">
+  <h2 class="co-info-h">会社情報・特定商取引法に基づく表記</h2>
+  {{CFP_COMPANY}}
+</section>
 
 <!-- 案の選択とお支払い（メールのリンクから） -->
 <div id="co-select-view" hidden>
