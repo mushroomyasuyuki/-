@@ -1,0 +1,167 @@
+<style>
+.entry-header,.page .entry-title,article .entry-title{display:none!important;}
+.cfp-co{max-width:960px;margin:20px auto;background:#09090b;color:#f4f4f5;padding:28px;border-radius:12px;border:1px solid #27272a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;box-sizing:border-box;line-height:1.7}
+.cfp-co *{box-sizing:border-box}
+.cfp-co h1{font-size:24px;margin:0 0 6px;color:#fff;text-align:center}
+.cfp-co .co-lead{text-align:center;color:#d4d4d8;font-size:14px;margin:0 0 22px}
+.cfp-co h2{font-size:17px;color:#fff;margin:26px 0 10px;padding-bottom:6px;border-bottom:1px solid #27272a}
+.cfp-co .co-box{background:#18181b;border:1px solid #27272a;border-radius:8px;padding:18px;margin-bottom:16px}
+.cfp-co .co-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 6px}
+.cfp-co .co-flow div{background:#18181b;border:1px solid #3f3f46;border-radius:8px;padding:10px 8px;font-size:12px;text-align:center;color:#e4e4e7}
+.cfp-co .co-flow b{display:block;color:#f39c12;font-size:13px;margin-bottom:2px}
+.cfp-co label{display:block;font-size:14px;font-weight:700;color:#e4e4e7;margin-bottom:6px}
+.cfp-co .co-field{margin-bottom:14px}
+.cfp-co input[type=text],.cfp-co input[type=tel],.cfp-co input[type=email],.cfp-co input[type=number],.cfp-co select,.cfp-co textarea{width:100%;background:#09090b;color:#fff;border:1px solid #3f3f46;border-radius:6px;padding:10px 12px;font-size:15px}
+.cfp-co textarea{min-height:90px}
+.cfp-co small,.cfp-co .co-note{display:block;font-size:12px;color:#a1a1aa;margin-top:4px}
+.cfp-co .co-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cfp-co input[type=file]{display:block;width:100%;padding:12px;background:#18181b;color:#fff;border:2px dashed #f39c12;border-radius:8px;cursor:pointer;font-size:14px}
+.cfp-co .co-preview{margin-top:12px;text-align:center}
+.cfp-co .co-preview canvas{max-width:100%;height:auto;border:1px solid #3f3f46;background:#18181b}
+.cfp-co .co-row{display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:1px dashed #27272a;font-size:14px}
+.cfp-co .co-row span:last-child{font-weight:700;text-align:right}
+.cfp-co .co-row.total{font-size:17px;border-bottom:0;padding-top:10px}
+.cfp-co .co-row.total span:last-child{color:#ef4444;font-size:20px}
+.cfp-co .co-btn{display:block;width:100%;background:#f39c12;color:#000;border:0;padding:14px;font-size:18px;font-weight:700;border-radius:6px;cursor:pointer;margin-top:18px}
+.cfp-co .co-btn:disabled{background:#3f3f46;color:#a1a1aa;cursor:not-allowed}
+.cfp-co .co-btn.sub{background:#27272a;color:#fff;border:1px solid #52525b;font-size:15px;padding:10px}
+.cfp-co .co-chip{display:inline-block;background:#27272a;border:1px solid #52525b;border-radius:6px;padding:8px 14px;color:#fff;cursor:pointer;font-size:13px}
+.cfp-co .co-status{margin-top:14px;padding:12px;border-radius:6px;font-size:14px;display:none;white-space:pre-line}
+.cfp-co .co-status.ok{display:block;background:#052e16;border:1px solid #16a34a;color:#bbf7d0}
+.cfp-co .co-status.err{display:block;background:#450a0a;border:1px solid #dc2626;color:#fecaca}
+.cfp-co .co-status.info{display:block;background:#172554;border:1px solid #3b82f6;color:#bfdbfe}
+.cfp-co .co-check{display:flex;gap:10px;align-items:flex-start}
+.cfp-co .co-check input{margin-top:5px;width:auto}
+.cfp-co .co-check label{font-weight:400;margin:0;cursor:pointer}
+.cfp-co .req{color:#ef4444;margin-left:4px}
+.cfp-co .cfp-agree-box{padding:12px 14px;background:#272013;border:1px solid #b45309;border-radius:6px;margin-bottom:10px}
+.cfp-co .cfp-qs{margin-top:10px;max-height:320px;overflow-y:auto;padding:14px 16px;background:#09090b;border:1px solid #3f3f46;border-radius:6px;font-size:13px;line-height:1.8;color:#e4e4e7;text-align:left}
+.cfp-co .cfp-qs .qs-title{font-size:15px;font-weight:700;color:#fff;text-align:center}
+.cfp-co .cfp-qs .qs-meta{text-align:center;color:#a1a1aa;font-size:12px;margin-bottom:6px}
+.cfp-co .cfp-qs h4{font-size:14px!important;color:#f39c12;margin:16px 0 4px!important;border-bottom:1px solid #27272a;padding-bottom:3px}
+.cfp-co .cfp-qs h5{font-size:13px!important;color:#fff;margin:10px 0 2px!important}
+.cfp-co .cfp-qs p{margin:4px 0!important;color:#d4d4d8}
+.cfp-co .cfp-qs ul{margin:4px 0 6px 18px!important;padding:0}
+.cfp-co .cfp-qs .qs-note{color:#fbbf24!important;font-size:12px}
+.cfp-co .cfp-qs .qs-sub{font-weight:700;color:#fff!important;text-align:center;margin-top:12px!important}
+.cfp-co .cfp-qs .qs-box{margin:10px 0;padding:10px 12px;border:1px solid #52525b;border-radius:6px;background:#18181b}
+.cfp-co .cfp-qs .qs-box-title{font-weight:700;color:#fff;text-align:center;margin-bottom:4px}
+.cfp-co .cfp-qs .qs-end{text-align:center;color:#a1a1aa;margin:14px 0 4px}
+.cfp-co .co-qs-status{font-size:12px;margin-top:6px;color:#fbbf24}
+.cfp-co .co-qs-status.ok{color:#86efac}
+.cfp-co .co-vars{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.cfp-co .co-var{background:#18181b;border:2px solid #3f3f46;border-radius:8px;padding:12px;cursor:pointer}
+.cfp-co .co-var.on{border-color:#f39c12;box-shadow:0 0 0 2px rgba(243,156,18,.35)}
+.cfp-co .co-var img{display:block;width:100%;height:auto;background:#fff;border-radius:4px;image-rendering:pixelated}
+.cfp-co .co-var h3{font-size:15px;margin:0 0 8px;color:#fff}
+.cfp-co .co-var .co-var-price{font-size:18px;font-weight:700;color:#f39c12;margin-top:6px}
+.cfp-co .co-card{background:#fff;border-radius:6px;padding:12px;margin:10px 0}
+@media (max-width:720px){.cfp-co{padding:18px}.cfp-co .co-grid2,.cfp-co .co-vars{grid-template-columns:1fr}.cfp-co .co-flow{grid-template-columns:1fr 1fr}}
+</style>
+<div class="cfp-co" id="cfp-co">
+
+<!-- 注文フォーム（新ページ） -->
+<div id="co-order-view" hidden>
+  <h1>オリジナル・プリントカーペットのご注文</h1>
+  <p class="co-lead">デザイン画像とサイズを送っていただくと、担当者がカーペットの色に変換したプレビューをメールでお送りします。<br>案を選んでカードでお支払いいただくと、正式なご注文になります。</p>
+
+  <div class="co-flow">
+    <div><b>① 発注</b>画像・サイズ・お客様情報を送る</div>
+    <div><b>② プレビュー</b>色の変換案をメールでお届け</div>
+    <div><b>③ 案を選ぶ</b>メールのリンクから選択（作り直しのご要望も可）</div>
+    <div><b>④ お支払い</b>カード決済で正式ご注文</div>
+    <div><b>⑤ 製作・発送</b>ヤマト運輸でお届け</div>
+  </div>
+
+  <h2>1．仕様・サイズ</h2>
+  <div class="co-box">
+    <div class="co-field"><label for="co-material">パイル形状（500mm×500mm タイル）</label>
+      <select id="co-material"><option value="loop">ループパイル（標準・高耐久・重歩行向け）</option><option value="cut">カットパイル（発色・質感重視）</option></select>
+      <small>※ご注文面積に応じて㎡単価が自動でディスカウントされます。</small></div>
+    <div class="co-grid2">
+      <div class="co-field"><label for="co-width">横幅（W）mm</label><input type="number" id="co-width" value="1000" min="500" step="500"></div>
+      <div class="co-field"><label for="co-height">縦幅（H）mm</label><input type="number" id="co-height" value="1000" min="500" step="500"></div>
+    </div>
+    <div class="co-note" id="co-tiles"></div>
+    <div class="co-field" style="margin-top:12px"><label for="co-region">お届け先地域（送料／箱）</label>
+      <select id="co-region"><option value="honshu">本州（¥2,000／箱）</option><option value="hokkaido_shikoku_kyushu">北海道・四国・九州（¥2,500／箱）</option><option value="okinawa">沖縄（¥5,500／箱）</option></select>
+      <small>※ループパイル1箱＝20枚、カットパイル1箱＝16枚で送料を計算します。下のご住所から自動で選びます。</small></div>
+  </div>
+
+  <h2>2．デザイン画像</h2>
+  <div class="co-box">
+    <label for="co-file">デザイン画像（JPEG / PNG / GIF / WebP・30MBまで）<span class="req">*</span></label>
+    <input type="file" id="co-file" accept="image/jpeg,image/png,image/gif,image/webp">
+    <small>※画像は指定サイズいっぱいに合わせます（縦横比が違う部分は切り取られます）。下の図はおおよその配置で、白い線はタイル（500mm）の区切りです。</small>
+    <div class="co-preview"><canvas id="co-canvas" width="0" height="0"></canvas></div>
+  </div>
+
+  <h2>3．お見積もり（概算）</h2>
+  <div class="co-box">
+    <div class="co-row"><span>仕様</span><span id="co-e-material"></span></div>
+    <div class="co-row"><span>面積・枚数</span><span id="co-e-area"></span></div>
+    <div class="co-row"><span>商品代（税別）</span><span id="co-e-base"></span></div>
+    <div class="co-row"><span>送料（税別）</span><span id="co-e-ship"></span></div>
+    <div class="co-row"><span>消費税（10%）</span><span id="co-e-tax"></span></div>
+    <div class="co-row total"><span>合計（税込）</span><span id="co-e-total"></span></div>
+    <div class="co-note">※有償のオプションカラーを使う案では、1色につき ¥<span id="co-e-ppc"></span>（税別）が加わります（10㎡以上は3色まで無料）。金額は、お送りする変換案を選んだときに確定します。<br>※標準納期：デザイン確定から2週間〜（デザイン・サイズにより変わります）。</div>
+  </div>
+
+  <h2>4．ご注文者様情報</h2>
+  <div class="co-box">
+    <div class="co-grid2">
+      <div class="co-field"><label for="co-name">お名前<span class="req">*</span></label><input type="text" id="co-name" autocomplete="name"></div>
+      <div class="co-field"><label for="co-company">法人名・屋号</label><input type="text" id="co-company" autocomplete="organization"></div>
+      <div class="co-field"><label for="co-tel">電話番号<span class="req">*</span></label><input type="tel" id="co-tel" autocomplete="tel"></div>
+      <div class="co-field"><label for="co-email">メールアドレス<span class="req">*</span></label><input type="email" id="co-email" autocomplete="email"></div>
+    </div>
+    <div class="co-field"><label for="co-address">お届け先ご住所<span class="req">*</span></label><input type="text" id="co-address" autocomplete="street-address" placeholder="東京都千代田区1-1-1"></div>
+    <div class="co-field"><label for="co-memo">ご要望（色・仕上がり・納期など）</label><textarea id="co-memo"></textarea></div>
+    <div class="co-check"><input type="checkbox" id="co-receipt"><label for="co-receipt">領収書が必要</label></div>
+  </div>
+
+  <div class="cfp-agree-box"><div class="co-check"><input type="checkbox" id="co-copyright"><label for="co-copyright">ご入稿のデザインは、第三者の著作権・商標権・肖像権などを侵害しないことを確認しました。<span class="req">*</span></label></div></div>
+  <div class="cfp-agree-box">
+    <div class="co-check"><input type="checkbox" id="co-quality" disabled><label for="co-quality">捺染印刷タイルカーペット製品「品質基準について」（株式会社ヨコセ・2026年01月20日制定）の内容を、最後まで読み、理解し、同意しました。<span class="req">*</span></label></div>
+    <button type="button" class="co-chip" id="co-quality-open" style="margin-top:8px">📄 品質基準を読む（最後までスクロールするとチェックできます）</button>
+    {{CFP_QUALITY_DOC}}
+    <div class="co-qs-status" id="co-quality-status">※品質基準を最後まで読むと、チェックできるようになります。</div>
+  </div>
+
+  <button type="button" class="co-btn" id="co-submit">この内容で発注する（プレビューをメールで受け取る）</button>
+  <div class="co-note" style="text-align:center">※この時点ではお支払いは発生しません。プレビューの案を選んでお支払いいただくと、正式なご注文になります。</div>
+  <div class="co-status" id="co-status"></div>
+</div>
+
+<!-- 案の選択とお支払い（メールのリンクから） -->
+<div id="co-select-view" hidden>
+  <h1>色の変換プレビューのご確認</h1>
+  <p class="co-lead" id="co-sel-lead"></p>
+  <div class="co-box" id="co-sel-msg" hidden></div>
+  <div class="co-vars" id="co-vars"></div>
+  <div id="co-sel-actions">
+    <button type="button" class="co-btn" id="co-choose" disabled>選んだ案で注文する（お支払いへ）</button>
+    <details style="margin-top:14px"><summary style="cursor:pointer;color:#fbbf24">どの案も希望と違う（作り直しを依頼する）</summary>
+      <div class="co-field" style="margin-top:10px"><label for="co-ng-comment">ご要望（例：背景をもっと明るく、文字の赤をはっきり など）</label><textarea id="co-ng-comment"></textarea></div>
+      <button type="button" class="co-btn sub" id="co-ng">作り直しを依頼する</button>
+    </details>
+  </div>
+  <div class="co-box" id="co-pay" hidden>
+    <h2 style="margin-top:0">お支払い（クレジットカード）</h2>
+    <div id="co-pay-summary"></div>
+    <div class="co-card" id="co-card"></div>
+    <div class="co-grid2">
+      <div class="co-field"><label for="co-card-name">カード名義（ローマ字）</label><input type="text" id="co-card-name" autocomplete="cc-name" placeholder="TARO YAMADA"></div>
+    </div>
+    <button type="button" class="co-btn" id="co-pay-btn">支払う</button>
+    <div class="co-note">※カード会社の本人認証（3Dセキュア）の画面が開くことがあります。決済は PAY.JP を使用しています。カード番号は当社のサーバーには送られません。</div>
+  </div>
+  <div class="co-status" id="co-sel-status"></div>
+</div>
+
+<div id="co-bad-view" hidden>
+  <h1>リンクを確認できませんでした</h1>
+  <p class="co-lead">メールのリンクが途中で切れているか、古いリンクの可能性があります。お手数ですが、メールにご返信ください。</p>
+</div>
+
+</div>

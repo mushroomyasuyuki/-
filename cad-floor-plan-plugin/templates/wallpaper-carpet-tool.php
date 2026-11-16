@@ -1,3 +1,4 @@
+<?php if (!defined('ABSPATH')) { exit; } /* 特許ページのテンプレート：直接開かれても中身を出さない（読み込み時にこの1行目は外す） */ ?>
 <style>
 /* このHTMLブロックを貼り付けたページの見出し（Cocoonテーマの記事タイトル）を非表示にする。
    このstyleタグはこのページ内でしか読み込まれないため、他のページ・記事には影響しない。 */
@@ -2522,6 +2523,33 @@
       reprocessReduction();
       calculateEstimate();
       refreshVariantSelection();
+    }
+  };
+
+  // 新ページ（公開の注文ページ）から来た注文を、この特許ページ（管理者だけ）で変換するための部品（assets/js/carpet-order-admin.js が使う）
+  window.cfpCarpetOrder = {
+    // 注文の画像を読み込む（読み込み後に done）
+    loadFile: (file, done) => handleFile(file, done),
+    // 注文の仕様（パイル形状・サイズ・地域）を画面に入れる
+    setSpec: (spec) => {
+      if ($('cc-material') ? spec.material : false) $('cc-material').value = spec.material;
+      if ($('cc-width') ? spec.width : false) $('cc-width').value = spec.width;
+      if ($('cc-height') ? spec.height : false) $('cc-height').value = spec.height;
+      if ($('cc-region') ? spec.region : false) $('cc-region').value = spec.region;
+      calculateEstimate();
+      if (state.loadedImg) updateCarpetCanvas();
+    },
+    // 3通りの自動変換：画面の変換画像・使う色の名前（3通りがそろうまでは null）
+    variants: () => {
+      if (!state.variantSets) return null;
+      const out = {};
+      let ok = true;
+      Object.keys(VARIANTS).forEach((v) => {
+        const cv = $('cc-var-' + v);
+        if (!cv ? true : !cv.width) ok = false;
+        out[v] = { label: VARIANTS[v].label, canvas: cv, colors: state.variantSets[v].map((i) => ALL_COLORS[i].name) };
+      });
+      return ok ? out : null;
     }
   };
 

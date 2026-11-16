@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.90.1
+ * Version: 2.91.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.90.1');
+define('CFP_VERSION', '2.91.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -50,6 +50,8 @@ final class CAD_Floor_Plan_Plugin {
         CFP_Resume::instance();
         require_once CFP_PLUGIN_DIR . 'includes/class-cfp-gemini.php';
         CFP_Gemini::instance();
+        require_once CFP_PLUGIN_DIR . 'includes/class-cfp-carpet-order.php';
+        CFP_Carpet_Order::instance();
         add_action('rest_api_init', [$this, 'register_rest']);
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_post_cfp_create_page', [$this, 'handle_create_page']);
@@ -231,26 +233,50 @@ final class CAD_Floor_Plan_Plugin {
 
     /**
      * [wallpaper_carpet_simulator]: the original wallpaper/carpet tool, with the CAD widget
-     * placed where templates/wallpaper-carpet-tool.html has the [cad_floor_plan] placeholder.
+     * placed where templates/wallpaper-carpet-tool.php has the [cad_floor_plan] placeholder.
      */
     public function render_simulator() {
-        $file = CFP_PLUGIN_DIR . 'templates/wallpaper-carpet-tool.html';
+        $file = CFP_PLUGIN_DIR . 'templates/wallpaper-carpet-tool.php';
         if (!is_readable($file)) {
-            return '<!-- wallpaper-carpet-tool.html not found -->';
+            return '<!-- wallpaper-carpet-tool.php not found -->';
+        }
+        // 色変換のページ（特許ページ）は公開しない：管理者だけに表示する（ほかの方には、公開の注文ページへの案内だけ）
+        if (!current_user_can('manage_options') && apply_filters('cfp_simulator_admin_only', true)) {
+            $url = CFP_Carpet_Order::order_page_url();
+            return '<div style="max-width:720px;margin:40px auto;padding:24px;border:1px solid #ddd;border-radius:8px;text-align:center;line-height:1.8">'
+                . '<p>このページは現在公開しておりません。</p>'
+                . ($url ? '<p><a href="' . esc_url($url) . '">カーペットのご注文はこちら</a></p>' : '')
+                . '</div>';
         }
         $this->enqueue_assets();
+        // 新ページからの注文を読み込んで変換し、お客様へプレビューを送る（?cfp_order=番号）
+        $co = CFP_Carpet_Order::admin_panel_config();
+        if ($co) {
+            wp_enqueue_script('cfp-carpet-order-admin', CFP_PLUGIN_URL . 'assets/js/carpet-order-admin.js', [], CFP_VERSION, true);
+            wp_localize_script('cfp-carpet-order-admin', 'cfpCarpetOrderAdmin', $co);
+        }
         // Block themes render the content before wp_enqueue_scripts, so the handle may not be registered yet.
         wp_enqueue_script('domailer-frontend');
         // 作業の途中保存・再開
         wp_enqueue_script('cfp-resume', CFP_PLUGIN_URL . 'assets/js/resume.js', ['cfp-main'], CFP_VERSION, true);
         wp_localize_script('cfp-resume', 'cfpResumeConfig', CFP_Resume::client_config());
-        $html = file_get_contents($file);
+        $html = self::read_template($file);
         $html = str_replace(['{{CFP_ASSET_URL}}', '{{CFP_VERSION}}'], [esc_url(CFP_PLUGIN_URL . 'assets/'), CFP_VERSION], $html);
         // 人間の変換の学習（Gemini）：管理者だけ
         $html = str_replace('{{CFP_GEMINI_PANEL}}', CFP_Gemini::panel_html(), $html);
         $html = $this->fill_badges($html);
         $html = $this->fill_photos($html);
         return str_replace('[' . CFP_SHORTCODE . ']', $this->render_shortcode(['height' => '600']), $html);
+    }
+
+    /** A template's text without its first-line access guard (<?php … exit … ?>). */
+    public static function read_template($file) {
+        $html = (string) file_get_contents($file);
+        if (strpos($html, '<?php') === 0) {
+            $nl = strpos($html, "\n");
+            $html = $nl === false ? '' : substr($html, $nl + 1);
+        }
+        return $html;
     }
 
     /**
@@ -677,7 +703,8 @@ final class CAD_Floor_Plan_Plugin {
 
             <h2>ショートコード</h2>
             <p><code>[wallpaper_carpet_simulator]</code>: 壁紙・カーペットのシミュレーション全体（CAD表示を含む）。固定ページに使われています。<br>
-            <code>[cad_floor_plan]</code>: CADの3D表示だけを任意のページ・投稿に置きます。</p>
+            <code>[cad_floor_plan]</code>: CADの3D表示だけを任意のページ・投稿に置きます。<br>
+            <code>[cfp_carpet_order]</code>: カーペットの公開注文ページ（色変換は表示しない）。注文と設定は「カーペット注文」で。</p>
             <table class="widefat" style="max-width:640px">
                 <thead><tr><th>属性</th><th>既定値</th><th>説明</th></tr></thead>
                 <tbody>
