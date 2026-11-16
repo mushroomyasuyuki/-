@@ -61,13 +61,69 @@
   }
 
   let img = null;
-  function drawPreview() {
+  const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
+  let revealTimer = 0;
+
+  // 合計金額：前の金額から新しい金額まで数字が進む
+  function countTo(el, to) {
+    const from = parseInt((el.textContent || '').replace(/[^0-9]/g, ''), 10);
+    if (calm || !isFinite(from) || from === to) { el.textContent = yen(to); return; }
+    const t0 = performance.now(), dur = 450;
+    cancelAnimationFrame(el._co);
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = yen(from + (to - from) * e);
+      if (k < 1) el._co = requestAnimationFrame(step);
+    };
+    el._co = requestAnimationFrame(step);
+  }
+
+  // reveal：画像を選んだとき、タイル（50cm）を斜めに1枚ずつ見せる
+  function drawPreview(reveal) {
     const cv = $('co-canvas');
     const w = parseFloat($('co-width').value) || 500, h = parseFloat($('co-height').value) || 500;
     const max = 640, k = Math.min(max / w, max / h);
     const W = Math.max(1, Math.round(w * k)), H = Math.max(1, Math.round(h * k));
     cv.width = W; cv.height = H;
     const ctx = cv.getContext('2d');
+    cancelAnimationFrame(revealTimer);
+    // タイル（500mm）の区切り：どんな絵柄の上でも見えるよう、白と紺の2本
+    function grid() {
+      for (let x = 500; x < w; x += 500) { const X = Math.round(x * k) + 0.5; line(X, 0, X, H); }
+      for (let y = 500; y < h; y += 500) { const Y = Math.round(y * k) + 0.5; line(0, Y, W, Y); }
+      ctx.strokeStyle = '#082A49'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, W - 2, H - 2);
+    }
+    const line = (x1, y1, x2, y2) => {
+      ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.strokeStyle = 'rgba(8,42,73,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    };
+    const tx = Math.max(1, Math.ceil(w / 500)), ty = Math.max(1, Math.ceil(h / 500));
+    if (img ? (reveal ? !calm && tx * ty <= 900 : false) : false) {
+      // 絵柄を別の画面に描いておき、タイルの順に写す
+      const off = document.createElement('canvas');
+      off.width = W; off.height = H;
+      const oc = off.getContext('2d');
+      const s = Math.max(W / img.width, H / img.height);
+      oc.drawImage(img, (W - img.width * s) / 2, (H - img.height * s) / 2, img.width * s, img.height * s);
+      const tiles = [];
+      for (let j = 0; j < ty; j++) for (let i = 0; i < tx; i++) tiles.push([i, j]);
+      tiles.sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]));
+      const t0 = performance.now(), dur = Math.min(900, 250 + tiles.length * 40);
+      let shown = 0;
+      ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, W, H);
+      const frame = (t) => {
+        const n = Math.min(tiles.length, Math.ceil(tiles.length * Math.min(1, (t - t0) / dur)));
+        for (; shown < n; shown++) {
+          const x0 = Math.round(tiles[shown][0] * 500 * k), y0 = Math.round(tiles[shown][1] * 500 * k);
+          const x1 = Math.min(W, Math.round((tiles[shown][0] + 1) * 500 * k)), y1 = Math.min(H, Math.round((tiles[shown][1] + 1) * 500 * k));
+          ctx.drawImage(off, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+        }
+        grid();
+        if (shown < tiles.length) revealTimer = requestAnimationFrame(frame);
+      };
+      revealTimer = requestAnimationFrame(frame);
+      return;
+    }
     if (img) {
       // 指定サイズいっぱいに（縦横比を変えず、はみ出す部分は切り取る）
       const s = Math.max(W / img.width, H / img.height);
@@ -78,14 +134,7 @@
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, W, H);
     }
-    // タイル（500mm）の区切り：どんな絵柄の上でも見えるよう、白と紺の2本
-    const line = (x1, y1, x2, y2) => {
-      ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      ctx.strokeStyle = 'rgba(8,42,73,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    };
-    for (let x = 500; x < w; x += 500) { const X = Math.round(x * k) + 0.5; line(X, 0, X, H); }
-    for (let y = 500; y < h; y += 500) { const Y = Math.round(y * k) + 0.5; line(0, Y, W, Y); }
-    ctx.strokeStyle = '#082A49'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, W - 2, H - 2);
+    grid();
     if (!img) {
       ctx.fillStyle = '#3E5670';
       ctx.font = '500 ' + Math.round(Math.max(18, W / 22)) + 'px "Zen Kaku Gothic New", sans-serif';
@@ -94,7 +143,7 @@
     }
   }
 
-  function estimate() {
+  function estimate(reveal) {
     const m = $('co-material').value, w = parseFloat($('co-width').value) || 0, h = parseFloat($('co-height').value) || 0;
     const p = price(m, w, h, $('co-region').value);
     $('co-tiles').textContent = '合計 ' + p.tiles + '枚（横' + p.tx + '枚 × 縦' + p.ty + '枚）・' + p.boxes + '箱';
@@ -103,9 +152,9 @@
     $('co-e-base').textContent = yen(p.base);
     $('co-e-ship').textContent = yen(p.shipping) + '（' + p.boxes + '箱）';
     $('co-e-tax').textContent = yen(p.tax);
-    $('co-e-total').textContent = yen(p.total);
+    countTo($('co-e-total'), p.total);
     $('co-e-ppc').textContent = Number(cfg.price_per_color).toLocaleString();
-    drawPreview();
+    drawPreview(reveal === true);
   }
 
   // 住所の都道府県から送料の地域を選ぶ
@@ -142,11 +191,18 @@
       if (!f) { estimate(); return; }
       const url = URL.createObjectURL(f);
       const im = new Image();
-      im.onload = () => { img = im; estimate(); };
+      im.onload = () => { img = im; estimate(true); };
       im.onerror = () => { status($('co-status'), 'err', '画像として読み込めませんでした。JPEG・PNG・GIF・WebP の画像を選んでください。'); };
       im.src = url;
     };
     initQuality();
+    // 入力している手順の番号を光らせる
+    document.addEventListener('focusin', (e) => {
+      const step = e.target.closest ? e.target.closest('#cfp-co .co-step') : null;
+      if (!step) return;
+      document.querySelectorAll('#cfp-co .co-step.is-active').forEach((x) => { if (x !== step) x.classList.remove('is-active'); });
+      step.classList.add('is-active');
+    });
     estimate();
     $('co-submit').onclick = submit;
   }

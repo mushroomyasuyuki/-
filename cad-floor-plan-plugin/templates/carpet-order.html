@@ -1,6 +1,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 /* 公開の注文ページ（新ページ）。色はカーペットの実際の基本色から：基本-01 地・基本-15 紺・基本-08 黄・基本-10 青・基本-06 赤 */
 .entry-header,.page .entry-title,article .entry-title{display:none!important}
@@ -11,17 +11,35 @@
 #cfp-co h1,#cfp-co h2,#cfp-co h3{background:none;border:0;padding:0;margin:0;color:var(--ink);box-shadow:none;letter-spacing:.02em}
 #cfp-co h1::before,#cfp-co h1::after,#cfp-co h2::before,#cfp-co h2::after,#cfp-co h3::before,#cfp-co h3::after{content:none;display:none}
 #cfp-co p{margin:0}
-#cfp-co .co-display{font-family:"Dela Gothic One","Zen Kaku Gothic New",sans-serif;font-weight:400;letter-spacing:.04em}
+#cfp-co .co-display{font-family:"Zen Maru Gothic","Zen Kaku Gothic New",sans-serif;font-weight:700;letter-spacing:.04em}
 #cfp-co .co-num{font-variant-numeric:tabular-nums}
 
 /* 見出し：絵柄がタイルに。下に基本16色のチップ */
-#cfp-co .co-hero{padding:48px 0 28px}
+#cfp-co .co-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:48px;align-items:center;padding:56px 0 40px}
 #cfp-co .co-hero h1,#cfp-co .co-sel-head h1{word-break:keep-all;overflow-wrap:anywhere}
-#cfp-co .co-hero h1{font-family:"Dela Gothic One","Zen Kaku Gothic New",sans-serif;font-weight:400;font-size:clamp(28px,4.4vw,46px);line-height:1.35;max-width:16em}
+#cfp-co .co-hero h1{font-family:"Zen Maru Gothic","Zen Kaku Gothic New",sans-serif;font-weight:700;font-size:clamp(28px,4.2vw,48px);line-height:1.4;letter-spacing:.03em;max-width:15em}
 #cfp-co .co-hero .co-lead{margin-top:16px;max-width:38em;color:var(--ink-2);font-size:15px}
-#cfp-co .co-chips{display:grid;grid-template-columns:repeat(16,1fr);gap:4px;margin-top:28px;max-width:560px}
-#cfp-co .co-chips span{aspect-ratio:1;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(8,42,73,.12)}
-#cfp-co .co-chips-note{margin-top:8px;font-size:12px;color:var(--ink-2)}
+#cfp-co .co-carpet{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px;background:var(--paper);border-radius:6px;box-shadow:0 18px 40px -24px rgba(8,42,73,.55);transform:rotate(-2deg)}
+#cfp-co .co-carpet span{position:relative;aspect-ratio:1;border-radius:3px;background:var(--c);overflow:hidden}
+/* パイルの毛並み：細い斜めの筋 */
+#cfp-co .co-carpet span::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.10) 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.08) 0 1px,transparent 1px 5px)}
+#cfp-co .co-carpet-note{margin-top:14px;font-size:12.5px;color:var(--ink-2);text-align:center}
+/* 開いたときの一度だけの動き：タイルが1枚ずつ打ち込まれ、見出しが上がる */
+@keyframes co-tuft{0%{opacity:0;transform:translateY(-14px) scale(.6)}70%{opacity:1;transform:translateY(2px) scale(1.04)}100%{opacity:1;transform:none}}
+@keyframes co-rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+#cfp-co .co-hero-text>*{animation:co-rise .7s cubic-bezier(.2,.7,.2,1) both}
+#cfp-co .co-hero-text>:nth-child(2){animation-delay:.12s}
+#cfp-co .co-hero-text>:nth-child(3){animation-delay:.24s}
+#cfp-co .co-carpet span{animation:co-tuft .5s cubic-bezier(.2,.8,.3,1.2) both;animation-delay:calc(.25s + var(--i) * 55ms)}
+#cfp-co .co-carpet{transition:transform .5s cubic-bezier(.2,.7,.2,1)}
+#cfp-co .co-carpet:hover{transform:rotate(0deg) scale(1.02)}
+/* 入力中の手順：番号が紺に */
+#cfp-co .co-step-no{transition:background-color .25s,color .25s,transform .25s}
+#cfp-co .co-step.is-active .co-step-no{background:var(--ink);color:var(--yellow);transform:scale(1.06)}
+/* 選んだ案は少し持ち上がる */
+#cfp-co .co-var{transition:transform .25s cubic-bezier(.2,.7,.2,1),box-shadow .25s,border-color .2s}
+#cfp-co .co-var.on{transform:translateY(-6px)}
+#cfp-co .co-status{animation:co-rise .35s ease both}
 
 /* ご注文の流れ（順番のある手順） */
 #cfp-co .co-flow{list-style:none;margin:8px 0 40px;padding:0;display:grid;grid-template-columns:repeat(5,1fr);border-top:2px solid var(--ink)}
@@ -33,7 +51,7 @@
 #cfp-co .co-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:40px;align-items:start}
 #cfp-co .co-step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:0 18px;padding:28px 0;border-top:1px solid var(--line)}
 #cfp-co .co-step:first-child{border-top:0;padding-top:0}
-#cfp-co .co-step-no{width:44px;height:44px;background:var(--yellow);color:var(--ink);display:flex;align-items:center;justify-content:center;font-family:"Dela Gothic One",sans-serif;font-size:20px;border-radius:3px}
+#cfp-co .co-step-no{width:44px;height:44px;background:var(--yellow);color:var(--ink);display:flex;align-items:center;justify-content:center;font-family:"Zen Maru Gothic",sans-serif;font-weight:700;font-size:20px;border-radius:3px}
 #cfp-co .co-step h2{font-size:21px;font-weight:700;line-height:44px;margin-bottom:14px}
 #cfp-co .co-step-body{grid-column:2}
 
@@ -91,7 +109,7 @@
 #cfp-co .co-row dd{margin:0;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
 #cfp-co .co-total{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--ink);margin-top:10px;padding-top:10px}
 #cfp-co .co-total span:first-child{font-size:14px;font-weight:700}
-#cfp-co .co-total span:last-child{font-family:"Dela Gothic One",sans-serif;font-size:28px;font-variant-numeric:tabular-nums}
+#cfp-co .co-total span:last-child{font-family:"Zen Maru Gothic",sans-serif;font-weight:700;font-size:28px;font-variant-numeric:tabular-nums}
 
 #cfp-co .co-btn{display:block;width:100%;margin:16px 0 0;background:var(--yellow);color:var(--ink);border:2px solid var(--ink);border-radius:4px;padding:14px 16px;font:inherit;font-size:16.5px;font-weight:700;line-height:1.5;cursor:pointer;box-shadow:0 4px 0 var(--ink);transition:transform .08s,box-shadow .08s}
 #cfp-co .co-btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
@@ -104,7 +122,7 @@
 
 /* 案の選択：見本帳のページのように並べる */
 #cfp-co .co-sel-head{padding:40px 0 24px}
-#cfp-co .co-sel-head h1{font-family:"Dela Gothic One",sans-serif;font-weight:400;font-size:clamp(26px,3.6vw,38px);line-height:1.4}
+#cfp-co .co-sel-head h1{font-family:"Zen Maru Gothic",sans-serif;font-weight:700;font-size:clamp(26px,3.6vw,38px);line-height:1.4}
 #cfp-co .co-sel-head .co-lead{margin-top:8px;color:var(--ink-2);font-size:14.5px}
 #cfp-co .co-message{background:var(--paper);border-left:5px solid var(--yellow);padding:14px 16px;margin-bottom:24px;white-space:pre-line;font-size:15px}
 #cfp-co .co-vars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
@@ -116,7 +134,7 @@
 #cfp-co .co-var img{display:block;width:100%;height:auto;border-radius:3px;background:var(--ground);image-rendering:pixelated}
 #cfp-co .co-var .co-note{margin-top:10px}
 #cfp-co .co-var>h3{order:0}#cfp-co .co-var>img{order:1}#cfp-co .co-var>.co-var-price{order:2}#cfp-co .co-var>.co-note:last-child{order:3;margin-top:0}#cfp-co .co-var>.co-note{order:4}
-#cfp-co .co-var-price{font-family:"Dela Gothic One",sans-serif;font-size:26px;margin-top:8px;font-variant-numeric:tabular-nums}
+#cfp-co .co-var-price{font-family:"Zen Maru Gothic",sans-serif;font-weight:700;font-size:26px;margin-top:8px;font-variant-numeric:tabular-nums}
 #cfp-co .co-sel-actions{max-width:560px;margin:28px auto 0}
 #cfp-co .co-redo{margin-top:20px;border-top:1px solid var(--line);padding-top:14px}
 #cfp-co .co-redo summary{cursor:pointer;font-weight:700;color:var(--blue);font-size:15px}
@@ -127,10 +145,12 @@
 #cfp-co .co-card{border:1px solid var(--line);border-radius:4px;padding:13px 12px;margin:0 0 16px;background:var(--paper);min-height:48px}
 #cfp-co .co-sel-status-wrap{max-width:560px;margin:0 auto}
 #cfp-co .co-bad{padding:64px 0;max-width:36em}
-#cfp-co .co-bad h1{font-family:"Dela Gothic One",sans-serif;font-weight:400;font-size:28px}
+#cfp-co .co-bad h1{font-family:"Zen Maru Gothic",sans-serif;font-weight:700;font-size:28px}
 #cfp-co .co-bad p{margin-top:12px;color:var(--ink-2)}
 
 @media (max-width:900px){
+  #cfp-co .co-hero{grid-template-columns:1fr;gap:28px}
+  #cfp-co .co-hero-art{max-width:320px}
   #cfp-co .co-layout{grid-template-columns:1fr;gap:8px}
   #cfp-co .co-slip{position:static}
   #cfp-co .co-flow{grid-template-columns:1fr 1fr;row-gap:6px}
@@ -144,24 +164,23 @@
   #cfp-co .co-step-no{width:36px;height:36px;font-size:17px}
   #cfp-co .co-step h2{line-height:36px;font-size:19px}
   #cfp-co .co-step-body{grid-column:1/-1}
-  #cfp-co .co-chips{gap:3px}
+  #cfp-co .co-carpet{gap:4px;padding:8px}
 }
-@media (prefers-reduced-motion:reduce){#cfp-co .co-btn{transition:none}}
+@media (prefers-reduced-motion:reduce){#cfp-co *,#cfp-co *::before,#cfp-co *::after{animation:none!important;transition:none!important}#cfp-co .co-var.on,#cfp-co .co-carpet:hover{transform:none}#cfp-co .co-carpet{transform:none}}
 </style>
 <div id="cfp-co">
 
 <!-- 注文フォーム（新ページ） -->
 <div id="co-order-view" hidden>
   <header class="co-hero">
-    <h1>お手持ちの絵柄を、<wbr>50cm角の<wbr>タイルカーペットに。</h1>
-    <p class="co-lead">デザイン画像とサイズを送ってください。担当者がカーペットの糸の色に置き換えたプレビューをメールでお送りします。仕上がりを見て案を選び、カードでお支払いいただいた時点で正式なご注文になります。</p>
-    <div class="co-chips" aria-hidden="true">
-      <span style="background:#EFEFEF"></span><span style="background:#E8AB82"></span><span style="background:#DB9514"></span><span style="background:#898989"></span>
-      <span style="background:#95B7E1"></span><span style="background:#C8161E"></span><span style="background:#DC5310"></span><span style="background:#FABE00"></span>
-      <span style="background:#218F49"></span><span style="background:#005EAD"></span><span style="background:#5B1131"></span><span style="background:#5D2B17"></span>
-      <span style="background:#322B29"></span><span style="background:#263F22"></span><span style="background:#082A49"></span><span style="background:#000000"></span>
+    <div class="co-hero-text">
+      <h1>お手持ちの絵柄を、<wbr>50cm角の<wbr>タイルカーペットに。</h1>
+      <p class="co-lead">デザイン画像とサイズを送ってください。担当者がカーペットの糸の色に置き換えたプレビューをメールでお送りします。仕上がりを見て案を選び、カードでお支払いいただいた時点で正式なご注文になります。</p>
     </div>
-    <p class="co-chips-note">無償で使える基本の16色。オプションカラーを加えると、さらに細かな色まで表現できます。</p>
+    <figure class="co-hero-art" style="margin:0">
+      <div class="co-carpet" aria-hidden="true"><span style="--c:#EFEFEF;--i:0"></span><span style="--c:#E8AB82;--i:5"></span><span style="--c:#DB9514;--i:10"></span><span style="--c:#898989;--i:15"></span><span style="--c:#95B7E1;--i:1"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#DC5310;--i:11"></span><span style="--c:#FABE00;--i:12"></span><span style="--c:#218F49;--i:2"></span><span style="--c:#005EAD;--i:7"></span><span style="--c:#5B1131;--i:8"></span><span style="--c:#5D2B17;--i:13"></span><span style="--c:#322B29;--i:3"></span><span style="--c:#263F22;--i:4"></span><span style="--c:#082A49;--i:9"></span><span style="--c:#000000;--i:14"></span></div>
+      <figcaption class="co-carpet-note">無償で使える基本の16色。オプションカラーを加えると、さらに細かな色まで表現できます。</figcaption>
+    </figure>
   </header>
 
   <ol class="co-flow">
