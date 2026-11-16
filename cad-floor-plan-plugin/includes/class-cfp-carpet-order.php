@@ -158,7 +158,7 @@ class CFP_Carpet_Order {
             'company_address' => '栃木県宇都宮市下川俣町24-1',
             'company_tel'     => '050-5586-1657',
             'company_email'   => 'yasu@mush-office.com',
-            'company_url'     => 'https://mush-office.com/',
+            'company_url'     => 'https://mush-office.com/carpet-order/#co-form',
         ]);
     }
 
@@ -469,7 +469,9 @@ class CFP_Carpet_Order {
         $row = function ($k, $v, $raw = false) {
             return $v === '' ? '' : '<dt>' . esc_html($k) . '</dt><dd>' . ($raw ? $v : esc_html($v)) . '</dd>';
         };
-        $url = $s['company_url'] !== '' ? '<a href="' . esc_url($s['company_url']) . '" target="_blank" rel="noopener">' . esc_html($s['company_url']) . '</a>' : '';
+        // 自分のサイトのページ（注文フォームなど）は同じタブで、ほかのサイトは別のタブで開く
+        $own = wp_parse_url($s['company_url'], PHP_URL_HOST) === wp_parse_url(home_url(), PHP_URL_HOST);
+        $url = $s['company_url'] !== '' ? '<a href="' . esc_url($s['company_url']) . '"' . ($own ? '' : ' target="_blank" rel="noopener"') . '>' . esc_html($s['company_url']) . '</a>' : '';
         $mail = is_email($s['company_email']) ? '<a href="' . esc_attr('mailto:' . $s['company_email']) . '">' . esc_html($s['company_email']) . '</a>' : '';
         return '<dl>'
             . $row('販売事業者', $s['company_name'])
