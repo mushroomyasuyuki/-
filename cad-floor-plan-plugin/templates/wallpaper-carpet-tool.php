@@ -504,12 +504,12 @@
     <div class="cfp-agree-box">
       <div style="display:flex;align-items:flex-start;gap:10px;">
         <input type="checkbox" id="cc-quality-ok" disabled style="width:auto;min-height:auto;margin-top:4px;">
-        <label for="cc-quality-ok" style="margin:0;cursor:pointer;">捺染印刷タイルカーペット製品「品質基準について」（株式会社ヨコセ・2026年01月20日制定）の内容を、最後まで読み、理解し、同意しました。<span class="required">*</span></label>
+        <label for="cc-quality-ok" style="margin:0;cursor:pointer;">捺染印刷タイルカーペット製品「品質基準について」（マッシュオフィス・2026年01月20日制定）の内容を、最後まで読み、理解し、同意しました。<span class="required">*</span></label>
       </div>
       <button type="button" id="cc-quality-open" class="btn-chip-action" style="margin-top:8px;">📄 品質基準を読む（最後までスクロールするとチェックできます）</button>
       <div class="cfp-qs" id="cc-quality-doc" hidden tabindex="0" aria-label="品質基準について（全文）">
 <div class="qs-title">捺染印刷タイルカーペット製品　品質基準について</div>
-<div class="qs-meta">株式会社ヨコセ　制定日：2026年01月20日</div>
+<div class="qs-meta">マッシュオフィス　制定日：2026年01月20日</div>
 
 <h4>1. 本書について</h4>
 <p>本書は、当社が製造する捺染方式による意匠タイルカーペット製品について、製品の特性、品質の考え方、納品時の確認基準および対応範囲について、あらかじめご理解を共有させていただくことを目的として作成したものです。御取引先様と当社が、共通の認識のもとで円滑にお取引を進めさせていただくための資料としてご活用ください。</p>
@@ -4086,7 +4086,7 @@
         '床（カーペット）階調表現（誤差拡散）：' + floorDitherPct + '%',
         '壁紙 使用カラー：' + wallColorsText,
         '壁紙 階調表現（誤差拡散）：' + (hasWallDesign ? (isWallReduceOn() ? (wallDitherPct + '%') : '減色なし') : '未設定（壁紙用デザイン画像は未アップロード）'),
-        '品質基準（株式会社ヨコセ・2026年01月20日制定）：全文を確認し、同意済み',
+        '品質基準（マッシュオフィス・2026年01月20日制定）：全文を確認し、同意済み',
         '著作権・商標権・肖像権：侵害しないことを確認済み',
         '壁紙の合計（展開図から）：' + (window.cfpWallTotal ? window.cfpWallTotal.text : '未選択'),
         '制作サイズ：' + sizeText,

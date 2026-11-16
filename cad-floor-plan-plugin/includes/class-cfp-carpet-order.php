@@ -159,7 +159,6 @@ class CFP_Carpet_Order {
             'company_tel'     => '050-5586-1657',
             'company_email'   => 'yasu@mush-office.com',
             'company_url'     => 'https://mush-office.com/',
-            'maker'           => '株式会社ヨコセ',
         ]);
     }
 
@@ -479,7 +478,7 @@ class CFP_Carpet_Order {
             . $row('電話', $s['company_tel'])
             . $row('メール', $mail, true)
             . $row('ホームページ', $url, true)
-            . $row('製造', $s['maker'])
+            . $row('製造', $s['company_name'])
             . $row('販売価格', 'ご注文ページの価格表と、プレビューでお選びいただく案の金額（税込・送料込み）')
             . $row('商品代金以外の費用', '送料（1箱あたり：本州 2,000円／北海道・四国・九州 2,500円／沖縄 5,500円・税別）、有償オプションカラー（1色 35,000円・税別）')
             . $row('お支払い方法', 'クレジットカード（PAY.JP）')
@@ -1096,7 +1095,7 @@ class CFP_Carpet_Order {
                     <tr><th><label for="co-factory-name">工場の宛名</label></th><td><input type="text" id="co-factory-name" name="factory_name" class="regular-text" value="<?php echo esc_attr($s['factory_name']); ?>"></td></tr>
                     <tr><th>決済完了時</th><td><label><input type="checkbox" name="factory_on_paid" value="1" <?php checked(!empty($s['factory_on_paid'])); ?>> 工場へ正式発注のメールも送る</label></td></tr>
                     <tr><th colspan="2"><h3 style="margin:8px 0 0">販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）</h3></th></tr>
-                    <?php foreach (['company_name' => '販売事業者', 'company_rep' => '代表', 'company_address' => '所在地', 'company_tel' => '電話', 'company_email' => 'メール', 'company_url' => 'ホームページ', 'maker' => '製造'] as $k => $l) : ?>
+                    <?php foreach (['company_name' => '販売事業者', 'company_rep' => '代表', 'company_address' => '所在地', 'company_tel' => '電話', 'company_email' => 'メール', 'company_url' => 'ホームページ'] as $k => $l) : ?>
                     <tr><th><label for="co-<?php echo esc_attr($k); ?>"><?php echo esc_html($l); ?></label></th><td><input type="text" id="co-<?php echo esc_attr($k); ?>" name="<?php echo esc_attr($k); ?>" class="regular-text" value="<?php echo esc_attr($s[$k]); ?>"></td></tr>
                     <?php endforeach; ?>
                     <tr><th>PAY.JP</th><td>
@@ -1125,7 +1124,7 @@ class CFP_Carpet_Order {
         $s['factory_name'] = sanitize_text_field(wp_unslash($_POST['factory_name'] ?? ''));
         $s['factory_on_paid'] = empty($_POST['factory_on_paid']) ? 0 : 1;
         $s['payjp_mode'] = ($_POST['payjp_mode'] ?? '') === 'live' ? 'live' : 'test';
-        foreach (['company_name', 'company_rep', 'company_address', 'company_tel', 'maker'] as $k) {
+        foreach (['company_name', 'company_rep', 'company_address', 'company_tel'] as $k) {
             $s[$k] = sanitize_text_field(wp_unslash($_POST[$k] ?? ''));
         }
         $s['company_email'] = sanitize_email(wp_unslash($_POST['company_email'] ?? ''));
