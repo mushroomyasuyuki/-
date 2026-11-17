@@ -155,6 +155,7 @@ class CFP_Carpet_Order {
             // 販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）
             'company_name'    => 'マッシュオフィス',
             'company_rep'     => '佐藤康之',
+            'company_invoice' => 'T4810075608301',
             'company_address' => '栃木県宇都宮市下川俣町24-1',
             'company_tel'     => '050-5586-1657',
             'company_email'   => 'yasu@mush-office.com',
@@ -476,6 +477,7 @@ class CFP_Carpet_Order {
         return '<dl>'
             . $row('販売事業者', $s['company_name'])
             . $row('代表', $s['company_rep'])
+            . $row('適格請求書発行事業者登録番号', $s['company_invoice'])
             . $row('所在地', $s['company_address'])
             . $row('電話', $s['company_tel'])
             . $row('メール', $mail, true)
@@ -773,7 +775,8 @@ class CFP_Carpet_Order {
         self::save($o);
         $p = $o['price'];
         $lines = self::spec_lines($o) . "\n選んだ案：" . self::VARIANTS[$o['choice']] . "\n使う色：" . implode('、', $o['previews'][$o['choice']]['colors'])
-            . "\nお支払い金額：" . number_format($p['total']) . "円（税込）";
+            . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
+            . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
         self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。", [self::path($o, 'preview_' . $o['choice'])]);
         self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
@@ -1097,7 +1100,7 @@ class CFP_Carpet_Order {
                     <tr><th><label for="co-factory-name">工場の宛名</label></th><td><input type="text" id="co-factory-name" name="factory_name" class="regular-text" value="<?php echo esc_attr($s['factory_name']); ?>"></td></tr>
                     <tr><th>決済完了時</th><td><label><input type="checkbox" name="factory_on_paid" value="1" <?php checked(!empty($s['factory_on_paid'])); ?>> 工場へ正式発注のメールも送る</label></td></tr>
                     <tr><th colspan="2"><h3 style="margin:8px 0 0">販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）</h3></th></tr>
-                    <?php foreach (['company_name' => '販売事業者', 'company_rep' => '代表', 'company_address' => '所在地', 'company_tel' => '電話', 'company_email' => 'メール', 'company_url' => 'ホームページ'] as $k => $l) : ?>
+                    <?php foreach (['company_name' => '販売事業者', 'company_rep' => '代表', 'company_invoice' => '適格請求書発行事業者登録番号', 'company_address' => '所在地', 'company_tel' => '電話', 'company_email' => 'メール', 'company_url' => 'ホームページ'] as $k => $l) : ?>
                     <tr><th><label for="co-<?php echo esc_attr($k); ?>"><?php echo esc_html($l); ?></label></th><td><input type="text" id="co-<?php echo esc_attr($k); ?>" name="<?php echo esc_attr($k); ?>" class="regular-text" value="<?php echo esc_attr($s[$k]); ?>"></td></tr>
                     <?php endforeach; ?>
                     <tr><th>PAY.JP</th><td>
@@ -1126,7 +1129,7 @@ class CFP_Carpet_Order {
         $s['factory_name'] = sanitize_text_field(wp_unslash($_POST['factory_name'] ?? ''));
         $s['factory_on_paid'] = empty($_POST['factory_on_paid']) ? 0 : 1;
         $s['payjp_mode'] = ($_POST['payjp_mode'] ?? '') === 'live' ? 'live' : 'test';
-        foreach (['company_name', 'company_rep', 'company_address', 'company_tel'] as $k) {
+        foreach (['company_name', 'company_rep', 'company_invoice', 'company_address', 'company_tel'] as $k) {
             $s[$k] = sanitize_text_field(wp_unslash($_POST[$k] ?? ''));
         }
         $s['company_email'] = sanitize_email(wp_unslash($_POST['company_email'] ?? ''));
