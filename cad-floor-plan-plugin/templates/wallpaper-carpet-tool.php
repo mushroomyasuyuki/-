@@ -2,7 +2,7 @@
 <style>
 /* このHTMLブロックを貼り付けたページの見出し（Cocoonテーマの記事タイトル）を非表示にする。
    このstyleタグはこのページ内でしか読み込まれないため、他のページ・記事には影響しない。 */
-.entry-header,.page .entry-title,article .entry-title{display:none!important;}
+.eye-catch-wrap,.page .eye-catch,.page .post-thumbnail,.entry-header,.page .entry-title,article .entry-title{display:none!important;}
 .cocoon-carpet-tool{max-width:1200px;margin:20px auto;background:#09090b;color:#f4f4f5;padding:30px;border-radius:12px;border:1px solid #27272a;box-shadow:0 10px 30px rgba(0,0,0,.5);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;box-sizing:border-box}.cocoon-carpet-tool *{box-sizing:border-box}.cocoon-carpet-tool h1,.cocoon-carpet-tool h2,.cocoon-carpet-tool h3{color:#fff!important;background:transparent!important;text-shadow:none!important}
 .toc, .toc-box, .toc-content, .toc-list, .toc-label{color:#fff!important}
 .toc a{color:#93c5fd!important;text-decoration:underline}

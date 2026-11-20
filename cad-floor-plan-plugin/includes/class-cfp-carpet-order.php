@@ -234,7 +234,56 @@ class CFP_Carpet_Order {
         }
         update_option('cfp_co_page_id', $new_id);
         update_option('cfp_co_page_created', 1);
+        self::apply_share($new_id, CFP_PLUGIN_DIR . 'assets/img/og-carpet-order.jpg', self::SHARE_ORDER);
         return (int) $new_id;
+    }
+
+    /**
+     * LINE・SNSでリンクを送ったときの表示（OGP）：アイキャッチ画像と説明文を設定する（未設定のときだけ）。
+     * Cocoon はアイキャッチを og:image に、メタディスクリプション（なければ抜粋）を og:description に使う。
+     * アイキャッチはページには出さない（テンプレートの CSS で隠す）。
+     */
+    public static function apply_share($page_id, $file, $desc) {
+        $page_id = (int) $page_id;
+        if (!$page_id || get_post_type($page_id) !== 'page') {
+            return;
+        }
+        if (!has_post_thumbnail($page_id) && is_readable($file)) {
+            $up = wp_upload_bits(basename($file), null, file_get_contents($file));
+            if (empty($up['error'])) {
+                $att = wp_insert_attachment([
+                    'post_mime_type' => 'image/jpeg',
+                    'post_title'     => get_the_title($page_id),
+                    'post_status'    => 'inherit',
+                ], $up['file'], $page_id);
+                if ($att && !is_wp_error($att)) {
+                    require_once ABSPATH . 'wp-admin/includes/image.php';
+                    wp_update_attachment_metadata($att, wp_generate_attachment_metadata($att, $up['file']));
+                    set_post_thumbnail($page_id, $att);
+                }
+            }
+        }
+        if (get_post_field('post_excerpt', $page_id) === '') {
+            wp_update_post(['ID' => $page_id, 'post_excerpt' => $desc]);
+        }
+        if ((string) get_post_meta($page_id, 'the_page_meta_description', true) === '') {
+            update_post_meta($page_id, 'the_page_meta_description', $desc);
+        }
+    }
+
+    const SHARE_ORDER = 'デザイン画像とサイズを送るだけ。カーペットの色に置き換えたプレビューをメールでお届けし、案を選んでカードでお支払い。50cm角のオリジナル・プリントタイルカーペットのご注文ページです。';
+    const SHARE_SIM = '写真・イラスト・ロゴを、カーペット・壁紙の色に置き換えてシミュレーション。お見積もり、お部屋のパース、CAD図面の読み込みまで、ブラウザだけで試せます。';
+
+    /** Both pages' share settings (on update and when a page is created). */
+    public static function apply_share_all() {
+        $order = self::page_id();
+        if ($order) {
+            self::apply_share($order, CFP_PLUGIN_DIR . 'assets/img/og-carpet-order.jpg', self::SHARE_ORDER);
+        }
+        $sim = (int) get_option('cad_floor_plan_page_id');
+        if ($sim) {
+            self::apply_share($sim, CFP_PLUGIN_DIR . 'assets/img/og-simulator.jpg', self::SHARE_SIM);
+        }
     }
 
     /** Deletes the order page if this plugin created it (orders and settings are kept). */

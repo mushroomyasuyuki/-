@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.91.9
+ * Version: 2.92.0
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.91.9');
+define('CFP_VERSION', '2.92.0');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -108,6 +108,10 @@ final class CAD_Floor_Plan_Plugin {
                 $co['company_url'] = 'https://mush-office.com/carpet-order/#co-form';
                 update_option('cfp_co_settings', $co, false);
             }
+        }
+        // 2.92.0: the pictures and descriptions shown when a link is sent on LINE / SNS
+        if ($stored && version_compare($stored, '2.92.0', '<')) {
+            CFP_Carpet_Order::apply_share_all();
         }
         update_option('cad_floor_plan_version', CFP_VERSION);
     }
@@ -741,6 +745,7 @@ register_activation_hook(__FILE__, function () {
     CAD_Floor_Plan_Plugin::ensure_page();
     require_once CFP_PLUGIN_DIR . 'includes/class-cfp-carpet-order.php';
     CFP_Carpet_Order::ensure_page();
+    CFP_Carpet_Order::apply_share_all();
 });
 
 register_deactivation_hook(__FILE__, function () {
