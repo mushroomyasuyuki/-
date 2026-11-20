@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.91.8
+ * Version: 2.91.9
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.91.8');
+define('CFP_VERSION', '2.91.9');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -252,8 +252,8 @@ final class CAD_Floor_Plan_Plugin {
         if (!is_readable($file)) {
             return '<!-- wallpaper-carpet-tool.php not found -->';
         }
-        // 色変換のページ（特許ページ）は公開しない：管理者だけに表示する（ほかの方には、公開の注文ページへの案内だけ）
-        if (!current_user_can('manage_options') && apply_filters('cfp_simulator_admin_only', true)) {
+        // 色変換のページ（特許ページ）：設定「シミュレーターのページを公開する」を外すと、管理者だけに表示する（ほかの方には、公開の注文ページへの案内だけ）
+        if (!current_user_can('manage_options') && apply_filters('cfp_simulator_admin_only', !CFP_Carpet_Order::simulator_public())) {
             $url = CFP_Carpet_Order::order_page_url();
             return '<div style="max-width:720px;margin:40px auto;padding:24px;border:1px solid #ddd;border-radius:8px;text-align:center;line-height:1.8">'
                 . '<p>このページは現在公開しておりません。</p>'

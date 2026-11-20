@@ -152,6 +152,7 @@ class CFP_Carpet_Order {
             'payjp_pk_live'  => '',
             'payjp_sk_live'  => '',
             'factory_on_paid' => 1,
+            'simulator_public' => 1, // 壁紙・カーペットシミュレーション（特許ページ）をどなたにも表示する
             // 販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）
             'company_name'    => 'マッシュオフィス',
             'company_rep'     => '佐藤康之',
@@ -181,6 +182,11 @@ class CFP_Carpet_Order {
             return get_permalink($id);
         }
         return self::find_page_with('[' . CFP_SIM_SHORTCODE);
+    }
+
+    /** Whether the simulator page (特許ページ) is shown to everyone (setting). Admins always see it. */
+    public static function simulator_public() {
+        return !empty(self::settings()['simulator_public']);
     }
 
     /** The URL of the page with [cfp_carpet_order] (the public 新ページ). */
@@ -1098,6 +1104,7 @@ class CFP_Carpet_Order {
                     <tr><th><label for="co-admin">通知を受けるメール（管理者）</label></th><td><input type="email" id="co-admin" name="admin_email" class="regular-text" value="<?php echo esc_attr($s['admin_email']); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>"><p class="description">空のときはサイトの管理者メールアドレス。お客様への返信先にもなります。</p></td></tr>
                     <tr><th><label for="co-factory">工場のメール</label></th><td><input type="email" id="co-factory" name="factory_email" class="regular-text" value="<?php echo esc_attr($s['factory_email']); ?>"><p class="description">発注ボタンが押されたときに、納期確認のメール（元画像を添付）を送ります。</p></td></tr>
                     <tr><th><label for="co-factory-name">工場の宛名</label></th><td><input type="text" id="co-factory-name" name="factory_name" class="regular-text" value="<?php echo esc_attr($s['factory_name']); ?>"></td></tr>
+                    <tr><th>シミュレーターのページ</th><td><label><input type="checkbox" name="simulator_public" value="1" <?php checked(!empty($s['simulator_public'])); ?>> 「壁紙・カーペットシミュレーション」（特許ページ）をどなたにも公開する</label><p class="description">外すと管理者だけに表示し、ほかの方には注文ページへの案内を出します。公開中は、色変換のプログラムもページを開いた方が読める状態になります。</p></td></tr>
                     <tr><th>決済完了時</th><td><label><input type="checkbox" name="factory_on_paid" value="1" <?php checked(!empty($s['factory_on_paid'])); ?>> 工場へ正式発注のメールも送る</label></td></tr>
                     <tr><th colspan="2"><h3 style="margin:8px 0 0">販売者情報（注文ページの「会社情報・特定商取引法に基づく表記」）</h3></th></tr>
                     <?php foreach (['company_name' => '販売事業者', 'company_rep' => '代表', 'company_invoice' => '適格請求書発行事業者登録番号', 'company_address' => '所在地', 'company_tel' => '電話', 'company_email' => 'メール', 'company_url' => 'ホームページ'] as $k => $l) : ?>
@@ -1128,6 +1135,7 @@ class CFP_Carpet_Order {
         $s['factory_email'] = sanitize_email(wp_unslash($_POST['factory_email'] ?? ''));
         $s['factory_name'] = sanitize_text_field(wp_unslash($_POST['factory_name'] ?? ''));
         $s['factory_on_paid'] = empty($_POST['factory_on_paid']) ? 0 : 1;
+        $s['simulator_public'] = empty($_POST['simulator_public']) ? 0 : 1;
         $s['payjp_mode'] = ($_POST['payjp_mode'] ?? '') === 'live' ? 'live' : 'test';
         foreach (['company_name', 'company_rep', 'company_invoice', 'company_address', 'company_tel'] as $k) {
             $s[$k] = sanitize_text_field(wp_unslash($_POST[$k] ?? ''));
