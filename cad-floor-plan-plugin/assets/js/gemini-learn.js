@@ -15,7 +15,8 @@
   const cfg = window.cfpGeminiConfig;
   if (!cfg) return;
   const $ = (id) => document.getElementById(id);
-  const K = 24;          // 色のまとまりの数
+  const K = 48;          // 色のまとまりの数（小さくても目立つ色が、ほかの色にまとめられにくいように多め）
+  const BIAS = 0.55;     // 学習した変換の塗り方：Gemini が割り当てた色の選ばれやすさ（小さいほど強く）
   const SEND = 768;      // 送る画像の長い辺（px）
 
   let last = null;       // 最後に作った学習の変換：{ indices }
@@ -61,20 +62,29 @@
     return c;
   }
 
-  // 元画像の色を K のまとまりに（間引いた画素で k-means）。positions: 数えた画素の位置
+  // 元画像の色を K のまとまりに（間引いた画素で、重み付きの k-means）。positions: 数えた画素の位置
+  // 重み：柄・文字の輪郭（明るさが急に変わるところ）と鮮やかな色は、面積が小さくても重く数える
+  //（細い線・小さな文字・目のハイライトなどが、まわりの大きなまとまりに吸収されないように）
   function clusterOriginal(orig) {
     const w = orig.width, h = orig.height;
     const d = orig.getContext('2d').getImageData(0, 0, w, h).data;
     const step = Math.max(1, Math.round(Math.sqrt(w * h / 40000)));
-    const pts = [], pos = [];
+    const lum = (i) => d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+    const pts = [], pos = [], wt = [];
     for (let y = 0; y < h; y += step) for (let x = 0; x < w; x += step) {
       const i = (y * w + x) * 4;
       if (d[i + 3] < 128) continue;
-      pts.push(lab(d[i], d[i + 1], d[i + 2]));
+      const p = lab(d[i], d[i + 1], d[i + 2]);
+      let g = 0;
+      if (x + step < w) g = Math.max(g, Math.abs(lum(i) - lum(i + step * 4)));
+      if (y + step < h) g = Math.max(g, Math.abs(lum(i) - lum(i + step * w * 4)));
+      const c = Math.hypot(p[1], p[2]);
+      pts.push(p);
       pos.push(i);
+      wt.push(1 + 2 * Math.min(1, g / 48) + 1.5 * Math.min(1, Math.max(0, (c - 25) / 45)));
     }
     if (!pts.length) return null;
-    // 初期値：k-means++ 風に、離れた色を順に選ぶ
+    // 初期値：k-means++ 風に、離れた色（重いほど選ばれやすい）を順に選ぶ
     const cen = [pts[Math.floor(pts.length / 2)].slice()];
     const dist = new Float64Array(pts.length).fill(Infinity);
     while (cen.length < Math.min(K, pts.length)) {
@@ -83,9 +93,9 @@
       for (let i = 0; i < pts.length; i++) {
         const p = pts[i], e = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2;
         if (e < dist[i]) dist[i] = e;
-        if (dist[i] > bd) { bd = dist[i]; bi = i; }
+        if (dist[i] * wt[i] > bd) { bd = dist[i] * wt[i]; bi = i; }
       }
-      if (bd <= 1) break;
+      if (dist[bi] <= 1) break;
       cen.push(pts[bi].slice());
     }
     const asg = new Int32Array(pts.length);
@@ -96,14 +106,17 @@
         let bk = 0, bd = Infinity;
         for (let k = 0; k < cen.length; k++) { const c = cen[k], e = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2; if (e < bd) { bd = e; bk = k; } }
         asg[i] = bk;
-        const s = sum[bk]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++;
+        const s = sum[bk], q = wt[i]; s[0] += p[0] * q; s[1] += p[1] * q; s[2] += p[2] * q; s[3] += q;
       }
       sum.forEach((s, k) => { if (s[3]) cen[k] = [s[0] / s[3], s[1] / s[3], s[2] / s[3]]; });
     }
-    // まとまりごとの平均の RGB と面積
-    const rgb = cen.map(() => [0, 0, 0, 0]);
-    for (let i = 0; i < pts.length; i++) { const r = rgb[asg[i]], j = pos[i]; r[0] += d[j]; r[1] += d[j + 1]; r[2] += d[j + 2]; r[3]++; }
-    const list = cen.map((c, k) => ({ lab: c, rgb: rgb[k][3] ? [rgb[k][0] / rgb[k][3], rgb[k][1] / rgb[k][3], rgb[k][2] / rgb[k][3]] : [0, 0, 0], n: rgb[k][3] }));
+    // まとまりごとの平均の RGB・面積（画素数）・重みの平均。重みの平均が大きい小さなまとまりは「目立つ色」
+    const rgb = cen.map(() => [0, 0, 0, 0, 0]);
+    for (let i = 0; i < pts.length; i++) { const r = rgb[asg[i]], j = pos[i]; r[0] += d[j]; r[1] += d[j + 1]; r[2] += d[j + 2]; r[3]++; r[4] += wt[i]; }
+    const list = cen.map((c, k) => {
+      const n = rgb[k][3];
+      return { lab: c, rgb: n ? [rgb[k][0] / n, rgb[k][1] / n, rgb[k][2] / n] : [0, 0, 0], n, accent: n ? (rgb[k][4] / n >= 2 ? n / pts.length < 0.03 : false) : false };
+    });
     return { list, asg, pos, total: pts.length };
   }
 
@@ -178,7 +191,7 @@
       const hum = tally(cl, human.getContext('2d').getImageData(0, 0, human.width, human.height), L.colors);
       const st = tally(cl, sys.std.getContext('2d').getImageData(0, 0, orig.width, orig.height), L.colors);
       const clusters = cl.list.map((c, k) => ({
-        hex: hex(c.rgb), share: Math.round(c.n / cl.total * 1000) / 10,
+        hex: hex(c.rgb), share: Math.round(c.n / cl.total * 1000) / 10, accent: c.accent,
         sys: st[k] ? L.colors[st[k].idx].name : '',
         human: hum[k] ? L.colors[hum[k].idx].name : '', human_pct: hum[k] ? hum[k].pct : 0
       })).filter((c) => c.share > 0);
@@ -214,7 +227,7 @@
       if (!cl) throw new Error('元画像に色がありません。');
       const sets = L.sets();
       const st = tally(cl, L.render(sets.std).imageData, L.colors);
-      const clusters = cl.list.map((c, k) => ({ hex: hex(c.rgb), share: Math.round(c.n / cl.total * 1000) / 10, sys: st[k] ? L.colors[st[k].idx].name : '' }));
+      const clusters = cl.list.map((c, k) => ({ hex: hex(c.rgb), share: Math.round(c.n / cl.total * 1000) / 10, accent: c.accent, sys: st[k] ? L.colors[st[k].idx].name : '' }));
       const dither = L.active().dither;
       const res = await post('cfp_gemini_apply', { original: dataUrl(orig, 'image/jpeg'), dither: String(dither), clusters: JSON.stringify(clusters), palette: paletteJson(L.colors) });
       const dz = res.dither === null || res.dither === undefined ? dither : Math.min(100, Math.max(0, Number(res.dither) || 0));
@@ -224,7 +237,8 @@
       res.assign.forEach((x) => { if (x.i >= 0 ? x.i < pick.length : false) { const v = byName.get(x.color); if (v !== undefined) pick[x.i] = v; } });
       // 16色まで（多いときは面積の小さいまとまりの色を、残す色のうち近いものに寄せる）
       const area = new Map();
-      pick.forEach((v, k) => area.set(v, (area.get(v) || 0) + cl.list[k].n));
+      // 目立つ色（小さくても輪郭・鮮やかな色）は面積を重く見て、16色に減らすときに残りやすくする
+      pick.forEach((v, k) => area.set(v, (area.get(v) || 0) + cl.list[k].n * (cl.list[k].accent ? 4 : 1)));
       let keep = Array.from(area.keys()).sort((x, y) => area.get(y) - area.get(x));
       if (keep.length > 16) {
         keep = keep.slice(0, 16);
@@ -239,13 +253,19 @@
       const indices = Array.from(new Set(pick)).sort((x, y) => x - y);
       const entries = indices.map((i) => L.colors[i]);
       const slot = pick.map((v) => indices.indexOf(v));
-      // 色の対応表：RGB（5bitずつ）→ いちばん近いまとまり → そのまとまりの色
-      const lut = new Uint8Array(32768);
-      for (let key = 0; key < 32768; key++) {
-        const c = lab(((key >> 10) << 3) + 4, (((key >> 5) & 31) << 3) + 4, ((key & 31) << 3) + 4);
-        let bk = 0, bd = Infinity;
-        cl.list.forEach((q, k) => { const e = (q.lab[0] - c[0]) ** 2 + (q.lab[1] - c[1]) ** 2 + (q.lab[2] - c[2]) ** 2; if (e < bd) { bd = e; bk = k; } });
-        lut[key] = slot[bk];
+      // 色の対応表：選んだ色の中から、システムと同じ見え方の近さで1点ずつ選ぶ（その色に近いまとまりに Gemini が割り当てた色を優先）
+      let lut;
+      if (typeof L.blendLut === 'function') {
+        lut = L.blendLut(entries, cl.list.map((q) => q.lab), slot, BIAS);
+      } else {
+        // 古いシミュレーター：いちばん近いまとまりの色
+        lut = new Uint8Array(32768);
+        for (let key = 0; key < 32768; key++) {
+          const c = lab(((key >> 10) << 3) + 4, (((key >> 5) & 31) << 3) + 4, ((key & 31) << 3) + 4);
+          let bk = 0, bd = Infinity;
+          cl.list.forEach((q, k) => { const e = (q.lab[0] - c[0]) ** 2 + (q.lab[1] - c[1]) ** 2 + (q.lab[2] - c[2]) ** 2; if (e < bd) { bd = e; bk = k; } });
+          lut[key] = slot[bk];
+        }
       }
       const out = L.renderLut(entries, lut, dz / 100);
       const cv = $('cfp-gemini-result');

@@ -462,6 +462,9 @@ class CFP_Gemini {
         $lines = [];
         foreach ($clusters as $i => $c) {
             $line = sprintf('#%d 元の色 %s・面積 %s%%', $i, sanitize_text_field($c['hex'] ?? ''), (float) ($c['share'] ?? 0));
+            if (!empty($c['accent'])) {
+                $line .= '・★目立つ色（小さくても輪郭・鮮やかな色）';
+            }
             if (!empty($c['sys'])) {
                 $line .= '・システム（標準色のみ）→ ' . sanitize_text_field($c['sys']);
             }
@@ -563,6 +566,17 @@ class CFP_Gemini {
             wp_send_json_error(['message' => 'まだ学習していません。先に「Gemini に送る（学習）」で人間の変換を送ってください。']);
         }
 
+        // 人間の職人がふだん使う色数（学習した例から）
+        $counts = [];
+        foreach ($examples as $ex) {
+            $n = count(array_filter((array) ($ex['meta']['human_colors'] ?? []), 'is_string'));
+            if ($n) {
+                $counts[] = $n;
+            }
+        }
+        $count_text = $counts
+            ? "\n\n人間の職人が使った色数：平均 " . round(array_sum($counts) / count($counts), 1) . " 色（最少 " . min($counts) . "〜最多 " . max($counts) . " 色）。今回も、使う色の数がこれより大きく減らないようにしてください（元の画像に色が少なければ、少なくて構いません）。"
+            : '';
         $parts = [];
         $parts[] = ['text' => "あなたはカーペット（タフテッド）の色変換の職人です。これまでに人間の職人が行った変換（" . count($examples) . " 件）から学んだトータルの癖を使って、新しい画像をパレットの色（最大16色）だけで塗り直すための色の割り当てと、階調表現（色の境目を点の混ぜ方でなめらかに見せる強さ：0%＝なし〜100%）を決めます。"
             . "\n\nトータルの癖（学習メモ）：\n" . ($rules !== '' ? $rules : '（なし）')
@@ -572,6 +586,8 @@ class CFP_Gemini {
         $parts[] = ['text' => "パレット（名前 色）：\n" . self::palette_text($palette)
             . "\n\nいまの階調表現：" . $dither . "%"
             . "\n\n今回の画像の色のまとまり：\n" . self::clusters_text($clusters, false)
+            . $count_text
+            . "\n\n★の付いたまとまり（小さくても目立つ色）は、見た目が違うまとまりと同じ色にまとめず、その色らしさが残る色を選んでください。"
             . "\n\nそれぞれのまとまり（#番号）に、人間の職人ならどのパレットの色を使うかと、階調表現を何%にするかを決めてください。使う色は全部で16色以内、パレットの名前をそのまま使います。次の JSON だけを返してください：{\"assign\": [{\"i\": 0, \"color\": \"パレットの名前\"}, ...（すべてのまとまり）], \"dither\": 0〜100の数, \"comment\": \"どう考えたか（日本語・200字以内）\"}"];
 
         $res = self::call($parts);

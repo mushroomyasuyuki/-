@@ -2502,6 +2502,29 @@
       const factor = Math.min(1, Math.max(0, (parseFloat(($('cc-dither') || {}).value) || 0) / 100));
       return getReducedImageData(original, original.width, original.height, factor, entries, { lut: carpetLut(entries) });
     },
+    // 学習した変換の色の対応表：選んだ色（entries）の中から、システムと同じ見え方の近さで1点ずつ選ぶ。
+    // ただし、その色がいちばん近い「色のまとまり」に Gemini が割り当てた色（slot）は選ばれやすくする（bias：0〜1、小さいほど強く）
+    blendLut: (entries, clusterLabs, slot, bias) => {
+      const L = LOOKS[carpetLook()] || LOOKS.natural;
+      const pl = entries.map((e) => rgbToLab(e.rgb[0], e.rgb[1], e.rgb[2]));
+      const lut = new Uint8Array(32768);
+      for (let i = 0; i !== 32768; i++) {
+        const lab = rgbToLab((i >> 10) * 8 + 4, ((i >> 5) % 32) * 8 + 4, (i % 32) * 8 + 4);
+        let nk = 0, nd = Infinity;
+        for (let k = 0; k !== clusterLabs.length; k++) {
+          const q = clusterLabs[k], d = (lab[0] - q[0]) ** 2 + (lab[1] - q[1]) ** 2 + (lab[2] - q[2]) ** 2;
+          if (d < nd) { nd = d; nk = k; }
+        }
+        const pref = slot[nk], t = lookTarget(lab, L);
+        let best = pref, bd = Infinity;
+        for (let p = 0; p !== pl.length; p++) {
+          const d = lookDist(t, pl[p], L) * (p === pref ? bias : 1);
+          if (d < bd) { bd = d; best = p; }
+        }
+        lut[i] = best;
+      }
+      return lut;
+    },
     // 色の対応表（32768：RGB を5bitずつ → entries の番号）で変換した画像
     renderLut: (entries, lut, factor) => {
       const original = $('cc-original');
