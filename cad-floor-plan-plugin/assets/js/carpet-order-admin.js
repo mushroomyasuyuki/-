@@ -22,7 +22,7 @@
   const thumbs = el('div', { style: 'display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0' });
   const msg = el('textarea', { rows: '3', placeholder: 'お客様へのひとこと（任意。メールの先頭に入ります）', style: 'width:100%;background:#09090b;color:#fff;border:1px solid #52525b;border-radius:6px;padding:8px' });
   const leadWrap = el('label', { style: 'display:block;margin:8px 0 4px;color:#e4e4e7' }, '納期（お支払い確定後）：');
-  const lead = el('input', { type: 'text', value: '約1週間', maxlength: '60', placeholder: '例：約1週間（12月10日ごろ発送）', style: 'width:100%;max-width:420px;background:#09090b;color:#fff;border:1px solid #52525b;border-radius:6px;padding:6px 8px;margin-top:4px' });
+  const lead = el('input', { type: 'text', value: '約2週間', maxlength: '60', placeholder: '例：約2週間（12月10日ごろ発送）', style: 'width:100%;max-width:420px;background:#09090b;color:#fff;border:1px solid #52525b;border-radius:6px;padding:6px 8px;margin-top:4px' });
   leadWrap.appendChild(lead);
   const send = el('button', { type: 'button', class: 'btn-submit', disabled: '' }, '変換が終わるまでお待ちください…');
   const st = el('div', { style: 'margin-top:8px;white-space:pre-line;color:#fde68a' });

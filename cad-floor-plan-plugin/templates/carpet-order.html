@@ -260,6 +260,16 @@
 #cfp-co .co-status.err{display:block;background:#FBE9EA;border-color:var(--red);color:#7A0D12}
 #cfp-co .co-status.info{display:block;background:#E5EEF8;border-color:var(--blue);color:#0A3A6B}
 
+/* 他社との違い */
+#cfp-co .co-cmp-wrap{background:var(--paper);border-radius:var(--r);overflow:hidden}
+#cfp-co .co-cmp{width:100%;border-collapse:collapse;margin:0;font-size:14px;line-height:1.75;background:none;border:0}
+#cfp-co .co-cmp th,#cfp-co .co-cmp td{border:0;border-bottom:1px solid var(--line);padding:14px 18px;text-align:left;vertical-align:top;background:none;color:var(--ink-2)}
+#cfp-co .co-cmp thead th{background:var(--field);color:var(--ink);font-weight:700;font-size:13.5px}
+#cfp-co .co-cmp thead th.is-us{background:var(--ink);color:var(--yellow)}
+#cfp-co .co-cmp tbody th{width:9em;color:var(--ink);font-weight:700;white-space:nowrap}
+#cfp-co .co-cmp tbody td:nth-of-type(1){width:46%;color:var(--ink);font-weight:500;background:#F3F7FC}
+#cfp-co .co-cmp tbody tr:last-child th,#cfp-co .co-cmp tbody tr:last-child td{border-bottom:0}
+
 /* 納期 */
 #cfp-co .co-lead-time{margin:14px 0 0;padding:12px 14px;background:var(--paper);border-radius:12px;border-left:4px solid var(--blue);font-size:13px;line-height:1.8;color:var(--ink-2)}
 #cfp-co .co-lead-time b{display:block;color:var(--ink);font-size:14px}
@@ -349,6 +359,15 @@
   #cfp-co .co-card-b,#cfp-co .co-pile,#cfp-co .co-pal-wrap,#cfp-co .co-fold{padding:22px 18px}
   #cfp-co .co-order{margin-top:72px;border-radius:20px;padding-top:40px}
   #cfp-co .co-grid2{grid-template-columns:1fr}
+  #cfp-co .co-cmp thead{display:none}
+  #cfp-co .co-cmp,#cfp-co .co-cmp tbody,#cfp-co .co-cmp tr,#cfp-co .co-cmp th,#cfp-co .co-cmp td{display:block;width:auto!important}
+  #cfp-co .co-cmp tr{padding:14px 16px;border-bottom:1px solid var(--line)}
+  #cfp-co .co-cmp tbody tr:last-child{border-bottom:0}
+  #cfp-co .co-cmp th,#cfp-co .co-cmp td{border:0!important;padding:4px 0}
+  #cfp-co .co-cmp tbody th{font-family:var(--serif);font-size:16px;margin-bottom:4px}
+  #cfp-co .co-cmp tbody td:nth-of-type(1){background:#F3F7FC;border-radius:8px;padding:8px 10px;margin-bottom:6px}
+  #cfp-co .co-cmp td::before{content:attr(data-l);display:block;font-size:11.5px;font-weight:700;color:var(--blue)}
+  #cfp-co .co-cmp td:nth-of-type(2)::before{color:var(--ink-2)}
   #cfp-co .co-pal{grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:12px 10px}
   #cfp-co .co-step{grid-template-columns:36px minmax(0,1fr);gap:0 12px}
   #cfp-co .co-step-no{width:36px;height:36px;font-size:16px}
@@ -379,7 +398,7 @@
       <dl class="co-stats">
         <div><dt>タイル1枚</dt><dd>50<small>cm角</small></dd></div>
         <div><dt>無償の基本色</dt><dd>16<small>色</small></dd></div>
-        <div><dt>お支払い後の発送</dt><dd>約1<small>週間</small></dd></div>
+        <div><dt>お支払い後の発送</dt><dd>約2<small>週間</small></dd></div>
       </dl>
     </div>
     <figure class="co-hero-art">
@@ -394,6 +413,16 @@
 
   <p class="co-rare co-reveal"><b>タイルカーペットに耐久性のある印刷（染色）ができる工場は、日本で数社しかありません。</b>マッシュオフィスは、その工場で糸の根元まで染めて仕上げます。</p>
   <ul class="co-points co-reveal" aria-label="マッシュオフィスのタイルカーペットの特長"><li style="--d:0.00s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15c0-3 1-7 1-9h5l1 4c2 1 6 2 8 3 1 .5 1 2 1 3v2H4z"/><path d="M4 18h16"/></svg></span><b>土足OK・<wbr>ペットもOK</b><span class="co-pt-tx">耐久性があるので、土足でもOK。ペットのいるお部屋もOKです。滑りやすいフローリングと違い、ワンちゃんが滑りにくく、足腰を痛めにくくなります。</span></li><li style="--d:0.08s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z"/></svg></span><b>防炎物品の認定</b><span class="co-pt-tx">防炎・制電・防汚の加工つき。防炎物品が必要な店舗や展示会、オフィスにも使えます。</span></li><li style="--d:0.16s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="14.5" y="14.5" width="8" height="8" rx="1" transform="rotate(-8 18.5 18.5)"/></svg></span><b>1枚ずつ<wbr>洗える・<wbr>替えられる</b><span class="co-pt-tx">50cm角のタイルなので、汚れた1枚だけ外して水洗い。傷んだら、その1枚だけ交換できます。</span></li><li style="--d:0.24s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span><b>プレビューを<wbr>見てから支払い</b><span class="co-pt-tx">担当者が色を置き換えた案をメールでお送りします。選んでからお支払い。作り直しも頼めます。</span></li></ul>
+
+  <section class="co-info co-reveal" id="co-compare">
+    <p class="co-kicker">Compare</p>
+    <h2 class="co-info-h">他社のプリントカーペットとの違い</h2>
+    <p class="co-info-lead">家庭用のプリントカーペット（他社）と比べた、マッシュオフィスのタイルカーペットの特長です。</p>
+    <div class="co-cmp-wrap"><table class="co-cmp">
+      <thead><tr><th scope="col">比べること</th><th scope="col" class="is-us">マッシュオフィス</th><th scope="col">他社</th></tr></thead>
+      <tbody><tr><th scope="row">土足</th><td data-l="マッシュオフィス">使える。人の多い店舗・オフィスにも対応</td><td data-l="他社">土足は禁止（プリントが剥がれる原因になるため）</td></tr><tr><th scope="row">染め方</th><td data-l="マッシュオフィス">糸の根元まで染める。ナイロン100%で、こすれても色が残る</td><td data-l="他社">生地の表面にインクジェットで印刷（ポリエステル）</td></tr><tr><th scope="row">防炎・制電</th><td data-l="マッシュオフィス">防炎物品の認定あり。制電・防汚の加工もあり</td><td data-l="他社">表記なし</td></tr><tr><th scope="row">形</th><td data-l="マッシュオフィス">50cm角のタイル。汚れたら1枚だけ外して水洗い、傷んだら1枚だけ交換できる</td><td data-l="他社">1枚ものの敷物（最大3m）</td></tr><tr><th scope="row">厚さ・丈夫さ</th><td data-l="マッシュオフィス">全厚 約7〜9mm。裏地はガラス繊維＋塩ビで、反りやずれが起きにくい</td><td data-l="他社">厚さ2〜4mm。「角が反る」「印刷スジが入る」「濃い色は色移りする」との注意書きあり</td></tr><tr><th scope="row">広い場所</th><td data-l="マッシュオフィス">タイルを並べるので、何十㎡でも敷ける。10㎡以上は単価が下がる</td><td data-l="他社">最大3mまで</td></tr><tr><th scope="row">仕上がりの確認</th><td data-l="マッシュオフィス">担当者が色を置き換えたプレビューを3案送る。選んでから支払い。気に入らなければ作り直しを頼める</td><td data-l="他社">そのまま印刷できる「完全データ」で入稿。店側では直さない。画像は真ん中で自動的に切り取られる</td></tr><tr><th scope="row">キャンセル</th><td data-l="マッシュオフィス">発注から3日以内は無償</td><td data-l="他社">注文確定後はできない</td></tr><tr><th scope="row">法人向け</th><td data-l="マッシュオフィス">適格請求書発行事業者の登録番号を表示。決済後のメールに消費税額も記載</td><td data-l="他社">書類の同梱はなし（Webの領収書のみ）</td></tr></tbody></table></div>
+    <p class="co-info-note">他社の内容は、家庭用プリントカーペットの販売ページの記載をもとにした一例です（2026年11月時点）。</p>
+  </section>
 
   <nav class="co-index" aria-label="このページの内容">
     <a href="#co-uses"><b>01</b>使う場所</a>
@@ -411,7 +440,7 @@
     <li><i>02</i><b>プレビュー</b><span>色の置き換え案をメールで受け取る</span></li>
     <li><i>03</i><b>案を選ぶ</b><span>作り直しの依頼もできます</span></li>
     <li><i>04</i><b>お支払い</b><span>カード決済で正式なご注文に</span></li>
-    <li><i>05</i><b>製作・発送</b><span>お支払い後、約1週間で発送</span></li>
+    <li><i>05</i><b>製作・発送</b><span>お支払い後、約2週間で発送</span></li>
   </ol>
 
   <section class="co-info co-reveal" id="co-uses">
@@ -513,7 +542,7 @@
       <div class="co-card-b"><h3>オプションカラー</h3><p>基本の16色（とOP-03・OP-05）は無償です。そのほかのオプションカラーは、1色につき1回のご注文で ¥35,000（税別）。10㎡以上のご注文は3色まで無料です。</p></div>
       <div class="co-card-b"><h3>送料（1箱あたり・税別）</h3><p>本州 ¥2,000／北海道・四国・九州 ¥2,500／沖縄 ¥5,500。ループパイルは1箱20枚（5㎡）、カットパイルは1箱16枚（4㎡）で数えます。ヤマト運輸でお届けします。</p></div>
     </div>
-    <div class="co-lead-time co-lead-time-wide"><b>納期</b>お支払い確定後、約1週間ですが、季節により変動します。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします。</div>
+    <div class="co-lead-time co-lead-time-wide"><b>納期</b>お支払い確定後、約2週間ですが、季節により変動します。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします。</div>
     <p class="co-info-note">ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。</p>
   </section>
 
@@ -638,7 +667,7 @@
       <p class="co-note">オプションカラーを使う案では、1色につき ¥<span id="co-e-ppc" class="co-num"></span>（税別）が加わります（10㎡以上は3色まで無料）。金額は、お送りする案を選んだ時点で確定します。</p>
       <button type="button" class="co-btn" id="co-submit">発注して、プレビューを受け取る</button>
       <p class="co-note">この時点ではお支払いは発生しません。</p>
-      <p class="co-lead-time"><b>納期</b>お支払い確定後、約1週間ですが、季節により変動します。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします。</p>
+      <p class="co-lead-time"><b>納期</b>お支払い確定後、約2週間ですが、季節により変動します。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします。</p>
       <div class="co-status" id="co-status" role="status" aria-live="polite"></div>
       </div>
     </aside>
