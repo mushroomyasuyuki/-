@@ -188,6 +188,11 @@
     $('co-file').onchange = () => {
       const f = $('co-file').files[0];
       img = null;
+      const drop = document.querySelector('#cfp-co .co-drop');
+      if (drop) {
+        drop.classList.toggle('has-file', !!f);
+        drop.querySelector('strong').textContent = f ? f.name : '画像を選ぶ';
+      }
       if (!f) { estimate(); return; }
       const url = URL.createObjectURL(f);
       const im = new Image();
@@ -205,6 +210,29 @@
     });
     estimate();
     $('co-submit').onclick = submit;
+    initMotion();
+  }
+
+  // スクロールで説明が現れる動きと、画面の下に出る「ご注文フォームへ」
+  function initMotion() {
+    if (!('IntersectionObserver' in window)) return;
+    const root = $('cfp-co');
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!reduce) {
+      root.classList.add('js-reveal');
+      const io = new IntersectionObserver((es) => {
+        es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } });
+      }, { rootMargin: '0px 0px -10% 0px' });
+      root.querySelectorAll('.co-reveal').forEach((el) => io.observe(el));
+    }
+    const fab = $('co-fab');
+    const hero = root.querySelector('.co-hero');
+    const form = root.querySelector('.co-order');
+    if (!fab || !hero || !form) return;
+    let pastHero = false, atForm = false;
+    const sync = () => { fab.classList.toggle('is-on', pastHero && !atForm); fab.tabIndex = pastHero && !atForm ? 0 : -1; };
+    new IntersectionObserver((es) => { pastHero = !es[0].isIntersecting && es[0].boundingClientRect.top < 0; sync(); }).observe(hero);
+    new IntersectionObserver((es) => { atForm = es[0].isIntersecting; sync(); }, { rootMargin: '0px 0px -30% 0px' }).observe(form);
   }
 
   async function submit() {
