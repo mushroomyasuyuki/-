@@ -28,6 +28,9 @@ class CFP_Carpet_Order {
     const PRICE_PER_COLOR = 35000;
     const FREE_OP = ['OP-03', 'OP-05']; // オプション色のうち無償の色
     // HPの初期（旧パレット）の色。特許ページの FREE_PALETTE・OP_PALETTE_RAW と同じ
+    /** 納期の目安（プレビューを送るときに変えられる）. */
+    const LEAD_DEFAULT = '約1週間';
+
     const PALETTE_FREE = [
         ['基本-01', '#EFEFEF'],
         ['基本-02', '#E8AB82'],
@@ -542,7 +545,7 @@ class CFP_Carpet_Order {
             . $row('商品代金以外の費用', '送料（1箱あたり：本州 2,000円／北海道・四国・九州 2,500円／沖縄 5,500円・税別）、有償オプションカラー（1色 35,000円・税別）')
             . $row('お支払い方法', 'クレジットカード（PAY.JP）')
             . $row('お支払い時期', 'プレビューの案をお選びいただいた後、ご注文時にお支払いいただきます')
-            . $row('お届け時期', 'デザイン確定（お支払い完了）から2週間ほどで発送します（デザイン・サイズにより変わります）')
+            . $row('お届け時期', 'お支払い確定後、約1週間で発送します（季節により変動します）。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします')
             . $row('キャンセル', 'ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降はお受けできません')
             . $row('返品・不良品', 'オーダーメイド品のため、お客様のご都合による返品はお受けできません。製品の不良は「品質基準について」に沿って対応します')
             . '</dl>';
@@ -585,7 +588,7 @@ class CFP_Carpet_Order {
             'name' => $o['name'], 'material' => self::MATERIALS[$o['material']] ?? $o['material'],
             'width' => $o['width'], 'height' => $o['height'], 'region' => self::REGIONS[$o['region']][0] ?? '',
             'variants' => $vars, 'message' => $o['preview_message'] ?? '', 'choice' => $o['choice'] ?? '',
-            'amount' => $o['amount'] ?? 0,
+            'amount' => $o['amount'] ?? 0, 'lead_time' => $o['lead_time'] ?? '',
         ];
     }
 
@@ -832,7 +835,7 @@ class CFP_Carpet_Order {
         $lines = self::spec_lines($o) . "\n選んだ案：" . self::VARIANTS[$o['choice']] . "\n使う色：" . implode('、', $o['previews'][$o['choice']]['colors'])
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
-        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。", [self::path($o, 'preview_' . $o['choice'])]);
+        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。", [self::path($o, 'preview_' . $o['choice'])]);
         self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
             self::mail_factory($o, 'order');
@@ -962,6 +965,8 @@ class CFP_Carpet_Order {
         }
         $o['previews'] = $previews;
         $o['preview_message'] = self::text('message', true);
+        $lead = mb_substr(self::text('lead'), 0, 60);
+        $o['lead_time'] = $lead !== '' ? $lead : self::LEAD_DEFAULT;
         $o['dither'] = max(0, min(100, (int) self::text('dither')));
         $o['status'] = 'previews_sent';
         $o['choice'] = '';
@@ -980,6 +985,7 @@ class CFP_Carpet_Order {
         $body = $o['name'] . " 様\n\nご注文ありがとうございます。いただいたデザインを、カーペットで使える色に変換したプレビューをお送りします（添付の画像3枚）。\n"
             . ($o['preview_message'] !== '' ? "\n" . $o['preview_message'] . "\n" : '')
             . "\n" . implode("\n\n", $lines)
+            . "\n\n■ 納期：お支払い確定後、" . $o['lead_time'] . "で発送します。"
             . "\n\n下のページで、ご希望の案を選んでください。案を選ぶと金額が確定し、そのままカードでお支払いいただけます（お支払いの完了で正式なご注文になります）。\nどの案もご希望と違う場合は、同じページの「どれも希望と違う」からご要望をお送りください。担当者が作り直してお送りします。\n\n"
             . self::select_url($o) . "\n\n" . self::spec_lines($o)
             . "\n\n※プレビューは確認用の画像です。実際の製品の色味・質感・見え方とは異なる場合がございます。";

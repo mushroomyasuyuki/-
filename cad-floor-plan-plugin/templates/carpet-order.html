@@ -260,6 +260,12 @@
 #cfp-co .co-status.err{display:block;background:#FBE9EA;border-color:var(--red);color:#7A0D12}
 #cfp-co .co-status.info{display:block;background:#E5EEF8;border-color:var(--blue);color:#0A3A6B}
 
+/* 納期 */
+#cfp-co .co-lead-time{margin:14px 0 0;padding:12px 14px;background:var(--paper);border-radius:12px;border-left:4px solid var(--blue);font-size:13px;line-height:1.8;color:var(--ink-2)}
+#cfp-co .co-lead-time b{display:block;color:var(--ink);font-size:14px}
+#cfp-co .co-lead-time-wide{margin:4px 0 0;padding:18px 22px;font-size:14.5px}
+#cfp-co .co-lead-time-wide b{font-family:var(--serif);font-size:17px;margin-bottom:2px}
+
 /* 画面の下に出る「ご注文フォームへ」 */
 #cfp-co .co-fab{position:fixed;right:20px;bottom:20px;z-index:60;display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:999px;background:var(--ink);color:#fff;font-size:14.5px;font-weight:700;box-shadow:0 14px 28px -12px rgba(8,42,73,.7);transform:translateY(140%);opacity:0;transition:transform .45s var(--ease),opacity .3s;pointer-events:none}
 #cfp-co .co-fab::after{content:"→";color:var(--yellow)}
@@ -272,7 +278,7 @@
 /* ───── 案の選択とお支払い ───── */
 #cfp-co .co-sel-head{padding:56px 0 28px}
 #cfp-co .co-sel-head h1{font-size:clamp(26px,3.6vw,40px);line-height:1.45}
-#cfp-co .co-sel-head .co-lead{margin-top:10px;color:var(--ink-2);font-size:14.5px}
+#cfp-co .co-sel-head .co-lead{white-space:pre-line;margin-top:10px;color:var(--ink-2);font-size:14.5px}
 #cfp-co .co-message{background:var(--paper);border-left:4px solid var(--yellow);border-radius:12px;padding:16px 20px;margin-bottom:28px;white-space:pre-line;font-size:15px}
 #cfp-co .co-vars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
 #cfp-co .co-var{display:flex;flex-direction:column;position:relative;background:var(--paper);border:2px solid transparent;border-radius:20px;padding:16px;cursor:pointer;outline:none;transition:transform .3s var(--ease),box-shadow .3s,border-color .2s}
@@ -373,7 +379,7 @@
       <dl class="co-stats">
         <div><dt>タイル1枚</dt><dd>50<small>cm角</small></dd></div>
         <div><dt>無償の基本色</dt><dd>16<small>色</small></dd></div>
-        <div><dt>発送まで</dt><dd>約2<small>週間</small></dd></div>
+        <div><dt>お支払い後の発送</dt><dd>約1<small>週間</small></dd></div>
       </dl>
     </div>
     <figure class="co-hero-art">
@@ -405,7 +411,7 @@
     <li><i>02</i><b>プレビュー</b><span>色の置き換え案をメールで受け取る</span></li>
     <li><i>03</i><b>案を選ぶ</b><span>作り直しの依頼もできます</span></li>
     <li><i>04</i><b>お支払い</b><span>カード決済で正式なご注文に</span></li>
-    <li><i>05</i><b>製作・発送</b><span>ヤマト運輸でお届け</span></li>
+    <li><i>05</i><b>製作・発送</b><span>お支払い後、約1週間で発送</span></li>
   </ol>
 
   <section class="co-info co-reveal" id="co-uses">
@@ -507,6 +513,7 @@
       <div class="co-card-b"><h3>オプションカラー</h3><p>基本の16色（とOP-03・OP-05）は無償です。そのほかのオプションカラーは、1色につき1回のご注文で ¥35,000（税別）。10㎡以上のご注文は3色まで無料です。</p></div>
       <div class="co-card-b"><h3>送料（1箱あたり・税別）</h3><p>本州 ¥2,000／北海道・四国・九州 ¥2,500／沖縄 ¥5,500。ループパイルは1箱20枚（5㎡）、カットパイルは1箱16枚（4㎡）で数えます。ヤマト運輸でお届けします。</p></div>
     </div>
+    <div class="co-lead-time co-lead-time-wide"><b>納期</b>お支払い確定後、約1週間ですが、季節により変動します。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします。</div>
     <p class="co-info-note">ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。</p>
   </section>
 
@@ -628,9 +635,10 @@
         <div class="co-row"><dt>消費税（10%）</dt><dd id="co-e-tax"></dd></div>
       </dl>
       <div class="co-total"><span>概算の合計（税込）</span><span id="co-e-total"></span></div>
-      <p class="co-note">オプションカラーを使う案では、1色につき ¥<span id="co-e-ppc" class="co-num"></span>（税別）が加わります（10㎡以上は3色まで無料）。金額は、お送りする案を選んだ時点で確定します。標準納期はデザイン確定から2週間ほどです。</p>
+      <p class="co-note">オプションカラーを使う案では、1色につき ¥<span id="co-e-ppc" class="co-num"></span>（税別）が加わります（10㎡以上は3色まで無料）。金額は、お送りする案を選んだ時点で確定します。</p>
       <button type="button" class="co-btn" id="co-submit">発注して、プレビューを受け取る</button>
       <p class="co-note">この時点ではお支払いは発生しません。</p>
+      <p class="co-lead-time"><b>納期</b>お支払い確定後、約1週間ですが、季節により変動します。正確な納期は、データサンプル（プレビュー）をお送りするときにお伝えします。</p>
       <div class="co-status" id="co-status" role="status" aria-live="polite"></div>
       </div>
     </aside>

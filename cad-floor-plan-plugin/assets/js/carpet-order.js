@@ -274,7 +274,8 @@
 
   function renderSelect() {
     const o = order;
-    $('co-sel-lead').textContent = 'ご注文番号 ' + o.no + '（' + o.material + '・' + o.width + '×' + o.height + 'mm・' + o.region + '）';
+    $('co-sel-lead').textContent = 'ご注文番号 ' + o.no + '（' + o.material + '・' + o.width + '×' + o.height + 'mm・' + o.region + '）'
+      + (o.lead_time ? '\n納期：お支払い確定後、' + o.lead_time + 'で発送します。' : '');
     const msg = $('co-sel-msg');
     msg.hidden = !o.message;
     msg.textContent = o.message || '';
