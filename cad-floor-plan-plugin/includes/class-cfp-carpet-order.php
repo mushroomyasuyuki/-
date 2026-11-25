@@ -1559,11 +1559,11 @@ class CFP_Carpet_Order {
         foreach ($lines as $i => $l) {
             $pdf->text($x, $y + 18 + $i * 15, 9.5, $l);
         }
-        // 社判（朱色の角印）：会社名の右端に少し重ねて押す。社判の画像（assets/img/seal.bin）があればそれを、なければ文字で描く
+        // 社判（朱色の角印）：上端を会社名の文字の上端にそろえ、会社名の右端に少し重ねて押す。社判の画像（assets/img/seal.bin）があればそれを、なければ文字で描く
         $nw = $pdf->width($s['company_name'], 13);
         $sx = min($x + $nw - 14, CFP_Receipt_PDF::W - 56 - 66);
-        if (!$pdf->seal_image(CFP_PLUGIN_DIR . 'assets/img/seal.bin', $sx, $y - 50, 66)) {
-            $pdf->seal($sx, $y - 50, 66, self::seal_cols($s['company_name']));
+        if (!$pdf->seal_image(CFP_PLUGIN_DIR . 'assets/img/seal.bin', $sx, $y - 12, 66)) {
+            $pdf->seal($sx, $y - 12, 66, self::seal_cols($s['company_name']));
         }
 
         $path = self::order_dir($o['id']) . '/receipt.pdf';
