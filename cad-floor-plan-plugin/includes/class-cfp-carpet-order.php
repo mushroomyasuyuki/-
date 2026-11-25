@@ -923,11 +923,7 @@ class CFP_Carpet_Order {
             . "\n階調表現（誤差拡散）：" . (int) ($o['previews'][$o['choice']]['dither'] ?? ($o['dither'] ?? 0)) . '%'
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
-        // お客様へは、製作用の情報（使う色・階調表現）は書かない
-        $cust_lines = self::spec_lines($o) . "\n選んだ案：" . self::vlabel($o, $o['choice'])
-            . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
-            . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
-        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $cust_lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。" . (!empty($o['receipt']) && $receipt !== '' ? "\n\n領収書（PDF）を添付いたします（領収書番号：" . $o['receipt_no'] . "）。" : ''), array_filter([self::path($o, 'preview_' . $o['choice']), !empty($o['receipt']) ? $receipt : '']));
+        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。" . (!empty($o['receipt']) && $receipt !== '' ? "\n\n領収書（PDF）を添付いたします（領収書番号：" . $o['receipt_no'] . "）。" : ''), array_filter([self::path($o, 'preview_' . $o['choice']), !empty($o['receipt']) ? $receipt : '']));
         self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::download_lines($o) . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
             self::mail_factory($o, 'order');
