@@ -141,6 +141,7 @@ class CFP_Carpet_Order {
         add_action('admin_post_cfp_co_settings', [$this, 'handle_settings']);
         add_action('admin_post_cfp_co_status', [$this, 'handle_status']);
         add_action('admin_post_cfp_co_receipt', [$this, 'handle_receipt']);
+        add_action('admin_post_cfp_co_delete', [$this, 'handle_delete']);
         add_action('admin_post_cfp_co_create_page', [$this, 'handle_create_page']);
     }
 
@@ -1340,6 +1341,8 @@ class CFP_Carpet_Order {
             <h1>カーペット注文</h1>
             <?php if ($msg === 'saved') : ?><div class="notice notice-success"><p>保存しました。</p></div><?php endif; ?>
             <?php if ($msg === 'status') : ?><div class="notice notice-success"><p>状態を変えました。</p></div><?php endif; ?>
+            <?php if ($msg === 'deleted') : ?><div class="notice notice-success"><p>注文を削除しました。</p></div><?php endif; ?>
+            <?php if ($msg === 'delete_error') : ?><div class="notice notice-error"><p>注文が見つかりませんでした（すでに削除されている可能性があります）。</p></div><?php endif; ?>
             <?php if ($msg === 'receipt_sent') : ?><div class="notice notice-success"><p>領収書（PDF）をお客様へメールで送りました。</p></div><?php endif; ?>
             <?php if ($msg === 'receipt_failed') : ?><div class="notice notice-error"><p>領収書のメールを送れませんでした（サーバーのメール設定を確認してください）。</p></div><?php endif; ?>
             <?php if ($msg === 'page') : ?><div class="notice notice-success"><p>注文ページ（固定ページ）を用意しました。</p></div><?php endif; ?>
@@ -1388,6 +1391,11 @@ class CFP_Carpet_Order {
                             <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=send&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>" onclick="return confirm('お客様へ領収書（PDF）をメールで送りますか？');">領収書を送る</a>
                             <?php if (self::has_psd($o, $o['choice'])) : ?><a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'psd_' . $o['choice'], false))); ?>">PSDを保存</a><?php endif; ?>
                             <?php endif; ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;margin:4px 0 0">
+                                <input type="hidden" name="action" value="cfp_co_delete"><input type="hidden" name="id" value="<?php echo (int) $o['id']; ?>">
+                                <?php wp_nonce_field('cfp_co_delete_' . (int) $o['id']); ?>
+                                <button class="button button-link-delete" style="color:#b32d2e;border-color:#b32d2e" onclick="return confirm(<?php echo esc_attr(wp_json_encode(self::no($o) . '（' . $o['name'] . ' 様）の注文を削除しますか？' . "\n" . '元画像・プレビュー・PSD・領収書などのファイルも消え、元に戻せません。' . ($o['status'] === 'paid' ? "\n\n※支払い済みの注文です。返金が必要な場合は、先に PAY.JP の管理画面で返金してください。" : ''))); ?>);">削除</button>
+                            </form>
                             <details><summary>詳細</summary>
                                 <pre style="white-space:pre-wrap;max-width:420px"><?php echo esc_html(self::customer_lines($o)); ?></pre>
                                 <?php foreach ((array) $o['log'] as $l) : ?><div><small><?php echo esc_html($l[0] . ' ' . $l[1]); ?></small></div><?php endforeach; ?>
@@ -1615,6 +1623,32 @@ class CFP_Carpet_Order {
         self::log($o, '領収書をメールで送信' . ($ok ? '' : '（失敗）'));
         self::save($o);
         return $ok;
+    }
+
+    /** 管理画面：注文を削除する（注文のデータと、元画像・プレビュー・PSD・領収書などのファイル）. */
+    public function handle_delete() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。');
+        }
+        $id = absint($_POST['id'] ?? 0);
+        check_admin_referer('cfp_co_delete_' . $id);
+        $o = self::get($id);
+        if (!$o) {
+            wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=delete_error'));
+            exit;
+        }
+        $dir = self::base_dir() . '/order-' . (int) $o['id'];
+        if (is_dir($dir)) {
+            foreach ((array) glob($dir . '/*') as $f) {
+                if (is_string($f) && is_file($f)) {
+                    @unlink($f);
+                }
+            }
+            @rmdir($dir);
+        }
+        wp_delete_post($o['id'], true);
+        wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=deleted'));
+        exit;
     }
 
     public function handle_status() {
