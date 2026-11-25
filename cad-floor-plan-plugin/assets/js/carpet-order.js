@@ -60,6 +60,23 @@
     el.value = v;
   }
 
+  // 1回のご注文の上限（面積・1辺）。こえたら案内を出し、発注ボタンを押せなくする
+  function tooBig(w, h) {
+    const maxArea = Number(cfg.max_area) || 50, maxSide = Number(cfg.max_side) || 20000;
+    return w > maxSide || h > maxSide || (w / 1000) * (h / 1000) > maxArea;
+  }
+  function sizeCheck() {
+    const w = parseFloat($('co-width').value) || 0, h = parseFloat($('co-height').value) || 0;
+    const big = tooBig(w, h);
+    const warn = $('co-size-warn');
+    if (warn) {
+      warn.hidden = !big;
+      warn.textContent = big ? (Number(cfg.max_area) || 50) + '㎡（1辺 ' + ((Number(cfg.max_side) || 20000) / 1000) + 'm）をこえるご注文は、このフォームではお受けできません。' + (cfg.contact || '') : '';
+    }
+    $('co-submit').disabled = big;
+    return !big;
+  }
+
   let img = null;
   const calm = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
   let revealTimer = 0;
@@ -155,6 +172,7 @@
     countTo($('co-e-total'), p.total);
     $('co-e-ppc').textContent = Number(cfg.price_per_color).toLocaleString();
     drawPreview(reveal === true);
+    sizeCheck();
   }
 
   // 住所の都道府県から送料の地域を選ぶ
@@ -248,6 +266,7 @@
     if (!$('co-copyright').checked) { status(st, 'err', '著作権などの確認にチェックしてください。'); return; }
     if (!$('co-quality').checked) { status(st, 'err', '品質基準を最後まで読んで、同意にチェックしてください。'); return; }
     snap($('co-width')); snap($('co-height'));
+    if (!sizeCheck()) { status(st, 'err', $('co-size-warn').textContent); return; }
     const btn = $('co-submit');
     btn.disabled = true;
     status(st, 'info', '送信しています…');

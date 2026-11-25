@@ -33,7 +33,11 @@ class CFP_Carpet_Order {
         return $o['previews'][$k]['label'] ?? (self::VARIANTS[$k] ?? $k);
     }
 
-    /** 決済後のダウンロードリンク（元データ・変換後データ）の有効日数. */
+    /** 1回のご注文の上限：面積（㎡）と1辺の長さ（mm）。これより大きいものはお問い合わせで受ける（実寸PSDを作れる大きさ）. */
+    const MAX_AREA = 50;
+    const MAX_SIDE = 20000;
+
+    /** 決済後のダウンロードリンク（元データ・変換後データ・PSD）の有効日数. */
     const DL_DAYS = 90;
 
     /** 納期の目安（プレビューを送るときに変えられる）. */
@@ -520,6 +524,9 @@ class CFP_Carpet_Order {
             'price_per_color' => self::PRICE_PER_COLOR,
             'regions'  => self::REGIONS,
             'mode'     => $id ? ($o ? 'select' : 'bad_link') : 'order',
+            'max_area' => self::MAX_AREA,
+            'max_side' => self::MAX_SIDE,
+            'contact'  => self::contact_text(),
         ];
         if ($o) {
             list($pk, , $live) = self::payjp_keys();
@@ -688,8 +695,11 @@ class CFP_Carpet_Order {
         if (!isset(self::MATERIALS[$material]) || !isset(self::REGIONS[$region])) {
             self::fail('仕様またはお届け先地域を選んでください。');
         }
-        if ($w < 500 || $h < 500 || $w > 100000 || $h > 100000 || $w % 500 || $h % 500) {
+        if ($w < 500 || $h < 500 || $w % 500 || $h % 500) {
             self::fail('サイズは500mm単位で入力してください。');
+        }
+        if ($w > self::MAX_SIDE || $h > self::MAX_SIDE || ($w / 1000) * ($h / 1000) > self::MAX_AREA) {
+            self::fail(self::MAX_AREA . '㎡（1辺 ' . (self::MAX_SIDE / 1000) . 'm）をこえるご注文は、このフォームではお受けできません。' . self::contact_text());
         }
         if ($name === '' || $tel === '' || !is_email($email) || $address === '') {
             self::fail('お名前・電話番号・メールアドレス・ご住所を入力してください。');
@@ -1024,6 +1034,19 @@ class CFP_Carpet_Order {
     }
 
     /** 特許ページから：3通りのプレビュー（PNG）と使う色を受け取り、お客様へプレビュー付きのメールを送る。 */
+    /** 大きなご注文のお問い合わせ先（販売者情報のメール・電話）. */
+    private static function contact_text() {
+        $s = self::settings();
+        $parts = [];
+        if (is_email($s['company_email'])) {
+            $parts[] = 'メール（' . $s['company_email'] . '）';
+        }
+        if ($s['company_tel'] !== '') {
+            $parts[] = 'お電話（' . $s['company_tel'] . '）';
+        }
+        return 'お手数ですが、' . ($parts ? implode('または', $parts) : 'お問い合わせ') . 'でご相談ください。';
+    }
+
     private static function has_psd($o, $k) {
         $p = self::path($o, 'psd_' . $k);
         return $p !== '' && is_readable($p);

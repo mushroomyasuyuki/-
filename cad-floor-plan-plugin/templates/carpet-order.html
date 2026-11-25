@@ -270,6 +270,11 @@
 #cfp-co .co-cmp tbody td:nth-of-type(1){width:46%;color:var(--ink);font-weight:500;background:#F3F7FC}
 #cfp-co .co-cmp tbody tr:last-child th,#cfp-co .co-cmp tbody tr:last-child td{border-bottom:0}
 
+/* サイズの上限の案内 */
+#cfp-co .co-size-note{margin:-8px 0 14px}
+#cfp-co .co-size-warn{margin:0 0 18px;padding:12px 14px;border-radius:10px;background:#FBE9EA;border-left:4px solid var(--red);color:#7A0D12;font-size:13.5px;line-height:1.8}
+#cfp-co .co-size-warn[hidden]{display:none}
+
 /* 納期 */
 #cfp-co .co-lead-time{margin:14px 0 0;padding:12px 14px;background:var(--paper);border-radius:12px;border-left:4px solid var(--blue);font-size:13px;line-height:1.8;color:var(--ink-2)}
 #cfp-co .co-lead-time b{display:block;color:var(--ink);font-size:14px}
@@ -536,7 +541,7 @@ html.cfp-co-modal-open{overflow:hidden}
   <section class="co-info co-reveal" id="co-price">
     <p class="co-kicker"><b>05</b>Price</p>
     <h2 class="co-info-h">価格</h2>
-    <p class="co-info-lead">㎡あたりの単価は、ご注文の面積が広いほど下がります。金額は税別、下の小さな数字は税込です。</p>
+    <p class="co-info-lead">㎡あたりの単価は、ご注文の面積が広いほど下がります。1回のご注文は50㎡までです（それより広い場合はお問い合わせください）。金額は税別、下の小さな数字は税込です。</p>
     <div class="co-tiers">
       <div class="co-tier"><p class="co-tier-area">0.25〜0.75㎡</p><dl>
         <div><dt>カットパイル</dt><dd>¥18,400<small>／㎡</small><span>税込 ¥20,240</span></dd></div>
@@ -544,7 +549,7 @@ html.cfp-co-modal-open{overflow:hidden}
       <div class="co-tier"><p class="co-tier-area">1〜9.75㎡</p><dl>
         <div><dt>カットパイル</dt><dd>¥16,300<small>／㎡</small><span>税込 ¥17,930</span></dd></div>
         <div><dt>ループパイル</dt><dd>¥15,500<small>／㎡</small><span>税込 ¥17,050</span></dd></div></dl></div>
-      <div class="co-tier is-best"><span class="co-tier-badge">いちばんお得</span><p class="co-tier-area">10〜49.75㎡</p><dl>
+      <div class="co-tier is-best"><span class="co-tier-badge">いちばんお得</span><p class="co-tier-area">10〜50㎡</p><dl>
         <div><dt>カットパイル</dt><dd>¥14,000<small>／㎡</small><span>税込 ¥15,400</span></dd></div>
         <div><dt>ループパイル</dt><dd>¥13,300<small>／㎡</small><span>税込 ¥14,630</span></dd></div></dl></div>
     </div>
@@ -615,6 +620,8 @@ html.cfp-co-modal-open{overflow:hidden}
             <div class="co-field"><label for="co-width">横幅（mm）</label><input type="number" id="co-width" value="1000" min="500" step="500" inputmode="numeric"></div>
             <div class="co-field"><label for="co-height">縦幅（mm）</label><input type="number" id="co-height" value="1000" min="500" step="500" inputmode="numeric"></div>
           </div>
+          <small class="co-size-note">1回のご注文は50㎡まで（1辺は20mまで）です。それより広い場合は、お問い合わせください。</small>
+          <p class="co-size-warn" id="co-size-warn" role="alert" hidden></p>
           <div class="co-field"><label for="co-region">お届け先の地域</label>
             <select id="co-region"><option value="honshu">本州（送料 ¥2,000／箱）</option><option value="hokkaido_shikoku_kyushu">北海道・四国・九州（送料 ¥2,500／箱）</option><option value="okinawa">沖縄（送料 ¥5,500／箱）</option></select>
             <small>ループパイルは1箱20枚、カットパイルは1箱16枚で数えます。ご住所を入れると自動で選びます。</small></div>
