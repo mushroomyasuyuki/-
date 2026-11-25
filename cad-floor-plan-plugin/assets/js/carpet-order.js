@@ -283,7 +283,7 @@
     box.innerHTML = '';
     if (o.status === 'paid') {
       $('co-sel-actions').hidden = true;
-      $('co-pay').hidden = true;
+      closePay(true);
       status($('co-sel-status'), 'ok', 'お支払いが完了し、正式にご注文を承りました。ありがとうございます。\n製作に入り、発送の準備ができましたらご連絡いたします。');
       return;
     }
@@ -327,8 +327,11 @@
     if (o.status === 'selected' ? o.choice : false) {
       chosen = o.choice;
       const i = o.variants.findIndex((v) => v.key === chosen);
-      if (i >= 0) box.children[i].classList.add('on');
-      showPay();
+      if (i >= 0) {
+        box.children[i].classList.add('on');
+        $('co-choose').disabled = false;
+        $('co-choose').textContent = o.variants[i].label.split('：')[0] + 'で注文する（' + yen(o.variants[i].total) + '）';
+      }
     }
   }
 
@@ -360,20 +363,38 @@
     }
   }
 
+  // お支払いの画面（ページの上に重ねて開く小さなウィンドウ）
+  let paying = false, lastFocus = null;
+  function openPay() {
+    const m = $('co-pay-modal');
+    lastFocus = document.activeElement;
+    m.hidden = false;
+    document.documentElement.classList.add('cfp-co-modal-open');
+    setTimeout(() => { const x = m.querySelector('.co-modal-x'); if (x) x.focus(); }, 30);
+  }
+  function closePay(force) {
+    if (paying && !force) return;
+    const m = $('co-pay-modal');
+    if (!m || m.hidden) return;
+    m.hidden = true;
+    document.documentElement.classList.remove('cfp-co-modal-open');
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
   function showPay() {
     const v = order.variants.find((x) => x.key === order.choice);
     if (!v) return;
-    const pay = $('co-pay');
-    pay.hidden = false;
-    $('co-pay-summary').textContent = '選んだ案：' + v.label + '　お支払い金額：' + yen(order.amount) + '（税込・送料込み）';
+    status($('co-pay-status'), '', '');
+    openPay();
+    $('co-pay-summary').textContent = '選んだ案：' + v.label + '\nお支払い金額：' + yen(order.amount) + '（税込・送料込み）';
     $('co-pay-btn').textContent = yen(order.amount) + ' を支払う（正式に注文する）';
     if (!cfg.payjp_pk) {
-      status($('co-sel-status'), 'info', '現在カード決済を準備中です。お手数ですが、メールにご返信ください。');
+      status($('co-pay-status'), 'info', '現在カード決済を準備中です。お手数ですが、メールにご返信ください。');
       $('co-pay-btn').disabled = true;
       return;
     }
     if (typeof window.Payjp !== 'function') {
-      status($('co-sel-status'), 'err', '決済の画面を読み込めませんでした。ページを再読み込みしてください。');
+      status($('co-pay-status'), 'err', '決済の画面を読み込めませんでした。ページを再読み込みしてください。');
       return;
     }
     if (!payjp) {
@@ -381,13 +402,13 @@
       card = payjp.elements().create('card');
       card.mount('#co-card');
     }
-    pay.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function pay() {
-    const st = $('co-sel-status');
+    const st = $('co-pay-status');
     const btn = $('co-pay-btn');
     btn.disabled = true;
+    paying = true;
     status(st, 'info', 'カードを確認しています…');
     try {
       const name = $('co-card-name').value.trim();
@@ -402,11 +423,13 @@
         res = await post('cfp_co_pay_finish', { id: String(cfg.order_id || ''), t: cfg.token });
       }
       order = res.order;
+      paying = false;
       renderSelect();
       window.scrollTo({ top: $('cfp-co').offsetTop, behavior: 'smooth' });
     } catch (e) {
       status(st, 'err', ''+ (e && e.message ? e.message : 'お支払いできませんでした。'));
       btn.disabled = false;
+      paying = false;
     }
   }
 
@@ -417,6 +440,9 @@
     $('co-choose').onclick = choose;
     $('co-ng').onclick = reject;
     $('co-pay-btn').onclick = pay;
+    // 閉じる：×・背景・Esc（お支払いの処理中は閉じない）
+    $('co-pay-modal').querySelectorAll('[data-close]').forEach((x) => { x.onclick = () => closePay(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePay(); });
     renderSelect();
   }
 
