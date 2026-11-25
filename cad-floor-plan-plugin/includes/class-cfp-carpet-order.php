@@ -33,6 +33,9 @@ class CFP_Carpet_Order {
         return $o['previews'][$k]['label'] ?? (self::VARIANTS[$k] ?? $k);
     }
 
+    /** 決済後のダウンロードリンク（元データ・変換後データ）の有効日数. */
+    const DL_DAYS = 90;
+
     /** 納期の目安（プレビューを送るときに変えられる）. */
     const LEAD_DEFAULT = '約2週間';
 
@@ -459,6 +462,34 @@ class CFP_Carpet_Order {
         return add_query_arg($args, admin_url('admin-ajax.php'));
     }
 
+    /** 決済後のダウンロードリンク（ログインなしで開ける。注文ごとの鍵つき・期限つき）. */
+    private static function download_url($o, $f) {
+        return add_query_arg(['action' => 'cfp_co_file', 'id' => (int) $o['id'], 'f' => $f, 'k' => (string) ($o['dl_key'] ?? ''), 'dl' => 1], admin_url('admin-ajax.php'));
+    }
+
+    /** 決済完了メールに入れる、元データと変換後データのダウンロードリンク. */
+    private static function download_lines($o) {
+        if (empty($o['dl_key']) || empty($o['choice'])) {
+            return '';
+        }
+        $c = $o['previews'][$o['choice']] ?? [];
+        $px = '';
+        $pp = self::path($o, 'preview_' . $o['choice']);
+        if ($pp && is_readable($pp)) {
+            $sz = @getimagesize($pp);
+            $px = $sz ? '・' . $sz[0] . '×' . $sz[1] . 'px' : '';
+        }
+        return "▼ データのダウンロード（" . wp_date('Y年n月j日', (int) $o['dl_expires']) . "まで有効）"
+            . "
+元データ（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）：
+" . self::download_url($o, 'original')
+            . "
+変換後データ（" . self::vlabel($o, $o['choice']) . '・' . count($c['colors'] ?? []) . '色・階調表現 ' . (int) ($c['dither'] ?? 0) . '%' . $px . "）：
+" . self::download_url($o, 'preview_' . $o['choice'])
+            . "
+※リンクを知っている人は誰でもダウンロードできます。転送するときはご注意ください。";
+    }
+
     /* -------------------------------------------------------------- page */
 
     /** The public 新ページ: the order form, or (with ?cfp_co=&t=) the page to choose a conversion and pay. */
@@ -835,6 +866,9 @@ class CFP_Carpet_Order {
     private function mark_paid(&$o, $ch) {
         $o['status'] = 'paid';
         $o['paid_at'] = current_time('mysql');
+        // 元データと選ばれた案の変換後データは、サーバーに残し、決済完了メールにダウンロードリンクを入れる
+        $o['dl_key'] = wp_generate_password(32, false, false);
+        $o['dl_expires'] = time() + self::DL_DAYS * DAY_IN_SECONDS;
         self::log($o, '決済完了（' . number_format((int) $ch['amount']) . '円・' . $ch['id'] . '）');
         self::save($o);
         $p = $o['price'];
@@ -843,7 +877,7 @@ class CFP_Carpet_Order {
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
         self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。", [self::path($o, 'preview_' . $o['choice'])]);
-        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::customer_lines($o));
+        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::download_lines($o) . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
             self::mail_factory($o, 'order');
             self::save($o);
@@ -855,14 +889,24 @@ class CFP_Carpet_Order {
         $id = absint($_GET['id'] ?? 0);
         $f = sanitize_key($_GET['f'] ?? '');
         $admin = current_user_can('manage_options');
-        $o = $admin ? self::get($id) : self::by_token($id, (string) ($_GET['t'] ?? ''));
+        $key = (string) ($_GET['k'] ?? '');
+        if ($admin) {
+            $o = self::get($id);
+            $allowed = ['preview_std', 'preview_op3', 'preview_max', 'original'];
+        } elseif ($key !== '') {
+            // 決済後のダウンロードリンク：支払い済みの注文の、元データと選ばれた案の変換後データだけ（期限つき）
+            $o = self::get($id);
+            if ($o && (($o['status'] ?? '') !== 'paid' || empty($o['dl_key']) || !hash_equals((string) $o['dl_key'], $key) || time() > (int) ($o['dl_expires'] ?? 0))) {
+                $o = null;
+            }
+            $allowed = $o ? ['original', 'preview_' . $o['choice']] : [];
+        } else {
+            $o = self::by_token($id, (string) ($_GET['t'] ?? ''));
+            $allowed = ['preview_std', 'preview_op3', 'preview_max'];
+        }
         if (!$o) {
             status_header(403);
             exit;
-        }
-        $allowed = ['preview_std', 'preview_op3', 'preview_max'];
-        if ($admin) {
-            $allowed[] = 'original';
         }
         if (!in_array($f, $allowed, true)) {
             status_header(404);
@@ -878,6 +922,17 @@ class CFP_Carpet_Order {
         header('Content-Type: ' . $mime);
         header('Content-Length: ' . filesize($path));
         header('X-Content-Type-Options: nosniff');
+        if (!empty($_GET['dl'])) {
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if ($f === 'original') {
+                $name = self::no($o) . '_元データ_' . pathinfo((string) $o['original_name'], PATHINFO_FILENAME) . '.' . $ext;
+            } else {
+                $c = $o['previews'][substr($f, 8)] ?? [];
+                $name = self::no($o) . '_変換後_' . mb_substr(self::vlabel($o, substr($f, 8)), 0, 2) . '_' . count($c['colors'] ?? []) . '色_階調' . (int) ($c['dither'] ?? 0) . '.' . $ext;
+            }
+            $name = str_replace(['"', '\\', '/', "\r", "\n"], '', $name);
+            header('Content-Disposition: attachment; filename="' . self::no($o) . '-' . ($f === 'original' ? 'original' : 'converted') . '.' . $ext . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+        }
         readfile($path);
         exit;
     }
@@ -1080,9 +1135,10 @@ class CFP_Carpet_Order {
             $files = [self::path($o, 'original')];
         } else {
             $subject = '【正式発注】カーペット ' . self::no($o) . '（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm）';
-            $body = $who . "いつもお世話になっております。\n下記のカーペットを正式に発注いたします。製作用データは別途お送りします。\n\n"
+            $body = $who . "いつもお世話になっております。\n下記のカーペットを正式に発注いたします。\n\n"
                 . self::spec_lines($o) . "\n使う色（" . count($o['previews'][$o['choice']]['colors']) . '色）：' . implode('、', $o['previews'][$o['choice']]['colors'])
-                . "\nお届け先：" . self::pref($o['address']) . "\n\n仕上がりの確認用画像を添付します。";
+                . "\n階調表現（誤差拡散）：" . (int) ($o['previews'][$o['choice']]['dither'] ?? 0) . '%'
+                . "\nお届け先：" . self::pref($o['address']) . "\n\n仕上がりの確認用画像を添付します。元データと変換後データは、下のリンクからダウンロードできます。\n\n" . self::download_lines($o);
             $files = [self::path($o, 'preview_' . $o['choice'])];
         }
         $ok = wp_mail($s['factory_email'], $subject, $body . "\n\n" . get_bloginfo('name'), self::headers(self::admin_email()), array_filter($files, 'is_readable'));
@@ -1158,6 +1214,10 @@ class CFP_Carpet_Order {
                         <td>
                             <?php if (!in_array($o['status'], ['paid', 'cancelled'], true)) : ?><a class="button button-primary" href="<?php echo esc_url(self::admin_convert_url($o)); ?>" target="_blank" rel="noopener">特許ページで変換・送信</a><?php endif; ?>
                             <a class="button" href="<?php echo esc_url(self::file_url($o, 'original', false)); ?>" target="_blank" rel="noopener">元画像</a>
+                            <?php if ($o['status'] === 'paid' && !empty($o['choice'])) : ?>
+                            <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'original', false))); ?>">元データを保存</a>
+                            <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'preview_' . $o['choice'], false))); ?>">変換後データを保存</a>
+                            <?php endif; ?>
                             <details><summary>詳細</summary>
                                 <pre style="white-space:pre-wrap;max-width:420px"><?php echo esc_html(self::customer_lines($o)); ?></pre>
                                 <?php foreach ((array) $o['log'] as $l) : ?><div><small><?php echo esc_html($l[0] . ' ' . $l[1]); ?></small></div><?php endforeach; ?>
