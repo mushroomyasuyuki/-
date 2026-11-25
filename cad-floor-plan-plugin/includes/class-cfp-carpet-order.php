@@ -1482,7 +1482,7 @@ class CFP_Carpet_Order {
         $date = wp_date('Y年n月j日', $paid_at - (int) (get_option('gmt_offset') * HOUR_IN_SECONDS));
         $no = 'R-' . self::no($o);
         $yen = function ($v) { return '¥' . number_format((int) $v); };
-        $pdf = new CFP_Receipt_PDF();
+        $pdf = new CFP_Receipt_PDF(CFP_PLUGIN_DIR . 'assets/fonts/receipt-gothic.ttf', CFP_PLUGIN_DIR . 'assets/fonts/receipt-seal.ttf');
         $L = 56; $R = CFP_Receipt_PDF::W - 56;
 
         $pdf->text(CFP_Receipt_PDF::W / 2, 92, 28, '領　収　書', 'center');
@@ -1559,12 +1559,27 @@ class CFP_Carpet_Order {
         foreach ($lines as $i => $l) {
             $pdf->text($x, $y + 18 + $i * 15, 9.5, $l);
         }
+        // 社判（朱色の角印）：会社名の右端に少し重ねて押す
+        $nw = $pdf->width($s['company_name'], 13);
+        $pdf->seal(min($x + $nw - 14, CFP_Receipt_PDF::W - 56 - 66), $y - 50, 66, self::seal_cols($s['company_name']));
 
         $path = self::order_dir($o['id']) . '/receipt.pdf';
         file_put_contents($path, $pdf->output('領収書 ' . $no));
         $o['receipt_file'] = 'receipt.pdf';
         $o['receipt_no'] = $no;
         return $path;
+    }
+
+    /** 社判の文字の並び（右の列から）：「マッシュオフィス之印」を3列に分ける. */
+    private static function seal_cols($name) {
+        $chars = preg_split('//u', preg_replace('/\s+/u', '', (string) $name) . '之印', -1, PREG_SPLIT_NO_EMPTY);
+        $n = count($chars);
+        if ($n <= 4) {
+            return [implode('', $chars)];
+        }
+        $cols = $n <= 8 ? 2 : 3;
+        $per = (int) ceil($n / $cols);
+        return array_map('implode', array_chunk($chars, $per));
     }
 
     /** 管理画面：領収書をお客様へメールで送る／保存する. */
