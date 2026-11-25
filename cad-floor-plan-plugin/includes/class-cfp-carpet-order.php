@@ -489,7 +489,7 @@ class CFP_Carpet_Order {
             $out .= "\nPSD（実寸 1px＝1mm・" . (int) $ps['w'] . '×' . (int) $ps['h'] . 'px＝' . (int) $o['width'] . '×' . (int) $o['height'] . 'mm＋上下左右5mm・変換画像と割付のレイヤー・' . size_format((int) $ps['size']) . '）：' . "\n" . self::download_url($o, 'psd_' . $k);
             $out .= "\n\n▼ PSDの色（PSDを作ったときに実際に使われた色・" . count($ps['colors'] ?? []) . '色）';
             foreach ((array) ($ps['colors'] ?? []) as $pc) {
-                $out .= "\n・" . $pc['name'] . '　' . sprintf('#%02X%02X%02X', $pc['rgb'][0], $pc['rgb'][1], $pc['rgb'][2]) . '（RGB ' . implode(',', $pc['rgb']) . '）' . (self::is_paid_color($pc['name']) ? '・有償' : '・無償');
+                $out .= "\n・" . $pc['name'] . '　' . (self::is_paid_color($pc['name']) ? '有償' : '無償');
             }
             $d = (int) ($ps['dither'] ?? 0);
             $out .= "\n\n▼ PSDの階調表現（誤差拡散）：" . $d . '%'
