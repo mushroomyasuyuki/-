@@ -182,7 +182,7 @@ class CFP_Receipt_PDF {
         }
         $this->images[] = [$hd['w'], $hd['h'], substr($d, 16, $hd['rl']), substr($d, 16 + $hd['rl'], $hd['al'])];
         $name = 'Im' . count($this->images);
-        $h = $size * $hd['h'] / $hd['w'];
+        $h = $size; // 正方形で押す
         $this->ops[] = 'q ' . self::num($size) . ' 0 0 ' . self::num($h) . ' ' . self::num($x) . ' ' . self::num(self::H - $y - $h) . ' cm /' . $name . ' Do Q';
         return true;
     }

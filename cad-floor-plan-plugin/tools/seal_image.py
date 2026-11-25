@@ -11,6 +11,11 @@ if src_im.mode in ('RGBA', 'LA') or 'transparency' in src_im.info:
     im = bg.convert('RGB')
 else:
     im = src_im.convert('RGB')
+# 正方形にする（短い辺に白い余白を足して、印を真ん中に置く）
+side = max(im.size)
+sq = Image.new('RGB', (side, side), (255, 255, 255))
+sq.paste(im, ((side - im.size[0]) // 2, (side - im.size[1]) // 2))
+im = sq
 im.thumbnail((360, 360), Image.LANCZOS)  # 印の大きさ 約23mm で 約390dpi
 w, h = im.size
 px = im.load()
