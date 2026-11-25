@@ -41,7 +41,7 @@
   if (cfg.memo) lines.push('お客様のご要望：' + cfg.memo);
   if (cfg.reject_comment) lines.push('⚠ 前回のプレビューへのお客様のコメント（作り直し）：' + cfg.reject_comment);
   lines.push('3案を確認してから「お客様へプレビューを送る」を押してください。');
-  lines.push('・色を自分で選ぶ：下のパレットで色を選び、案の「いま選んでいる色をこの案に入れる」を押す（「自動に戻す」で元に戻る）。');
+  lines.push('・色を自分で選ぶ：各案の下のカラーパレットで色を押して入れる・外す（その案は手動で選んだ色になる。「自動に戻す」で元に戻る）。');
   lines.push('・階調表現：案ごとのスライダーで決める（動かすまでは画面の階調表現と同じ）。「仕上がりの印象」「守る色」は自動の案に反映されます。');
   info.textContent = lines.join('\n');
 
@@ -106,8 +106,50 @@
       sl.onchange = (ev) => { ev.stopPropagation(); cs.dither = parseInt(sl.value, 10) || 0; cs.touched = true; refreshThumbs(); };
       row.appendChild(sl);
       c.appendChild(row);
-      // 色の入れ替え
-      const take = el('button', { type: 'button', style: btnStyle }, 'いま選んでいる色をこの案に入れる');
+      // この案の色：パレットを押して入れる・外す（押すと、この案は手動で選んだ色になる）
+      const pal = api.palette ? api.palette() : [];
+      if (pal.length) {
+        const sel = new Set(idx);
+        const used = new Set(r.used);
+        const wrap = el('div', { style: 'text-align:left;margin-top:8px' });
+        wrap.appendChild(el('div', { style: 'color:#e4e4e7;margin-bottom:3px' }, 'この案の色（押して入れる・外す：' + sel.size + '／16色）'));
+        [['標準色', pal.filter((c) => !/^OP-/.test(c.name))], ['オプションカラー', pal.filter((c) => /^OP-/.test(c.name))]].forEach(([name, list]) => {
+          wrap.appendChild(el('div', { style: 'color:#a1a1aa;font-size:11px;margin-top:4px' }, name));
+          const grid = el('div', { style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(22px,1fr));gap:3px' });
+          list.forEach((col) => {
+            const on = sel.has(col.i);
+            const chip = el('button', { type: 'button', title: col.name + (col.paid ? '（有償）' : '（無償）') + (on ? (used.has(col.name) ? '：使用中' : '：選択中（画像には出ていない）') : ''), 'aria-pressed': on ? 'true' : 'false',
+              style: 'position:relative;aspect-ratio:1;min-height:22px;padding:0;border-radius:4px;cursor:pointer;background:rgb(' + col.rgb.join(',') + ');'
+                + (on ? 'outline:2px solid #fbbf24;outline-offset:1px;border:2px solid #09090b;' : 'border:1px solid #52525b;opacity:.45;') });
+            if (on) {
+              const mark = el('span', { style: 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;text-shadow:0 0 2px #000,0 0 2px #000' }, used.has(col.name) ? '✓' : '·');
+              chip.appendChild(mark);
+            }
+            if (col.paid) chip.appendChild(el('span', { style: 'position:absolute;right:1px;top:-1px;font-size:9px;color:#fbbf24;text-shadow:0 0 2px #000' }, '¥'));
+            chip.onclick = (ev) => {
+              ev.stopPropagation();
+              const next = new Set(idx);
+              if (next.has(col.i)) {
+                if (next.size <= 1) { st.textContent = '❌ 色は1色以上にしてください。'; return; }
+                next.delete(col.i);
+              } else {
+                if (next.size >= 16) { st.textContent = '❌ 色は16色までです。ほかの色を外してから入れてください。'; return; }
+                next.add(col.i);
+              }
+              st.textContent = '';
+              cs.manual = true;
+              cs.indices = Array.from(next).sort((x, y) => x - y);
+              refreshThumbs();
+            };
+            grid.appendChild(chip);
+          });
+          wrap.appendChild(grid);
+        });
+        wrap.appendChild(el('div', { style: 'color:#a1a1aa;font-size:11px;margin-top:3px' }, '✓＝画像に使われている色　·＝選んだが画像に出ていない色（金額に入らない）　¥＝有償'));
+        c.appendChild(wrap);
+      }
+      // 画面のパレットで選んでいる色を、そのまま入れる
+      const take = el('button', { type: 'button', style: btnStyle }, '画面のパレットの色を入れる');
       take.onclick = (ev) => {
         ev.stopPropagation();
         const cur = api.current().indices;

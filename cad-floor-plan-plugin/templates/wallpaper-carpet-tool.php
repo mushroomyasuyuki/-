@@ -2576,6 +2576,8 @@
     },
     // 3通りの自動変換の色（パレット番号）
     autoSets: () => (state.variantSets ? { std: state.variantSets.std.slice(), op3: state.variantSets.op3.slice(), max: state.variantSets.max.slice() } : null),
+    // パレットの全色（番号・名前・色・有償か）。パレットの版を切り替えると色が変わるので、毎回読む
+    palette: () => ALL_COLORS.map((c, i) => ({ i: i, name: c.name, rgb: c.rgb.slice(), paid: c.isOp ? c.price > 0 : false })),
     // いまパレットで選んでいる色（パレット番号）と階調表現（0〜100）
     current: () => ({
       indices: Array.from(state.activePaletteIndices).sort((a, b) => a - b),
