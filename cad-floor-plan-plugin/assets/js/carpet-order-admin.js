@@ -252,7 +252,7 @@
     for (const k of KEYS) {
       const name = vs[k].label.split('：')[0];
       try {
-        show('⏳ ' + name + 'のPSD（実寸・割付つき）を作っています…ページを閉じないでください。');
+        show('⏳ ' + name + 'のPSD（実寸・割付つき・仮）を作っています…ページを閉じないでください。');
         const p = await api.psd(vs[k].indices, vs[k].dither, (v) => show('⏳ ' + name + 'のPSDを作っています… ' + Math.round(v * 100) + '%（ページを閉じないでください）'));
         // サーバーのアップロードの上限より小さく分けて送る
         const limit = Math.max(256 * 1024, Math.min(8 * 1048576, Math.floor((cfg.max_upload || 2 * 1048576) * 0.8)));
@@ -270,17 +270,23 @@
           fd.append('chunk', String(i));
           fd.append('chunks', String(chunks));
           fd.append('uid', uid);
+          if (i === chunks - 1) {
+            // PSDを作ったときの色（実際に使われた色）と階調表現：決済完了メールに書く
+            fd.append('psd_colors', JSON.stringify(p.used.map((c) => ({ name: c.name, rgb: c.rgb }))));
+            fd.append('psd_dither', String(p.dither));
+          }
           fd.append('psd', p.blob.slice(i * limit, Math.min(p.blob.size, (i + 1) * limit)), 'psd_' + k + '.part');
           const r = await fetch(cfg.ajax_url, { method: 'POST', body: fd, credentials: 'same-origin' });
           let j = null;
           try { j = await r.json(); } catch (e) { j = null; }
           if (!j ? true : !j.success) throw new Error((j ? (j.data ? j.data.message : '') : '') || 'サーバーに保存できませんでした（HTTP ' + r.status + '）。');
         }
-        lines.push('✅ ' + name + 'のPSDを保存しました（' + p.width + '×' + p.height + 'px・' + mb(p.blob.size) + '）。');
+        lines.push('✅ ' + name + 'のPSDを仮に保存しました（' + p.width + '×' + p.height + 'px・' + mb(p.blob.size) + '・' + p.used.length + '色・階調表現 ' + p.dither + '%）。');
       } catch (e) {
         lines.push('❌ ' + name + 'のPSD：' + (e && e.message ? e.message : '作れませんでした。'));
       }
     }
+    lines.push('※PSDは仮の保存です。お客様が案を選んで決済が完了した時点で、選ばれた案のPSDだけが残り、ほかの2つは削除されます。');
     return lines;
   }
 

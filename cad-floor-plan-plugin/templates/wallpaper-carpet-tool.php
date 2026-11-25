@@ -2619,7 +2619,8 @@
       const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: entries.map((e) => e.rgb), dither: factor, lut: carpetLut(entries),
         info: null, bleed: CARPET_BLEED, names: { cad: '①CAD画像（図面）', room: '②部屋', img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm＝' + sizeW + '×' + sizeH + 'mm＋上下左右' + CARPET_BLEED + 'mm・階調表現 ' + Math.round(factor * 100) + '%）', grid: '④割付（50cm角・端で切るタイルは薄い赤・センター印）' } },
         progress || (() => {}));
-      return { blob: new Blob(res.parts, { type: 'image/vnd.adobe.photoshop' }), width: imageW, height: imageH, psb: Math.max(imageW, imageH) > 30000 };
+      const used = (res.used || []).map((i) => entries[i]).filter(Boolean).map((c) => ({ name: c.name, rgb: c.rgb.slice(), paid: c.isOp ? c.price > 0 : false }));
+      return { blob: new Blob(res.parts, { type: 'image/vnd.adobe.photoshop' }), width: imageW, height: imageH, psb: Math.max(imageW, imageH) > 30000, used: used, dither: Math.round(factor * 100) };
     }
   };
 

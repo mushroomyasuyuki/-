@@ -485,7 +485,16 @@ class CFP_Carpet_Order {
         $out .= "\n元データ（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . 'px）：' . "\n" . self::download_url($o, 'original');
         $out .= "\n変換後データ（" . self::vlabel($o, $k) . '・' . count($c['colors'] ?? []) . '色・階調表現 ' . (int) ($c['dither'] ?? 0) . '%' . $px . '）：' . "\n" . self::download_url($o, 'preview_' . $k);
         if (self::has_psd($o, $k)) {
-            $out .= "\nPSD（実寸 1px＝1mm・" . (int) $c['psd']['w'] . '×' . (int) $c['psd']['h'] . 'px＝' . (int) $o['width'] . '×' . (int) $o['height'] . 'mm＋上下左右5mm・変換画像と割付のレイヤー・' . size_format((int) $c['psd']['size']) . '）：' . "\n" . self::download_url($o, 'psd_' . $k);
+            $ps = $c['psd'];
+            $out .= "\nPSD（実寸 1px＝1mm・" . (int) $ps['w'] . '×' . (int) $ps['h'] . 'px＝' . (int) $o['width'] . '×' . (int) $o['height'] . 'mm＋上下左右5mm・変換画像と割付のレイヤー・' . size_format((int) $ps['size']) . '）：' . "\n" . self::download_url($o, 'psd_' . $k);
+            $out .= "\n\n▼ PSDの色（PSDを作ったときに実際に使われた色・" . count($ps['colors'] ?? []) . '色）';
+            foreach ((array) ($ps['colors'] ?? []) as $pc) {
+                $out .= "\n・" . $pc['name'] . '　' . sprintf('#%02X%02X%02X', $pc['rgb'][0], $pc['rgb'][1], $pc['rgb'][2]) . '（RGB ' . implode(',', $pc['rgb']) . '）' . (self::is_paid_color($pc['name']) ? '・有償' : '・無償');
+            }
+            $d = (int) ($ps['dither'] ?? 0);
+            $out .= "\n\n▼ PSDの階調表現（誤差拡散）：" . $d . '%'
+                . "\n　" . ($d === 0 ? 'ドットを使わず、色の境目をくっきり表現（メリハリ表現）' : ($d >= 100 ? 'ドットを最大限使って、中間の色をなめらかに表現（滑らか表現）' : 'ドットを使って中間の色を表現（0%＝メリハリ表現〜100%＝滑らか表現のうち ' . $d . '%）'))
+                . "\n　PSDを作った日時：" . ($ps['made'] ?? '');
         } else {
             $out .= "\nPSD：作成されていません（特許ページの「カーペットのPSDを保存」で作れます）";
         }
@@ -871,6 +880,17 @@ class CFP_Carpet_Order {
         // 元データと選ばれた案の変換後データは、サーバーに残し、決済完了メールにダウンロードリンクを入れる
         $o['dl_key'] = wp_generate_password(32, false, false);
         $o['dl_expires'] = time() + self::DL_DAYS * DAY_IN_SECONDS;
+        // PSD：選ばれた案の1つだけを残し、ほかの案の仮のPSDは削除する
+        foreach (array_keys(self::VARIANTS) as $vk) {
+            if ($vk === $o['choice'] || empty($o['previews'][$vk]['psd'])) {
+                continue;
+            }
+            $p = self::path($o, 'psd_' . $vk);
+            if ($p !== '' && file_exists($p)) {
+                @unlink($p);
+            }
+            unset($o['previews'][$vk]['psd']);
+        }
         self::log($o, '決済完了（' . number_format((int) $ch['amount']) . '円・' . $ch['id'] . '）');
         self::save($o);
         $p = $o['price'];
@@ -1081,13 +1101,26 @@ class CFP_Carpet_Order {
         if (!rename($part, $dir . '/' . $name)) {
             self::fail('PSDを保存できませんでした。');
         }
+        // PSDを作ったときの色（実際に使われた色・名前と RGB）と階調表現
+        $known = array_merge(array_column(self::PALETTE_FREE, 0), array_column(self::PALETTE_OPT, 0));
+        $pc = [];
+        foreach ((array) json_decode((string) wp_unslash($_POST['psd_colors'] ?? '[]'), true) as $c) {
+            $n = sanitize_text_field($c['name'] ?? '');
+            $rgb = array_map('intval', array_slice((array) ($c['rgb'] ?? []), 0, 3));
+            if (in_array($n, $known, true) && count($rgb) === 3 && count($pc) < 16) {
+                $pc[] = ['name' => $n, 'rgb' => array_map(function ($v) { return max(0, min(255, $v)); }, $rgb)];
+            }
+        }
         $o['previews'][$k]['psd'] = [
-            'file' => $name,
-            'size' => (int) filesize($dir . '/' . $name),
-            'w'    => max(0, (int) ($_POST['w'] ?? 0)),
-            'h'    => max(0, (int) ($_POST['h'] ?? 0)),
+            'file'   => $name,
+            'size'   => (int) filesize($dir . '/' . $name),
+            'w'      => max(0, (int) ($_POST['w'] ?? 0)),
+            'h'      => max(0, (int) ($_POST['h'] ?? 0)),
+            'colors' => $pc,
+            'dither' => max(0, min(100, (int) ($_POST['psd_dither'] ?? 0))),
+            'made'   => current_time('mysql'),
         ];
-        self::log($o, 'PSDを保存（' . self::vlabel($o, $k) . '・' . size_format($o['previews'][$k]['psd']['size']) . '）');
+        self::log($o, 'PSDを仮に保存（' . self::vlabel($o, $k) . '・' . size_format($o['previews'][$k]['psd']['size']) . '）');
         self::save($o);
         wp_send_json_success(['size' => $o['previews'][$k]['psd']['size']]);
     }
