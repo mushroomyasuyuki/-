@@ -130,7 +130,7 @@ class CFP_Carpet_Order {
         add_action('init', [$this, 'register_post_type']);
         add_action('template_redirect', [$this, 'no_cache']);
         add_shortcode(self::SHORTCODE, [$this, 'render_page']);
-        foreach (['submit', 'select', 'pay', 'pay_finish', 'file'] as $a) {
+        foreach (['submit', 'select', 'pay', 'pay_finish', 'file', 'factory'] as $a) {
             add_action('wp_ajax_cfp_co_' . $a, [$this, 'ajax_' . $a]);
             add_action('wp_ajax_nopriv_cfp_co_' . $a, [$this, 'ajax_' . $a]);
         }
@@ -1030,6 +1030,7 @@ class CFP_Carpet_Order {
             'list_url' => admin_url('admin.php?page=cfp-carpet-orders'),
             'sent'     => !empty($o['previews']),
             'max_upload' => (int) wp_max_upload_size(),
+            'factory_reply' => !empty($o['factory_reply']) ? $o['factory_reply'] + ['lead' => self::factory_lead($o['factory_reply'])] : null,
         ];
     }
 
@@ -1238,6 +1239,96 @@ class CFP_Carpet_Order {
         wp_send_json_success(['sent' => $ok, 'to' => $o['email'], 'select_url' => self::select_url($o)]);
     }
 
+    /* ---------------------------------------------------- 工場の納期回答 */
+
+    /** 工場が納期を回答するページの URL（注文ごとの鍵つき。ログインなしで開ける）. */
+    private static function factory_url($o) {
+        return add_query_arg(['action' => 'cfp_co_factory', 'id' => (int) $o['id'], 'k' => (string) ($o['factory_key'] ?? '')], admin_url('admin-ajax.php'));
+    }
+
+    /** 工場の回答から、プレビューを送るときの「納期・出荷日」の初期値を作る（例：約10日（12月5日ごろ出荷））. */
+    public static function factory_lead($r) {
+        if (empty($r)) {
+            return '';
+        }
+        $s = !empty($r['days']) ? '約' . (int) $r['days'] . '日' : '';
+        if (!empty($r['date'])) {
+            $t = strtotime($r['date']);
+            if ($t) {
+                $s .= ($s !== '' ? '（' : '') . wp_date('n月j日', $t, new DateTimeZone('UTC')) . 'ごろ出荷' . ($s !== '' ? '）' : '');
+            }
+        }
+        return $s;
+    }
+
+    /** 工場の納期回答ページ（表示と保存）。鍵が合うときだけ開ける. */
+    public function ajax_factory() {
+        nocache_headers();
+        header('Content-Type: text/html; charset=UTF-8');
+        header('X-Robots-Tag: noindex, nofollow');
+        header('Referrer-Policy: no-referrer');
+        $o = self::get(absint($_REQUEST['id'] ?? 0));
+        $k = (string) ($_REQUEST['k'] ?? '');
+        if (!$o || empty($o['factory_key']) || $k === '' || !hash_equals((string) $o['factory_key'], $k)) {
+            status_header(403);
+            echo self::factory_html('このページは開けません', '<p>メールのリンクが途中で切れているか、古いリンクの可能性があります。お手数ですが、メールにご返信ください。</p>');
+            exit;
+        }
+        $msg = '';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!self::rate_ok('factory', 30)) {
+                $msg = '<p class="err">しばらく時間をおいてから、もう一度お送りください。</p>';
+            } else {
+                $days = max(0, min(365, (int) ($_POST['days'] ?? 0)));
+                $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['date'] ?? '')) ? (string) $_POST['date'] : '';
+                $comment = mb_substr(sanitize_textarea_field(wp_unslash($_POST['comment'] ?? '')), 0, 1000);
+                $name = mb_substr(sanitize_text_field(wp_unslash($_POST['name'] ?? '')), 0, 60);
+                if (!$days && $date === '') {
+                    $msg = '<p class="err">製作に必要な日数か、出荷できる日のどちらかを入れてください。</p>';
+                } else {
+                    $o['factory_reply'] = ['days' => $days, 'date' => $date, 'comment' => $comment, 'name' => $name, 'at' => current_time('mysql')];
+                    self::log($o, '工場から納期の回答（' . self::factory_lead($o['factory_reply']) . ($name !== '' ? '・' . $name : '') . '）');
+                    self::save($o);
+                    self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】工場から納期の回答', "工場から納期の回答がありました。\n\n"
+                        . '製作に必要な日数：' . ($days ? $days . '日' : '（未記入）') . "\n"
+                        . '出荷できる日：' . ($date !== '' ? $date : '（未記入）') . "\n"
+                        . 'ご担当：' . ($name !== '' ? $name : '（未記入）') . "\n"
+                        . "コメント：\n" . ($comment !== '' ? $comment : '（なし）') . "\n\n"
+                        . "特許ページでプレビューを送るとき、納期の欄にこの回答が入ります：\n" . self::admin_convert_url($o));
+                    $msg = '<p class="ok">ご回答ありがとうございました。内容を変えるときは、もう一度お送りください。</p>';
+                }
+            }
+        }
+        $r = $o['factory_reply'] ?? [];
+        $p = self::price($o['material'], $o['width'], $o['height'], $o['region'], []);
+        $e = 'esc_html';
+        $body = $msg
+            . '<table><tr><th>ご注文番号</th><td>' . $e(self::no($o)) . '</td></tr>'
+            . '<tr><th>仕様</th><td>' . $e((self::MATERIALS[$o['material']] ?? '') . '（500×500mm タイル）') . '</td></tr>'
+            . '<tr><th>サイズ</th><td>' . $e($o['width'] . '×' . $o['height'] . 'mm（' . $p['area'] . '㎡・' . $p['tiles'] . '枚・' . $p['boxes'] . '箱）') . '</td></tr>'
+            . '<tr><th>お届け先</th><td>' . $e(self::pref($o['address'])) . '</td></tr>'
+            . '<tr><th>受付</th><td>' . $e($o['created']) . '</td></tr></table>'
+            . '<p class="note">デザインの元画像は、メールに添付しています。色数はまだ確定していません。</p>'
+            . '<form method="post">'
+            . '<input type="hidden" name="action" value="cfp_co_factory"><input type="hidden" name="id" value="' . (int) $o['id'] . '"><input type="hidden" name="k" value="' . esc_attr($k) . '">'
+            . '<label>製作に必要な日数（正式発注から出荷まで）<span><input type="number" name="days" min="0" max="365" inputmode="numeric" value="' . esc_attr($r['days'] ?? '') . '"> 日</span></label>'
+            . '<label>出荷できる日（今日 正式発注した場合）<input type="date" name="date" value="' . esc_attr($r['date'] ?? '') . '"></label>'
+            . '<label>ご担当のお名前<input type="text" name="name" maxlength="60" value="' . esc_attr($r['name'] ?? '') . '"></label>'
+            . '<label>コメント（任意）<textarea name="comment" rows="4" maxlength="1000">' . esc_textarea($r['comment'] ?? '') . '</textarea></label>'
+            . '<button type="submit">' . (!empty($r) ? '回答を送り直す' : '回答を送る') . '</button>'
+            . (!empty($r['at']) ? '<p class="note">前回の回答：' . $e($r['at']) . '</p>' : '')
+            . '</form>';
+        echo self::factory_html('納期のご回答', $body);
+        exit;
+    }
+
+    private static function factory_html($title, $body) {
+        $s = self::settings();
+        return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>' . esc_html($title . '｜' . $s['company_name']) . '</title>'
+            . '<style>body{margin:0;background:#EFEFEF;color:#082A49;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;line-height:1.8}main{max-width:560px;margin:24px auto;padding:24px 20px;background:#fff;border-radius:16px}h1{font-size:22px;margin:0 0 4px}.by{color:#4A5F76;font-size:13px;margin:0 0 18px}table{width:100%;border-collapse:collapse;margin:0 0 8px;font-size:14px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #D5DBE2;vertical-align:top}th{width:7em;color:#4A5F76;font-weight:600}label{display:block;margin:16px 0 0;font-weight:700;font-size:14px}input,textarea{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px 12px;font:inherit;font-size:16px;border:1px solid #D5DBE2;border-radius:10px;background:#F6F7F9}label span{display:flex;align-items:center;gap:8px;font-weight:400}label span input{width:8em;margin:6px 0 0}button{display:block;width:100%;margin:22px 0 0;padding:14px;border:0;border-radius:999px;background:#082A49;color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}.note{color:#4A5F76;font-size:12.5px}.ok{background:#E6F3EA;color:#124D28;padding:10px 12px;border-radius:10px}.err{background:#FBE9EA;color:#7A0D12;padding:10px 12px;border-radius:10px}</style></head>'
+            . '<body><main><h1>' . esc_html($title) . '</h1><p class="by">' . esc_html($s['company_name']) . '</p>' . $body . '</main></body></html>';
+    }
+
     /* -------------------------------------------------------------- mail */
 
     private static function spec_lines($o) {
@@ -1295,9 +1386,12 @@ class CFP_Carpet_Order {
         }
         $who = $s['factory_name'] !== '' ? $s['factory_name'] . " 様\n\n" : '';
         if ($kind === 'inquiry') {
+            if (empty($o['factory_key'])) {
+                $o['factory_key'] = wp_generate_password(32, false, false);
+            }
             $subject = '【納期のご確認】カーペット ' . self::no($o) . '（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm）';
             $body = $who . "いつもお世話になっております。\n下記のカーペットの製作について、納期のご確認をお願いいたします（まだ正式な発注ではありません。色数は確定前です）。\n\n"
-                . self::spec_lines($o) . "\nお届け先：" . self::pref($o['address']) . "\n\nデザインの元画像を添付します（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）。\n\nご回答は、このメールへのご返信でお願いいたします。";
+                . self::spec_lines($o) . "\nお届け先：" . self::pref($o['address']) . "\n\nデザインの元画像を添付します（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）。\n\n▼ 納期のご回答は、こちらのページからお願いいたします（製作に必要な日数・出荷できる日）：\n" . self::factory_url($o) . "\n\nこのメールへのご返信でも承ります。";
             $files = [self::path($o, 'original')];
         } else {
             $subject = '【正式発注】カーペット ' . self::no($o) . '（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm）';
@@ -1378,6 +1472,7 @@ class CFP_Carpet_Order {
                         <td><?php echo esc_html($o['name']); ?><br><small><?php echo esc_html($o['email'] . ' / ' . $o['tel']); ?></small></td>
                         <td><?php echo esc_html((self::MATERIALS[$o['material']] ?? '') . ' ' . $o['width'] . '×' . $o['height'] . 'mm・' . (self::REGIONS[$o['region']][0] ?? '')); ?></td>
                         <td><?php echo esc_html(self::STATUSES[$o['status']] ?? $o['status']); ?>
+                            <?php if (!empty($o['factory_reply'])) : ?><br><small style="color:#1d6b3a">工場の回答：<?php echo esc_html(self::factory_lead($o['factory_reply'])); ?></small><?php elseif (!empty($o['factory_key'])) : ?><br><small style="color:#8a5a00">工場の回答待ち</small><?php endif; ?>
                             <?php if (!empty($o['reject_comment']) && $o['status'] === 'rejected') : ?><br><small>コメント：<?php echo esc_html($o['reject_comment']); ?></small><?php endif; ?></td>
                         <td><?php echo !empty($o['choice']) ? esc_html(self::vlabel($o, $o['choice']) . '・' . number_format((int) $o['amount']) . '円') : '—'; ?>
                             <?php if (!empty($o['charge_id'])) : ?><br><small><?php echo esc_html($o['charge_id']); ?></small><?php endif; ?></td>

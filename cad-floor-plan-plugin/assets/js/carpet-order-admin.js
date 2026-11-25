@@ -37,8 +37,16 @@
   links.appendChild(back);
   [title, info, thumbs, msg, leadWrap, send, st, links].forEach((c) => box.appendChild(c));
 
+  // 工場の納期回答：枠に表示し、納期の欄に入れる
+  const fr = cfg.factory_reply;
+  if (fr ? fr.lead : false) lead.value = fr.lead;
   const lines = ['仕様：' + (cfg.spec.material === 'cut' ? 'カットパイル' : 'ループパイル') + '・' + cfg.spec.width + '×' + cfg.spec.height + 'mm', '元画像：' + cfg.original_name];
   if (cfg.memo) lines.push('お客様のご要望：' + cfg.memo);
+  if (fr) {
+    lines.push('🏭 工場の納期回答（' + fr.at + (fr.name ? '・' + fr.name : '') + '）：' + (fr.days ? '製作 ' + fr.days + '日' : '') + (fr.days && fr.date ? '・' : '') + (fr.date ? '出荷できる日 ' + fr.date : '') + (fr.comment ? '\n　コメント：' + fr.comment : '') + '\n　→ 下の「納期・出荷日」に入れました（変えられます）。');
+  } else {
+    lines.push('🏭 工場の納期回答：まだありません（回答があると、ここと「納期・出荷日」に入ります）。');
+  }
   if (cfg.reject_comment) lines.push('⚠ 前回のプレビューへのお客様のコメント（作り直し）：' + cfg.reject_comment);
   lines.push('3案を確認してから「お客様へプレビューを送る」を押してください。');
   lines.push('・色を自分で選ぶ：各案の下のカラーパレットで色を押して入れる・外す（その案は手動で選んだ色になる。「自動に戻す」で元に戻る）。');
