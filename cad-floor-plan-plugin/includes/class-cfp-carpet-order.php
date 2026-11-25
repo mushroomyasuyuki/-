@@ -1055,7 +1055,7 @@ class CFP_Carpet_Order {
         $body = $o['name'] . " 様\n\nカーペットのご注文を受け付けました。ありがとうございます。\n\n担当者が、いただいたデザインをカーペットで使える色に変換したプレビュー（色の使い方の違う案）を作成し、あらためてメールでお送りします。プレビューをご確認のうえ、ご希望の案を選んでお支払いいただくと、正式なご注文になります。\n\n"
             . self::spec_lines($o)
             . "\n\n概算（オプションカラーを使わない場合）：" . number_format($p['total']) . "円（税込・送料込み）\n※有償のオプションカラーを使う案では、1色につき" . number_format(self::PRICE_PER_COLOR) . "円（税別）が加わります。\n\n" . self::customer_lines($o);
-        return self::mail_customer($o, '【ご注文 ' . self::no($o) . '】ご注文を受け付けました', $body);
+        return self::mail_customer($o, '【ご注文（仮） ' . self::no($o) . '】ご注文（仮）を受け付けました', $body);
     }
 
     private static function mail_admin_new($o) {
