@@ -140,6 +140,7 @@ class CFP_Carpet_Order {
         add_action('admin_menu', [$this, 'admin_menu'], 20);
         add_action('admin_post_cfp_co_settings', [$this, 'handle_settings']);
         add_action('admin_post_cfp_co_status', [$this, 'handle_status']);
+        add_action('admin_post_cfp_co_receipt', [$this, 'handle_receipt']);
         add_action('admin_post_cfp_co_create_page', [$this, 'handle_create_page']);
     }
 
@@ -901,14 +902,24 @@ class CFP_Carpet_Order {
             }
             unset($o['previews'][$vk]['psd']);
         }
+        if (!empty($ch['card']['last4'])) {
+            $o['card'] = ['brand' => sanitize_text_field((string) ($ch['card']['brand'] ?? '')), 'last4' => preg_replace('/\D/', '', (string) $ch['card']['last4'])];
+        }
         self::log($o, '決済完了（' . number_format((int) $ch['amount']) . '円・' . $ch['id'] . '）');
+        // 領収書（PDF）を作っておく。「領収書が必要」のお客様には、決済完了のメールに添付する
+        $receipt = '';
+        try {
+            $receipt = self::make_receipt($o);
+        } catch (\Throwable $e) {
+            self::log($o, '領収書を作れませんでした：' . $e->getMessage());
+        }
         self::save($o);
         $p = $o['price'];
         $lines = self::spec_lines($o) . "\n選んだ案：" . self::vlabel($o, $o['choice']) . "\n使う色：" . implode('、', $o['previews'][$o['choice']]['colors'])
             . "\n階調表現（誤差拡散）：" . (int) ($o['previews'][$o['choice']]['dither'] ?? ($o['dither'] ?? 0)) . '%'
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
-        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。", [self::path($o, 'preview_' . $o['choice'])]);
+        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。" . (!empty($o['receipt']) && $receipt !== '' ? "\n\n領収書（PDF）を添付いたします（領収書番号：" . $o['receipt_no'] . "）。" : ''), array_filter([self::path($o, 'preview_' . $o['choice']), !empty($o['receipt']) ? $receipt : '']));
         self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::download_lines($o) . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
             self::mail_factory($o, 'order');
@@ -1329,6 +1340,8 @@ class CFP_Carpet_Order {
             <h1>カーペット注文</h1>
             <?php if ($msg === 'saved') : ?><div class="notice notice-success"><p>保存しました。</p></div><?php endif; ?>
             <?php if ($msg === 'status') : ?><div class="notice notice-success"><p>状態を変えました。</p></div><?php endif; ?>
+            <?php if ($msg === 'receipt_sent') : ?><div class="notice notice-success"><p>領収書（PDF）をお客様へメールで送りました。</p></div><?php endif; ?>
+            <?php if ($msg === 'receipt_failed') : ?><div class="notice notice-error"><p>領収書のメールを送れませんでした（サーバーのメール設定を確認してください）。</p></div><?php endif; ?>
             <?php if ($msg === 'page') : ?><div class="notice notice-success"><p>注文ページ（固定ページ）を用意しました。</p></div><?php endif; ?>
             <?php if ($msg === 'page_error') : ?><div class="notice notice-error"><p>注文ページを作成できませんでした。</p></div><?php endif; ?>
             <h2>ページ</h2>
@@ -1371,6 +1384,8 @@ class CFP_Carpet_Order {
                             <?php if ($o['status'] === 'paid' && !empty($o['choice'])) : ?>
                             <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'original', false))); ?>">元データを保存</a>
                             <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'preview_' . $o['choice'], false))); ?>">変換後データを保存</a>
+                            <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=get&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>">領収書PDF</a>
+                            <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=send&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>" onclick="return confirm('お客様へ領収書（PDF）をメールで送りますか？');">領収書を送る</a>
                             <?php if (self::has_psd($o, $o['choice'])) : ?><a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'psd_' . $o['choice'], false))); ?>">PSDを保存</a><?php endif; ?>
                             <?php endif; ?>
                             <details><summary>詳細</summary>
@@ -1446,6 +1461,142 @@ class CFP_Carpet_Order {
         update_option(self::OPT, $s, false);
         wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=saved'));
         exit;
+    }
+
+    /* ---------------------------------------------------------- 領収書 */
+
+    /** 領収書の宛名（法人名・屋号があればそちら）. */
+    private static function receipt_to($o) {
+        return ($o['company'] ?? '') !== '' ? $o['company'] : $o['name'];
+    }
+
+    /** 領収書（PDF）を作ってサーバーに保存し、ファイルの場所を返す（適格簡易請求書の記載事項を含む）. */
+    private static function make_receipt(&$o) {
+        if (!class_exists('CFP_Receipt_PDF')) {
+            require_once CFP_PLUGIN_DIR . 'includes/class-cfp-receipt-pdf.php';
+        }
+        $s = self::settings();
+        $p = $o['price'];
+        $c = $o['previews'][$o['choice']] ?? [];
+        $paid_at = strtotime((string) ($o['paid_at'] ?? '')) ?: current_time('timestamp');
+        $date = wp_date('Y年n月j日', $paid_at - (int) (get_option('gmt_offset') * HOUR_IN_SECONDS));
+        $no = 'R-' . self::no($o);
+        $yen = function ($v) { return '¥' . number_format((int) $v); };
+        $pdf = new CFP_Receipt_PDF();
+        $L = 56; $R = CFP_Receipt_PDF::W - 56;
+
+        $pdf->text(CFP_Receipt_PDF::W / 2, 92, 28, '領　収　書', 'center');
+        $pdf->line(CFP_Receipt_PDF::W / 2 - 90, 102, CFP_Receipt_PDF::W / 2 + 90, 102, 1.2);
+        $pdf->text($R, 132, 10, 'No. ' . $no, 'right');
+        $pdf->text($R, 148, 10, '発行日　' . $date, 'right');
+
+        $pdf->text($L, 190, 17, self::receipt_to($o) . '　様');
+        $pdf->line($L, 198, $L + 300, 198, 0.8);
+
+        $pdf->rect($L, 222, $R - $L, 62, 0.94, 1.2);
+        $pdf->text($L + 18, 259, 13, '金額');
+        $pdf->text($R - 70, 263, 26, $yen($p['total']) . '-', 'right');
+        $pdf->text($R - 18, 261, 11, '（税込）', 'right');
+
+        $pdf->text($L, 318, 11, '但し　タイルカーペット代として（ご注文番号 ' . self::no($o) . '）');
+        $pdf->text($L, 338, 11, '上記の金額を正に領収いたしました。');
+
+        // 内訳
+        $y = 378;
+        $pdf->rect($L, $y, $R - $L, 22, 0.88, 0);
+        $pdf->text($L + 10, $y + 15, 10, '内容');
+        $pdf->text($R - 10, $y + 15, 10, '金額', 'right');
+        $y += 22;
+        $rows = [
+            ['タイルカーペット（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm・' . $p['tiles'] . '枚）', $p['base']],
+        ];
+        if ((int) $p['op'] > 0) {
+            $rows[] = ['オプションカラー（有償 ' . ((int) $p['paid_count'] - (int) $p['free_applied']) . '色）', $p['op']];
+        }
+        $rows[] = ['送料（' . $p['boxes'] . '箱・' . (self::REGIONS[$o['region']][0] ?? '') . '）', $p['shipping']];
+        foreach ($rows as $r) {
+            $pdf->text($L + 10, $y + 17, 10.5, $r[0]);
+            $pdf->text($R - 10, $y + 17, 10.5, $yen($r[1]), 'right');
+            $y += 26;
+            $pdf->line($L, $y, $R, $y, 0.4, 0.6);
+        }
+        $taxable = (int) $p['subtotal'] + (int) $p['shipping'];
+        foreach ([['10%対象（税抜）', $taxable], ['消費税（10%）', $p['tax']]] as $r) {
+            $pdf->text($R - 150, $y + 17, 10.5, $r[0], 'right');
+            $pdf->text($R - 10, $y + 17, 10.5, $yen($r[1]), 'right');
+            $y += 24;
+        }
+        $pdf->line($R - 260, $y + 2, $R, $y + 2, 1);
+        $pdf->text($R - 150, $y + 22, 12, '合計（税込）', 'right');
+        $pdf->text($R - 10, $y + 22, 12, $yen($p['total']), 'right');
+        $y += 50;
+
+        // お支払い
+        $card = '';
+        if (!empty($o['card']['last4'])) {
+            $card = '（' . $o['card']['brand'] . ' ****' . $o['card']['last4'] . '）';
+        }
+        $pdf->text($L, $y, 10, 'お支払い方法：クレジットカード' . $card);
+        $pdf->text($L, $y + 16, 10, 'お支払い日：' . $date);
+        $pdf->text($L, $y + 32, 9, '※クレジットカードでのお支払いのため、収入印紙は貼付しておりません。', 'left', 0.3);
+
+        // 発行者
+        $x = 330; $y = 690;
+        $pdf->text($x, $y, 13, $s['company_name']);
+        $lines = [];
+        if ($s['company_rep'] !== '') {
+            $lines[] = '代表　' . $s['company_rep'];
+        }
+        if ($s['company_address'] !== '') {
+            $lines[] = $s['company_address'];
+        }
+        if ($s['company_tel'] !== '') {
+            $lines[] = 'TEL ' . $s['company_tel'];
+        }
+        if ($s['company_invoice'] !== '') {
+            $lines[] = '登録番号 ' . $s['company_invoice'];
+        }
+        foreach ($lines as $i => $l) {
+            $pdf->text($x, $y + 18 + $i * 15, 9.5, $l);
+        }
+
+        $path = self::order_dir($o['id']) . '/receipt.pdf';
+        file_put_contents($path, $pdf->output('領収書 ' . $no));
+        $o['receipt_file'] = 'receipt.pdf';
+        $o['receipt_no'] = $no;
+        return $path;
+    }
+
+    /** 管理画面：領収書をお客様へメールで送る／保存する. */
+    public function handle_receipt() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。');
+        }
+        check_admin_referer('cfp_co_receipt');
+        $o = self::get(absint($_REQUEST['id'] ?? 0));
+        if (!$o || $o['status'] !== 'paid') {
+            wp_die('支払い済みの注文が見つかりません。');
+        }
+        $path = self::make_receipt($o);
+        self::save($o);
+        if (($_REQUEST['do'] ?? '') === 'send') {
+            $ok = self::send_receipt($o, $path);
+            wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=' . ($ok ? 'receipt_sent' : 'receipt_failed')));
+            exit;
+        }
+        nocache_headers();
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="receipt-' . self::no($o) . '.pdf"; filename*=UTF-8\'\'' . rawurlencode('領収書_' . self::no($o) . '.pdf'));
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+        exit;
+    }
+
+    private static function send_receipt(&$o, $path) {
+        $ok = self::mail_customer($o, '【ご注文 ' . self::no($o) . '】領収書の送付', $o['name'] . " 様\n\nこのたびはご注文ありがとうございます。\n領収書（PDF）を添付いたします。\n\n領収書番号：" . $o['receipt_no'] . "\n金額：" . number_format((int) $o['price']['total']) . "円（税込）\n\nご不明な点がございましたら、このメールにご返信ください。", [$path]);
+        self::log($o, '領収書をメールで送信' . ($ok ? '' : '（失敗）'));
+        self::save($o);
+        return $ok;
     }
 
     public function handle_status() {
