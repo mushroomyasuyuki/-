@@ -89,7 +89,7 @@
       const r = api.render(idx, cs.dither);
       if (!r) return;
       const label = caseLabel(k, r.used);
-      out[k] = { canvas: r.canvas, colors: r.used, label: label, dither: cs.dither, manual: cs.manual };
+      out[k] = { canvas: r.canvas, colors: r.used, label: label, dither: cs.dither, manual: cs.manual, indices: idx.slice() };
       const c = el('div', { style: 'background:#09090b;border:1px solid ' + (cs.manual ? '#f59e0b' : '#3f3f46') + ';border-radius:6px;padding:8px;text-align:center;font-size:12px' });
       c.appendChild(el('div', { style: 'font-weight:700;color:#fff' }, label));
       c.appendChild(el('div', { style: 'color:' + (cs.manual ? '#fbbf24' : '#a1a1aa') + ';margin-bottom:4px' }, cs.manual ? '手動で選んだ色' : '自動の変換'));
@@ -233,13 +233,58 @@
       const r = await fetch(cfg.ajax_url, { method: 'POST', body: fd, credentials: 'same-origin' });
       const j = await r.json();
       if (!j.success) throw new Error((j.data ? j.data.message : '') || '送れませんでした。');
-      st.textContent = (j.data.sent ? '✅ ' + j.data.to + ' へプレビューを送りました。' : '⚠ メールの送信に失敗した可能性があります（サーバーのメール設定を確認してください）。') + '\nお客様の選択ページ：' + j.data.select_url;
+      const head = (j.data.sent ? '✅ ' + j.data.to + ' へプレビューを送りました。' : '⚠ メールの送信に失敗した可能性があります（サーバーのメール設定を確認してください）。') + '\nお客様の選択ページ：' + j.data.select_url;
+      st.textContent = head;
       send.textContent = '送り直す';
+      // 案ごとの実寸PSD（変換画像＋割付）を作ってサーバーに保存する（決済後のメールのリンクで渡す）
+      const psdLines = await savePsds(vs, (line) => { st.textContent = head + '\n' + line; });
+      st.textContent = head + '\n' + psdLines.join('\n');
     } catch (e) {
       st.textContent = '❌ ' + e.message;
     }
     send.disabled = false;
   };
+
+  async function savePsds(vs, show) {
+    const api = window.cfpCarpetOrder;
+    const lines = [];
+    if (!api || !api.psd) return ['⚠ PSDを作る機能が見つかりませんでした。'];
+    for (const k of KEYS) {
+      const name = vs[k].label.split('：')[0];
+      try {
+        show('⏳ ' + name + 'のPSD（実寸・割付つき）を作っています…ページを閉じないでください。');
+        const p = await api.psd(vs[k].indices, vs[k].dither, (v) => show('⏳ ' + name + 'のPSDを作っています… ' + Math.round(v * 100) + '%（ページを閉じないでください）'));
+        // サーバーのアップロードの上限より小さく分けて送る
+        const limit = Math.max(256 * 1024, Math.min(8 * 1048576, Math.floor((cfg.max_upload || 2 * 1048576) * 0.8)));
+        const chunks = Math.max(1, Math.ceil(p.blob.size / limit));
+        const uid = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+        for (let i = 0; i < chunks; i++) {
+          show('⏳ ' + name + 'のPSD（' + mb(p.blob.size) + '）をサーバーに保存しています… ' + Math.round((i / chunks) * 100) + '%');
+          const fd = new FormData();
+          fd.append('action', 'cfp_co_upload_psd');
+          fd.append('nonce', cfg.nonce);
+          fd.append('id', String(cfg.id));
+          fd.append('case', k);
+          fd.append('w', String(p.width));
+          fd.append('h', String(p.height));
+          fd.append('chunk', String(i));
+          fd.append('chunks', String(chunks));
+          fd.append('uid', uid);
+          fd.append('psd', p.blob.slice(i * limit, Math.min(p.blob.size, (i + 1) * limit)), 'psd_' + k + '.part');
+          const r = await fetch(cfg.ajax_url, { method: 'POST', body: fd, credentials: 'same-origin' });
+          let j = null;
+          try { j = await r.json(); } catch (e) { j = null; }
+          if (!j ? true : !j.success) throw new Error((j ? (j.data ? j.data.message : '') : '') || 'サーバーに保存できませんでした（HTTP ' + r.status + '）。');
+        }
+        lines.push('✅ ' + name + 'のPSDを保存しました（' + p.width + '×' + p.height + 'px・' + mb(p.blob.size) + '）。');
+      } catch (e) {
+        lines.push('❌ ' + name + 'のPSD：' + (e && e.message ? e.message : '作れませんでした。'));
+      }
+    }
+    return lines;
+  }
+
+  function mb(n) { return (n / 1048576).toFixed(1) + 'MB'; }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();

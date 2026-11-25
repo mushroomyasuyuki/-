@@ -132,6 +132,7 @@ class CFP_Carpet_Order {
         }
         add_action('wp_ajax_cfp_co_admin_get', [$this, 'ajax_admin_get']);
         add_action('wp_ajax_cfp_co_send_previews', [$this, 'ajax_send_previews']);
+        add_action('wp_ajax_cfp_co_upload_psd', [$this, 'ajax_upload_psd']);
         add_action('admin_menu', [$this, 'admin_menu'], 20);
         add_action('admin_post_cfp_co_settings', [$this, 'handle_settings']);
         add_action('admin_post_cfp_co_status', [$this, 'handle_status']);
@@ -467,27 +468,28 @@ class CFP_Carpet_Order {
         return add_query_arg(['action' => 'cfp_co_file', 'id' => (int) $o['id'], 'f' => $f, 'k' => (string) ($o['dl_key'] ?? ''), 'dl' => 1], admin_url('admin-ajax.php'));
     }
 
-    /** 決済完了メールに入れる、元データと変換後データのダウンロードリンク. */
+    /** 決済完了メールに入れる、元データ・変換後データ・PSD のダウンロードリンク. */
     private static function download_lines($o) {
         if (empty($o['dl_key']) || empty($o['choice'])) {
             return '';
         }
-        $c = $o['previews'][$o['choice']] ?? [];
+        $k = $o['choice'];
+        $c = $o['previews'][$k] ?? [];
         $px = '';
-        $pp = self::path($o, 'preview_' . $o['choice']);
+        $pp = self::path($o, 'preview_' . $k);
         if ($pp && is_readable($pp)) {
             $sz = @getimagesize($pp);
             $px = $sz ? '・' . $sz[0] . '×' . $sz[1] . 'px' : '';
         }
-        return "▼ データのダウンロード（" . wp_date('Y年n月j日', (int) $o['dl_expires']) . "まで有効）"
-            . "
-元データ（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）：
-" . self::download_url($o, 'original')
-            . "
-変換後データ（" . self::vlabel($o, $o['choice']) . '・' . count($c['colors'] ?? []) . '色・階調表現 ' . (int) ($c['dither'] ?? 0) . '%' . $px . "）：
-" . self::download_url($o, 'preview_' . $o['choice'])
-            . "
-※リンクを知っている人は誰でもダウンロードできます。転送するときはご注意ください。";
+        $out = '▼ データのダウンロード（' . wp_date('Y年n月j日', (int) $o['dl_expires']) . 'まで有効）';
+        $out .= "\n元データ（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . 'px）：' . "\n" . self::download_url($o, 'original');
+        $out .= "\n変換後データ（" . self::vlabel($o, $k) . '・' . count($c['colors'] ?? []) . '色・階調表現 ' . (int) ($c['dither'] ?? 0) . '%' . $px . '）：' . "\n" . self::download_url($o, 'preview_' . $k);
+        if (self::has_psd($o, $k)) {
+            $out .= "\nPSD（実寸 1px＝1mm・" . (int) $c['psd']['w'] . '×' . (int) $c['psd']['h'] . 'px＝' . (int) $o['width'] . '×' . (int) $o['height'] . 'mm＋上下左右5mm・変換画像と割付のレイヤー・' . size_format((int) $c['psd']['size']) . '）：' . "\n" . self::download_url($o, 'psd_' . $k);
+        } else {
+            $out .= "\nPSD：作成されていません（特許ページの「カーペットのPSDを保存」で作れます）";
+        }
+        return $out . "\n※リンクを知っている人は誰でもダウンロードできます。転送するときはご注意ください。";
     }
 
     /* -------------------------------------------------------------- page */
@@ -892,14 +894,14 @@ class CFP_Carpet_Order {
         $key = (string) ($_GET['k'] ?? '');
         if ($admin) {
             $o = self::get($id);
-            $allowed = ['preview_std', 'preview_op3', 'preview_max', 'original'];
+            $allowed = ['preview_std', 'preview_op3', 'preview_max', 'original', 'psd_std', 'psd_op3', 'psd_max'];
         } elseif ($key !== '') {
             // 決済後のダウンロードリンク：支払い済みの注文の、元データと選ばれた案の変換後データだけ（期限つき）
             $o = self::get($id);
             if ($o && (($o['status'] ?? '') !== 'paid' || empty($o['dl_key']) || !hash_equals((string) $o['dl_key'], $key) || time() > (int) ($o['dl_expires'] ?? 0))) {
                 $o = null;
             }
-            $allowed = $o ? ['original', 'preview_' . $o['choice']] : [];
+            $allowed = $o ? ['original', 'preview_' . $o['choice'], 'psd_' . $o['choice']] : [];
         } else {
             $o = self::by_token($id, (string) ($_GET['t'] ?? ''));
             $allowed = ['preview_std', 'preview_op3', 'preview_max'];
@@ -917,7 +919,7 @@ class CFP_Carpet_Order {
             status_header(404);
             exit;
         }
-        $mime = wp_check_filetype($path)['type'] ?: 'application/octet-stream';
+        $mime = preg_match('/\.ps[db]$/i', $path) ? 'image/vnd.adobe.photoshop' : (wp_check_filetype($path)['type'] ?: 'application/octet-stream');
         nocache_headers();
         header('Content-Type: ' . $mime);
         header('Content-Length: ' . filesize($path));
@@ -926,12 +928,15 @@ class CFP_Carpet_Order {
             $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
             if ($f === 'original') {
                 $name = self::no($o) . '_元データ_' . pathinfo((string) $o['original_name'], PATHINFO_FILENAME) . '.' . $ext;
+            } elseif (strpos($f, 'psd_') === 0) {
+                $c = $o['previews'][substr($f, 4)] ?? [];
+                $name = self::no($o) . '_PSD_' . mb_substr(self::vlabel($o, substr($f, 4)), 0, 2) . '_' . (int) $o['width'] . 'x' . (int) $o['height'] . 'mm_' . count($c['colors'] ?? []) . '色_階調' . (int) ($c['dither'] ?? 0) . '.' . $ext;
             } else {
                 $c = $o['previews'][substr($f, 8)] ?? [];
                 $name = self::no($o) . '_変換後_' . mb_substr(self::vlabel($o, substr($f, 8)), 0, 2) . '_' . count($c['colors'] ?? []) . '色_階調' . (int) ($c['dither'] ?? 0) . '.' . $ext;
             }
             $name = str_replace(['"', '\\', '/', "\r", "\n"], '', $name);
-            header('Content-Disposition: attachment; filename="' . self::no($o) . '-' . ($f === 'original' ? 'original' : 'converted') . '.' . $ext . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+            header('Content-Disposition: attachment; filename="' . self::no($o) . '-' . ($f === 'original' ? 'original' : (strpos($f, 'psd_') === 0 ? 'layout' : 'converted')) . '.' . $ext . '"; filename*=UTF-8\'\'' . rawurlencode($name));
         }
         readfile($path);
         exit;
@@ -944,6 +949,10 @@ class CFP_Carpet_Order {
         }
         if (strpos($f, 'preview_') === 0) {
             return $dir . '/' . $f . '.png';
+        }
+        if (strpos($f, 'psd_') === 0) {
+            $name = $o['previews'][substr($f, 4)]['psd']['file'] ?? '';
+            return $name !== '' ? $dir . '/' . basename($name) : '';
         }
         return '';
     }
@@ -978,6 +987,7 @@ class CFP_Carpet_Order {
             'memo'     => $o['memo'],
             'list_url' => admin_url('admin.php?page=cfp-carpet-orders'),
             'sent'     => !empty($o['previews']),
+            'max_upload' => (int) wp_max_upload_size(),
         ];
     }
 
@@ -994,6 +1004,94 @@ class CFP_Carpet_Order {
     }
 
     /** 特許ページから：3通りのプレビュー（PNG）と使う色を受け取り、お客様へプレビュー付きのメールを送る。 */
+    private static function has_psd($o, $k) {
+        $p = self::path($o, 'psd_' . $k);
+        return $p !== '' && is_readable($p);
+    }
+
+    /** 特許ページから、案ごとの実寸PSD（変換画像＋割付）を受け取って保存する（決済後のメールのリンクで渡す）. */
+    public function ajax_upload_psd() {
+        check_ajax_referer('cfp_co_admin', 'nonce');
+        if (!current_user_can('manage_options')) {
+            self::fail('権限がありません。', 403);
+        }
+        $o = self::get(absint($_POST['id'] ?? 0));
+        if (!$o) {
+            self::fail('注文が見つかりません。', 404);
+        }
+        if (in_array($o['status'], ['paid', 'cancelled'], true)) {
+            self::fail('この注文は ' . self::STATUSES[$o['status']] . ' のため、保存できません。');
+        }
+        $k = sanitize_key($_POST['case'] ?? '');
+        if (!isset(self::VARIANTS[$k]) || empty($o['previews'][$k])) {
+            self::fail('案が見つかりません（先にプレビューを送ってください）。');
+        }
+        // 大きなPSDは、サーバーのアップロードの上限より小さく分けて送られてくる（chunk 番目／chunks 個）
+        $chunk = max(0, (int) ($_POST['chunk'] ?? 0));
+        $chunks = max(1, min(2000, (int) ($_POST['chunks'] ?? 1)));
+        $uid = preg_replace('/[^A-Za-z0-9]/', '', (string) ($_POST['uid'] ?? ''));
+        if (strlen($uid) < 8 || strlen($uid) > 32 || $chunk >= $chunks) {
+            self::fail('PSDの送り方が正しくありません。');
+        }
+        $f = $_FILES['psd'] ?? null;
+        if (!$f || !empty($f['error']) || !is_uploaded_file($f['tmp_name'])) {
+            self::fail('PSDを受け取れませんでした（サーバーのアップロードの上限：' . size_format(wp_max_upload_size()) . '）。');
+        }
+        $dir = self::order_dir($o['id']);
+        $part = $dir . '/psd_' . $k . '_' . $uid . '.part';
+        if ($chunk === 0) {
+            foreach ((array) glob($dir . '/psd_' . $k . '_*.part') as $p) {
+                @unlink($p);
+            }
+        } elseif (!file_exists($part)) {
+            self::fail('PSDの途中のデータが見つかりません。もう一度送ってください。');
+        }
+        $in = fopen($f['tmp_name'], 'rb');
+        $out = fopen($part, $chunk === 0 ? 'wb' : 'ab');
+        if (!$in || !$out) {
+            self::fail('PSDを保存できませんでした。');
+        }
+        stream_copy_to_stream($in, $out);
+        fclose($in);
+        fclose($out);
+        clearstatcache(true, $part);
+        if (filesize($part) > 1024 * 1024 * 1024) {
+            @unlink($part);
+            self::fail('PSDが大きすぎます（1GBまで）。');
+        }
+        if ($chunk < $chunks - 1) {
+            wp_send_json_success(['partial' => true]);
+        }
+        $fh = fopen($part, 'rb');
+        $sig = $fh ? (string) fread($fh, 6) : '';
+        if ($fh) {
+            fclose($fh);
+        }
+        // PSD（版1）か PSB（版2）だけ受け付ける
+        if (strlen($sig) < 6 || substr($sig, 0, 4) !== '8BPS' || !in_array(ord($sig[5]), [1, 2], true)) {
+            @unlink($part);
+            self::fail('PSDのファイルではありません。');
+        }
+        $ext = ord($sig[5]) === 2 ? 'psb' : 'psd';
+        $old = $o['previews'][$k]['psd']['file'] ?? '';
+        if ($old !== '' && file_exists($dir . '/' . basename($old))) {
+            @unlink($dir . '/' . basename($old));
+        }
+        $name = 'psd_' . $k . '.' . $ext;
+        if (!rename($part, $dir . '/' . $name)) {
+            self::fail('PSDを保存できませんでした。');
+        }
+        $o['previews'][$k]['psd'] = [
+            'file' => $name,
+            'size' => (int) filesize($dir . '/' . $name),
+            'w'    => max(0, (int) ($_POST['w'] ?? 0)),
+            'h'    => max(0, (int) ($_POST['h'] ?? 0)),
+        ];
+        self::log($o, 'PSDを保存（' . self::vlabel($o, $k) . '・' . size_format($o['previews'][$k]['psd']['size']) . '）');
+        self::save($o);
+        wp_send_json_success(['size' => $o['previews'][$k]['psd']['size']]);
+    }
+
     public function ajax_send_previews() {
         check_ajax_referer('cfp_co_admin', 'nonce');
         if (!current_user_can('manage_options')) {
@@ -1217,6 +1315,7 @@ class CFP_Carpet_Order {
                             <?php if ($o['status'] === 'paid' && !empty($o['choice'])) : ?>
                             <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'original', false))); ?>">元データを保存</a>
                             <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'preview_' . $o['choice'], false))); ?>">変換後データを保存</a>
+                            <?php if (self::has_psd($o, $o['choice'])) : ?><a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'psd_' . $o['choice'], false))); ?>">PSDを保存</a><?php endif; ?>
                             <?php endif; ?>
                             <details><summary>詳細</summary>
                                 <pre style="white-space:pre-wrap;max-width:420px"><?php echo esc_html(self::customer_lines($o)); ?></pre>

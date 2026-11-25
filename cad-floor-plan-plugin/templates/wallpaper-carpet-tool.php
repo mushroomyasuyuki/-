@@ -2596,6 +2596,30 @@
       cv.height = original.height;
       cv.getContext('2d').putImageData(imageData, 0, 0);
       return { canvas: cv, used: usedEntries.map((c) => c.name), names: entries.map((c) => c.name) };
+    },
+    // 実寸（1px = 1mm・上下左右5mm）のPSD（変換画像と割付のレイヤー）を、指定した色・階調表現で作る
+    psd: async (indices, ditherPct, progress) => {
+      if (!state.loadedImg) throw new Error('画像がありません。');
+      const entries = indices.map((i) => ALL_COLORS[i]).filter(Boolean);
+      if (!entries.length) throw new Error('色がありません。');
+      const sizeW = Math.max(1, Math.round(parseFloat($('cc-width').value) || 1000));
+      const sizeH = Math.max(1, Math.round(parseFloat($('cc-height').value) || 1000));
+      const imageW = sizeW + CARPET_BLEED * 2, imageH = sizeH + CARPET_BLEED * 2;
+      const factor = Math.min(1, Math.max(0, (Number(ditherPct) || 0) / 100));
+      const off = document.createElement('canvas');
+      off.width = imageW;
+      off.height = imageH;
+      const octx = off.getContext('2d', { willReadFrequently: true });
+      if (!octx) throw new Error('画像を用意できませんでした（大きすぎる可能性があります）。');
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      drawImageCover(octx, state.loadedImg, imageW, imageH);
+      const data = octx.getImageData(0, 0, imageW, imageH).data;
+      off.width = 1; off.height = 1;
+      const res = await makeCarpetPsd({ rgba: data.buffer, width: imageW, height: imageH, palette: entries.map((e) => e.rgb), dither: factor, lut: carpetLut(entries),
+        info: null, bleed: CARPET_BLEED, names: { cad: '①CAD画像（図面）', room: '②部屋', img: '③変換画像（減色・実寸 ' + imageW + '×' + imageH + 'mm＝' + sizeW + '×' + sizeH + 'mm＋上下左右' + CARPET_BLEED + 'mm・階調表現 ' + Math.round(factor * 100) + '%）', grid: '④割付（50cm角・端で切るタイルは薄い赤・センター印）' } },
+        progress || (() => {}));
+      return { blob: new Blob(res.parts, { type: 'image/vnd.adobe.photoshop' }), width: imageW, height: imageH, psb: Math.max(imageW, imageH) > 30000 };
     }
   };
 
