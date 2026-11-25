@@ -648,6 +648,7 @@ class CFP_Carpet_Order {
             'width' => $o['width'], 'height' => $o['height'], 'region' => self::REGIONS[$o['region']][0] ?? '',
             'variants' => $vars, 'message' => $o['preview_message'] ?? '', 'choice' => $o['choice'] ?? '',
             'amount' => $o['amount'] ?? 0, 'lead_time' => $o['lead_time'] ?? '',
+            'shipped' => !empty($o['shipped']) ? ['date' => $o['shipped']['date'], 'tracking' => $o['shipped']['tracking'], 'url' => self::tracking_url($o['shipped']['tracking'])] : null,
         ];
     }
 
@@ -922,7 +923,11 @@ class CFP_Carpet_Order {
             . "\n階調表現（誤差拡散）：" . (int) ($o['previews'][$o['choice']]['dither'] ?? ($o['dither'] ?? 0)) . '%'
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
-        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。" . (!empty($o['receipt']) && $receipt !== '' ? "\n\n領収書（PDF）を添付いたします（領収書番号：" . $o['receipt_no'] . "）。" : ''), array_filter([self::path($o, 'preview_' . $o['choice']), !empty($o['receipt']) ? $receipt : '']));
+        // お客様へは、製作用の情報（使う色・階調表現）は書かない
+        $cust_lines = self::spec_lines($o) . "\n選んだ案：" . self::vlabel($o, $o['choice'])
+            . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
+            . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
+        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $cust_lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。" . (!empty($o['receipt']) && $receipt !== '' ? "\n\n領収書（PDF）を添付いたします（領収書番号：" . $o['receipt_no'] . "）。" : ''), array_filter([self::path($o, 'preview_' . $o['choice']), !empty($o['receipt']) ? $receipt : '']));
         self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::download_lines($o) . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
             self::mail_factory($o, 'order');
@@ -1263,6 +1268,71 @@ class CFP_Carpet_Order {
         return $s;
     }
 
+    /** ヤマト運輸の荷物の問い合わせページ（送り状番号つき）. */
+    private static function tracking_url($no) {
+        return 'https://jizen.kuronekoyamato.co.jp/jizen/servlet/crjz.b.NQ0010?id=' . rawurlencode(preg_replace('/\D/', '', (string) $no));
+    }
+
+    /** 工場の入力ページ：決済済みの注文の「発送のご連絡」（送り状番号・発送日）. */
+    private function factory_ship(&$o, $k) {
+        $msg = '';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!self::rate_ok('factory', 30)) {
+                $msg = '<p class="err">しばらく時間をおいてから、もう一度お送りください。</p>';
+            } else {
+                $no = preg_replace('/[^0-9\-]/', '', (string) wp_unslash($_POST['tracking'] ?? ''));
+                $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['ship_date'] ?? '')) ? (string) $_POST['ship_date'] : '';
+                $done = !empty($_POST['shipped']);
+                if (!$done) {
+                    $msg = '<p class="err">「発送しました」にチェックを入れてください。</p>';
+                } elseif (strlen(preg_replace('/\D/', '', $no)) < 8) {
+                    $msg = '<p class="err">送り状番号（出荷番号）を入れてください。</p>';
+                } elseif ($date === '') {
+                    $msg = '<p class="err">発送日を入れてください。</p>';
+                } else {
+                    $prev = $o['shipped'] ?? [];
+                    $changed = empty($prev) || ($prev['tracking'] ?? '') !== $no || ($prev['date'] ?? '') !== $date;
+                    $o['shipped'] = ['tracking' => $no, 'date' => $date, 'at' => current_time('mysql')];
+                    self::log($o, '工場が発送済みを入力（送り状番号 ' . $no . '・発送日 ' . $date . '）');
+                    self::save($o);
+                    if ($changed) {
+                        $fix = !empty($prev);
+                        $d = wp_date('Y年n月j日', strtotime($date), new DateTimeZone('UTC'));
+                        self::mail_customer($o, '【ご注文 ' . self::no($o) . '】' . ($fix ? '発送のご連絡（送り状番号の訂正）' : '商品を発送しました'), $o['name'] . " 様\n\n"
+                            . ($fix ? "先ほどお送りした発送のご連絡の内容に訂正があります。正しくは下記のとおりです。\n\n" : "ご注文のタイルカーペットを発送いたしました。\n\n")
+                            . '発送日：' . $d . "\n配送会社：ヤマト運輸\n送り状番号：" . $no . "\n\n▼ お荷物の状況は、こちらで確認できます：\n" . self::tracking_url($no)
+                            . "\n※状況が表示されるまで、発送から半日ほどかかることがあります。\n\n" . self::spec_lines($o) . "\nお届け先：" . $o['address']
+                            . "\n\n届きましたら、念のため枚数と仕上がりをご確認ください。気になる点がございましたら、このメールにご返信ください。");
+                        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】工場から発送済みの連絡', "工場が発送済みを入力しました（お客様へ発送のご連絡を送りました）。\n\n発送日：" . $date . "\n送り状番号：" . $no . "\n" . self::tracking_url($no), is_email(self::settings()['factory_email']) ? self::settings()['factory_email'] : '');
+                    }
+                    $msg = '<p class="ok">発送のご連絡を受け付けました。お客様へお知らせしました。ありがとうございました。</p>';
+                }
+            }
+        }
+        $s = $o['shipped'] ?? [];
+        $c = $o['previews'][$o['choice']] ?? [];
+        $p = self::price($o['material'], $o['width'], $o['height'], $o['region'], []);
+        $e = 'esc_html';
+        $body = $msg
+            . '<table><tr><th>ご注文番号</th><td>' . $e(self::no($o)) . '</td></tr>'
+            . '<tr><th>状態</th><td>' . (!empty($s) ? '<b style="color:#1d6b3a">発送済み</b>' : '正式発注（決済完了）') . '</td></tr>'
+            . '<tr><th>仕様</th><td>' . $e((self::MATERIALS[$o['material']] ?? '') . '（500×500mm タイル）') . '</td></tr>'
+            . '<tr><th>サイズ</th><td>' . $e($o['width'] . '×' . $o['height'] . 'mm（' . $p['area'] . '㎡・' . $p['tiles'] . '枚・' . $p['boxes'] . '箱）') . '</td></tr>'
+            . '<tr><th>使う色</th><td>' . $e(implode('、', $c['colors'] ?? [])) . '</td></tr>'
+            . '<tr><th>お届け先</th><td>' . $e(self::pref($o['address'])) . '</td></tr></table>'
+            . '<h2>発送のご連絡</h2><p class="note">発送したら、送り状番号（出荷番号）を入れて送ってください。お客様へ発送のお知らせが届きます。</p>'
+            . '<form method="post">'
+            . '<input type="hidden" name="action" value="cfp_co_factory"><input type="hidden" name="id" value="' . (int) $o['id'] . '"><input type="hidden" name="k" value="' . esc_attr($k) . '">'
+            . '<label>送り状番号（出荷番号・ヤマト運輸）<input type="text" name="tracking" inputmode="numeric" maxlength="20" required value="' . esc_attr($s['tracking'] ?? '') . '" placeholder="例：1234-5678-9012"></label>'
+            . '<label>発送日<input type="date" name="ship_date" required value="' . esc_attr($s['date'] ?? wp_date('Y-m-d')) . '"></label>'
+            . '<label class="chk"><input type="checkbox" name="shipped" value="1"' . (!empty($s) ? ' checked' : '') . '> 発送しました</label>'
+            . '<button type="submit">' . (!empty($s) ? '内容を訂正して送る' : '発送済みにする') . '</button>'
+            . (!empty($s['at']) ? '<p class="note">前回の入力：' . $e($s['at']) . '</p>' : '')
+            . '</form>';
+        echo self::factory_html('発送のご連絡', $body);
+        exit;
+    }
+
     /** 工場の納期回答ページ（表示と保存）。鍵が合うときだけ開ける. */
     public function ajax_factory() {
         nocache_headers();
@@ -1274,6 +1344,13 @@ class CFP_Carpet_Order {
         if (!$o || empty($o['factory_key']) || $k === '' || !hash_equals((string) $o['factory_key'], $k)) {
             status_header(403);
             echo self::factory_html('このページは開けません', '<p>メールのリンクが途中で切れているか、古いリンクの可能性があります。お手数ですが、メールにご返信ください。</p>');
+            exit;
+        }
+        if ($o['status'] === 'paid') {
+            $this->factory_ship($o, $k); // 決済後は「発送のご連絡」
+        }
+        if ($o['status'] === 'cancelled') {
+            echo self::factory_html('このご注文はキャンセルされました', '<p>ご注文番号 ' . esc_html(self::no($o)) . ' はキャンセルされました。製作の必要はありません。</p>');
             exit;
         }
         $msg = '';
@@ -1322,7 +1399,7 @@ class CFP_Carpet_Order {
     private static function factory_html($title, $body) {
         $s = self::settings();
         return '<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>' . esc_html($title . '｜' . $s['company_name']) . '</title>'
-            . '<style>body{margin:0;background:#EFEFEF;color:#082A49;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;line-height:1.8}main{max-width:560px;margin:24px auto;padding:24px 20px;background:#fff;border-radius:16px}h1{font-size:22px;margin:0 0 4px}.by{color:#4A5F76;font-size:13px;margin:0 0 18px}table{width:100%;border-collapse:collapse;margin:0 0 8px;font-size:14px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #D5DBE2;vertical-align:top}th{width:7em;color:#4A5F76;font-weight:600}label{display:block;margin:16px 0 0;font-weight:700;font-size:14px}input,textarea{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px 12px;font:inherit;font-size:16px;border:1px solid #D5DBE2;border-radius:10px;background:#F6F7F9}label span{display:flex;align-items:center;gap:8px;font-weight:400}label span input{width:8em;margin:6px 0 0}button{display:block;width:100%;margin:22px 0 0;padding:14px;border:0;border-radius:999px;background:#082A49;color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}.note{color:#4A5F76;font-size:12.5px}.ok{background:#E6F3EA;color:#124D28;padding:10px 12px;border-radius:10px}.err{background:#FBE9EA;color:#7A0D12;padding:10px 12px;border-radius:10px}</style></head>'
+            . '<style>body{margin:0;background:#EFEFEF;color:#082A49;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;line-height:1.8}main{max-width:560px;margin:24px auto;padding:24px 20px;background:#fff;border-radius:16px}h1{font-size:22px;margin:0 0 4px}.by{color:#4A5F76;font-size:13px;margin:0 0 18px}table{width:100%;border-collapse:collapse;margin:0 0 8px;font-size:14px}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #D5DBE2;vertical-align:top}th{width:7em;color:#4A5F76;font-weight:600}label{display:block;margin:16px 0 0;font-weight:700;font-size:14px}input,textarea{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:10px 12px;font:inherit;font-size:16px;border:1px solid #D5DBE2;border-radius:10px;background:#F6F7F9}label span{display:flex;align-items:center;gap:8px;font-weight:400}label span input{width:8em;margin:6px 0 0}button{display:block;width:100%;margin:22px 0 0;padding:14px;border:0;border-radius:999px;background:#082A49;color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}.note{color:#4A5F76;font-size:12.5px}h2{font-size:18px;margin:26px 0 4px}label.chk{display:flex;align-items:center;gap:10px;font-size:16px}label.chk input{width:22px;height:22px;margin:0}.ok{background:#E6F3EA;color:#124D28;padding:10px 12px;border-radius:10px}.err{background:#FBE9EA;color:#7A0D12;padding:10px 12px;border-radius:10px}</style></head>'
             . '<body><main><h1>' . esc_html($title) . '</h1><p class="by">' . esc_html($s['company_name']) . '</p>' . $body . '</main></body></html>';
     }
 
@@ -1399,11 +1476,15 @@ class CFP_Carpet_Order {
                 . self::spec_lines($o) . "\nお届け先：" . self::pref($o['address']) . "\n\nデザインの元画像を添付します（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）。\n\n▼ 納期のご回答は、こちらのページからお願いいたします（製作に必要な日数）：\n" . self::factory_url($o) . "\n\nこのメールへのご返信でも承ります。";
             $files = [self::path($o, 'original')];
         } else {
+            if (empty($o['factory_key'])) {
+                $o['factory_key'] = wp_generate_password(32, false, false);
+            }
             $subject = '【正式発注】カーペット ' . self::no($o) . '（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm）';
             $body = $who . "いつもお世話になっております。\n下記のカーペットを正式に発注いたします。\n\n"
                 . self::spec_lines($o) . "\n使う色（" . count($o['previews'][$o['choice']]['colors']) . '色）：' . implode('、', $o['previews'][$o['choice']]['colors'])
                 . "\n階調表現（誤差拡散）：" . (int) ($o['previews'][$o['choice']]['dither'] ?? 0) . '%'
-                . "\nお届け先：" . self::pref($o['address']) . "\n\n仕上がりの確認用画像を添付します。元データと変換後データは、下のリンクからダウンロードできます。\n\n" . self::download_lines($o);
+                . "\nお届け先：" . self::pref($o['address']) . "\n\n仕上がりの確認用画像を添付します。元データと変換後データは、下のリンクからダウンロードできます。\n\n" . self::download_lines($o)
+                . "\n\n▼ 発送したら、こちらのページから送り状番号（出荷番号）を入れて「発送済み」にしてください（お客様へ発送のお知らせが届きます）：\n" . self::factory_url($o);
             $files = [self::path($o, 'preview_' . $o['choice'])];
         }
         $ok = wp_mail($to, $subject, $body . "\n\n" . get_bloginfo('name'), self::headers(self::admin_email()), array_filter($files, 'is_readable'));
@@ -1477,6 +1558,7 @@ class CFP_Carpet_Order {
                         <td><?php echo esc_html($o['name']); ?><br><small><?php echo esc_html($o['email'] . ' / ' . $o['tel']); ?></small></td>
                         <td><?php echo esc_html((self::MATERIALS[$o['material']] ?? '') . ' ' . $o['width'] . '×' . $o['height'] . 'mm・' . (self::REGIONS[$o['region']][0] ?? '')); ?></td>
                         <td><?php echo esc_html(self::STATUSES[$o['status']] ?? $o['status']); ?>
+                            <?php if (!empty($o['shipped'])) : ?><br><b style="color:#1d6b3a">発送済み</b><br><small><?php echo esc_html($o['shipped']['date'] . '・送り状 ' . $o['shipped']['tracking']); ?></small><?php elseif ($o['status'] === 'paid') : ?><br><small style="color:#8a5a00">発送待ち</small><?php endif; ?>
                             <?php if (!empty($o['factory_reply'])) : ?><br><small style="color:#1d6b3a">工場の回答：<?php echo esc_html(self::factory_lead($o['factory_reply'])); ?></small><?php elseif (!empty($o['factory_key'])) : ?><br><small style="color:#8a5a00">工場の回答待ち</small><?php endif; ?>
                             <?php if (!empty($o['reject_comment']) && $o['status'] === 'rejected') : ?><br><small>コメント：<?php echo esc_html($o['reject_comment']); ?></small><?php endif; ?></td>
                         <td><?php echo !empty($o['choice']) ? esc_html(self::vlabel($o, $o['choice']) . '・' . number_format((int) $o['amount']) . '円') : '—'; ?>
@@ -1487,6 +1569,7 @@ class CFP_Carpet_Order {
                             <?php if ($o['status'] === 'paid' && !empty($o['choice'])) : ?>
                             <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'original', false))); ?>">元データを保存</a>
                             <a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'preview_' . $o['choice'], false))); ?>">変換後データを保存</a>
+                            <?php if (!empty($o['factory_key'])) : ?><a class="button" href="<?php echo esc_url(self::factory_url($o)); ?>" target="_blank" rel="noopener">発送の入力ページ</a><?php endif; ?>
                             <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=get&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>">領収書PDF</a>
                             <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=send&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>" onclick="return confirm('お客様へ領収書（PDF）をメールで送りますか？');">領収書を送る</a>
                             <?php if (self::has_psd($o, $o['choice'])) : ?><a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'psd_' . $o['choice'], false))); ?>">PSDを保存</a><?php endif; ?>

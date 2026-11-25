@@ -303,7 +303,17 @@
     if (o.status === 'paid') {
       $('co-sel-actions').hidden = true;
       closePay(true);
-      status($('co-sel-status'), 'ok', 'お支払いが完了し、正式にご注文を承りました。ありがとうございます。\n製作に入り、発送の準備ができましたらご連絡いたします。');
+      const sh = o.shipped;
+      status($('co-sel-status'), 'ok', sh
+        ? 'ご注文の商品を発送しました（発送日：' + sh.date + '・ヤマト運輸・送り状番号：' + sh.tracking + '）。\nお荷物の状況は、ヤマト運輸のサイトで確認できます。'
+        : 'お支払いが完了し、正式にご注文を承りました。ありがとうございます。\n製作に入り、発送の準備ができましたらご連絡いたします。');
+      if (sh) {
+        const a = document.createElement('a');
+        a.href = sh.url; a.target = '_blank'; a.rel = 'noopener'; a.className = 'co-link'; a.textContent = 'お荷物の状況を確認する（ヤマト運輸）';
+        a.style.display = 'inline-block'; a.style.marginTop = '8px';
+        $('co-sel-status').appendChild(document.createElement('br'));
+        $('co-sel-status').appendChild(a);
+      }
       return;
     }
     if (o.status === 'rejected') {
