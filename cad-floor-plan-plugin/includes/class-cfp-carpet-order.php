@@ -1280,19 +1280,15 @@ class CFP_Carpet_Order {
                 $msg = '<p class="err">しばらく時間をおいてから、もう一度お送りください。</p>';
             } else {
                 $days = max(0, min(365, (int) ($_POST['days'] ?? 0)));
-                $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['date'] ?? '')) ? (string) $_POST['date'] : '';
                 $comment = mb_substr(sanitize_textarea_field(wp_unslash($_POST['comment'] ?? '')), 0, 1000);
-                $name = mb_substr(sanitize_text_field(wp_unslash($_POST['name'] ?? '')), 0, 60);
-                if (!$days && $date === '') {
-                    $msg = '<p class="err">製作に必要な日数か、出荷できる日のどちらかを入れてください。</p>';
+                if (!$days) {
+                    $msg = '<p class="err">製作に必要な日数を入れてください。</p>';
                 } else {
-                    $o['factory_reply'] = ['days' => $days, 'date' => $date, 'comment' => $comment, 'name' => $name, 'at' => current_time('mysql')];
-                    self::log($o, '工場から納期の回答（' . self::factory_lead($o['factory_reply']) . ($name !== '' ? '・' . $name : '') . '）');
+                    $o['factory_reply'] = ['days' => $days, 'comment' => $comment, 'at' => current_time('mysql')];
+                    self::log($o, '工場から納期の回答（' . self::factory_lead($o['factory_reply']) . '）');
                     self::save($o);
                     self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】工場から納期の回答', "工場から納期の回答がありました。\n\n"
-                        . '製作に必要な日数：' . ($days ? $days . '日' : '（未記入）') . "\n"
-                        . '出荷できる日：' . ($date !== '' ? $date : '（未記入）') . "\n"
-                        . 'ご担当：' . ($name !== '' ? $name : '（未記入）') . "\n"
+                        . '製作に必要な日数（正式発注から出荷まで）：' . $days . "日\n"
                         . "コメント：\n" . ($comment !== '' ? $comment : '（なし）') . "\n\n"
                         . "特許ページでプレビューを送るとき、納期の欄にこの回答が入ります：\n" . self::admin_convert_url($o));
                     $msg = '<p class="ok">ご回答ありがとうございました。内容を変えるときは、もう一度お送りください。</p>';
@@ -1311,9 +1307,7 @@ class CFP_Carpet_Order {
             . '<p class="note">デザインの元画像は、メールに添付しています。色数はまだ確定していません。</p>'
             . '<form method="post">'
             . '<input type="hidden" name="action" value="cfp_co_factory"><input type="hidden" name="id" value="' . (int) $o['id'] . '"><input type="hidden" name="k" value="' . esc_attr($k) . '">'
-            . '<label>製作に必要な日数（正式発注から出荷まで）<span><input type="number" name="days" min="0" max="365" inputmode="numeric" value="' . esc_attr($r['days'] ?? '') . '"> 日</span></label>'
-            . '<label>出荷できる日（今日 正式発注した場合）<input type="date" name="date" value="' . esc_attr($r['date'] ?? '') . '"></label>'
-            . '<label>ご担当のお名前<input type="text" name="name" maxlength="60" value="' . esc_attr($r['name'] ?? '') . '"></label>'
+            . '<label>製作に必要な日数（正式発注から出荷まで）<span><input type="number" name="days" min="0" max="365" inputmode="numeric" required value="' . esc_attr($r['days'] ?? '') . '"> 日</span></label>'
             . '<label>コメント（任意）<textarea name="comment" rows="4" maxlength="1000">' . esc_textarea($r['comment'] ?? '') . '</textarea></label>'
             . '<button type="submit">' . (!empty($r) ? '回答を送り直す' : '回答を送る') . '</button>'
             . (!empty($r['at']) ? '<p class="note">前回の回答：' . $e($r['at']) . '</p>' : '')
