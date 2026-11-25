@@ -24,6 +24,8 @@ class CFP_Receipt_PDF {
         556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
 
     private $ops = [];
+    /** 画像（社判）：[w, h, 色のデータ, 透明度のデータ]（どちらも zlib で圧縮済み） */
+    private $images = [];
     /** 埋め込むフォント：'body' / 'seal' => ['ttf' => CFP_TTF_Subset, 'used' => [gid => unicode]] */
     private $fonts = [];
 
@@ -166,6 +168,26 @@ class CFP_Receipt_PDF {
     }
 
     /**
+     * 社判の画像（assets/img/seal.bin：tools/seal_image.py で作る、色と透明度）を押す。
+     * $x, $y は左上、$size は横幅（pt）。読めなければ false.
+     */
+    public function seal_image($path, $x, $y, $size) {
+        $d = is_readable($path) ? (string) file_get_contents($path) : '';
+        if (strlen($d) < 16 || substr($d, 0, 4) !== 'CFPS') {
+            return false;
+        }
+        $hd = unpack('nw/nh/Nrl/Nal', substr($d, 4, 12));
+        if (strlen($d) < 16 + $hd['rl'] + $hd['al']) {
+            return false;
+        }
+        $this->images[] = [$hd['w'], $hd['h'], substr($d, 16, $hd['rl']), substr($d, 16 + $hd['rl'], $hd['al'])];
+        $name = 'Im' . count($this->images);
+        $h = $size * $hd['h'] / $hd['w'];
+        $this->ops[] = 'q ' . self::num($size) . ' 0 0 ' . self::num($h) . ' ' . self::num($x) . ' ' . self::num(self::H - $y - $h) . ' cm /' . $name . ' Do Q';
+        return true;
+    }
+
+    /**
      * 社判（角印）を押す。$cols は右の列から順の文字列（縦書き）。朱色・少し透ける。
      * $x, $y は印の左上、$size は一辺（pt）.
      */
@@ -272,7 +294,14 @@ class CFP_Receipt_PDF {
             $fonts = '/F1 5 0 R /F2 8 0 R /F4 11 0 R';
         }
         $objs[30] = '<< /Type /ExtGState /ca 0.88 /CA 0.88 >>';
-        $objs[3] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' . self::num(self::W) . ' ' . self::num(self::H) . '] /Resources << /Font << ' . $fonts . ' >> /ExtGState << /GS1 30 0 R >> >> /Contents 4 0 R >>';
+        $xobj = '';
+        foreach ($this->images as $i => $im) {
+            $n = 40 + $i * 2;
+            $objs[$n] = '<< /Type /XObject /Subtype /Image /Width ' . $im[0] . ' /Height ' . $im[1] . ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /SMask ' . ($n + 1) . ' 0 R /Length ' . strlen($im[2]) . " >>\nstream\n" . $im[2] . "\nendstream";
+            $objs[$n + 1] = '<< /Type /XObject /Subtype /Image /Width ' . $im[0] . ' /Height ' . $im[1] . ' /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ' . strlen($im[3]) . " >>\nstream\n" . $im[3] . "\nendstream";
+            $xobj .= ' /Im' . ($i + 1) . ' ' . $n . ' 0 R';
+        }
+        $objs[3] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' . self::num(self::W) . ' ' . self::num(self::H) . '] /Resources << /Font << ' . $fonts . ' >> /ExtGState << /GS1 30 0 R >>' . ($xobj !== '' ? ' /XObject <<' . $xobj . ' >>' : '') . ' >> /Contents 4 0 R >>';
         $objs[9] = '<< /Producer (Mush Office) /Title <FEFF' . strtoupper(bin2hex(mb_convert_encoding($title, 'UTF-16BE', 'UTF-8'))) . '> /CreationDate (D:' . gmdate('YmdHis') . 'Z) >>';
         ksort($objs);
         $max = max(array_keys($objs));
