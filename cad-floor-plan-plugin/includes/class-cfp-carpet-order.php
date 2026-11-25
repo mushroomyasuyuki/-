@@ -1376,8 +1376,13 @@ class CFP_Carpet_Order {
     /** 工場へ：inquiry＝発注時の納期確認（元画像を添付）、order＝決済後の正式発注（選んだ案の画像を添付）。 */
     private static function mail_factory(&$o, $kind) {
         $s = self::settings();
-        // 工場のメール（予備のアドレスにも同じメールを送る）
-        $to = array_values(array_unique(array_filter([$s['factory_email'], $s['factory_email2'] ?? '', $s['factory_email3'] ?? ''], 'is_email')));
+        // 工場のメール。予備のアドレス（予備1・予備2）には、決済完了の正式発注のメールだけを送る
+        $list = [$s['factory_email']];
+        if ($kind !== 'inquiry') {
+            $list[] = $s['factory_email2'] ?? '';
+            $list[] = $s['factory_email3'] ?? '';
+        }
+        $to = array_values(array_unique(array_filter($list, 'is_email')));
         if (!$to) {
             self::log($o, '工場のメールアドレスが未設定のため、工場へのメールを送れませんでした');
             return false;
@@ -1514,7 +1519,7 @@ class CFP_Carpet_Order {
                     <tr><th><label for="co-admin">通知を受けるメール（管理者）</label></th><td><input type="email" id="co-admin" name="admin_email" class="regular-text" value="<?php echo esc_attr($s['admin_email']); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>"><p class="description">空のときはサイトの管理者メールアドレス。お客様への返信先にもなります。</p></td></tr>
                     <tr><th><label for="co-factory">工場のメール</label></th><td><input type="email" id="co-factory" name="factory_email" class="regular-text" value="<?php echo esc_attr($s['factory_email']); ?>"><p class="description">発注ボタンが押されたときに、納期確認のメール（元画像を添付）を送ります。</p></td></tr>
                     <?php foreach ([2, 3] as $fn) : ?>
-                    <tr><th><label for="co-factory<?php echo (int) $fn; ?>">工場のメール（予備<?php echo (int) ($fn - 1); ?>）</label></th><td><input type="email" id="co-factory<?php echo (int) $fn; ?>" name="factory_email<?php echo (int) $fn; ?>" class="regular-text" value="<?php echo esc_attr($s['factory_email' . $fn] ?? ''); ?>"><p class="description">入れると、工場へのメール（納期のご確認・正式発注）を、このアドレスにも同じ内容で送ります。</p></td></tr>
+                    <tr><th><label for="co-factory<?php echo (int) $fn; ?>">工場のメール（予備<?php echo (int) ($fn - 1); ?>）</label></th><td><input type="email" id="co-factory<?php echo (int) $fn; ?>" name="factory_email<?php echo (int) $fn; ?>" class="regular-text" value="<?php echo esc_attr($s['factory_email' . $fn] ?? ''); ?>"><p class="description">入れると、決済が完了したときの工場へのメール（正式発注）を、このアドレスにも同じ内容で送ります（納期のご確認のメールは送りません）。</p></td></tr>
                     <?php endforeach; ?>
                     <tr><th><label for="co-factory-name">工場の宛名</label></th><td><input type="text" id="co-factory-name" name="factory_name" class="regular-text" value="<?php echo esc_attr($s['factory_name']); ?>"></td></tr>
                     <tr><th>シミュレーターのページ</th><td><label><input type="checkbox" name="simulator_public" value="1" <?php checked(!empty($s['simulator_public'])); ?>> 「壁紙・カーペットシミュレーション」（特許ページ）をどなたにも公開する</label><p class="description">外すと管理者だけに表示し、ほかの方には注文ページへの案内を出します。公開中は、色変換のプログラムもページを開いた方が読める状態になります。</p></td></tr>
