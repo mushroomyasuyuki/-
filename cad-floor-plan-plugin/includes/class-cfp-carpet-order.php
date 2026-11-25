@@ -163,6 +163,8 @@ class CFP_Carpet_Order {
         return wp_parse_args(is_array($s) ? $s : [], [
             'admin_email'    => '',
             'factory_email'  => '',
+            'factory_email2' => '',
+            'factory_email3' => '',
             'factory_name'   => '工場ご担当者',
             'payjp_mode'     => 'test',
             'payjp_pk_test'  => '',
@@ -1374,7 +1376,9 @@ class CFP_Carpet_Order {
     /** 工場へ：inquiry＝発注時の納期確認（元画像を添付）、order＝決済後の正式発注（選んだ案の画像を添付）。 */
     private static function mail_factory(&$o, $kind) {
         $s = self::settings();
-        if (!is_email($s['factory_email'])) {
+        // 工場のメール（予備のアドレスにも同じメールを送る）
+        $to = array_values(array_unique(array_filter([$s['factory_email'], $s['factory_email2'] ?? '', $s['factory_email3'] ?? ''], 'is_email')));
+        if (!$to) {
             self::log($o, '工場のメールアドレスが未設定のため、工場へのメールを送れませんでした');
             return false;
         }
@@ -1395,7 +1399,7 @@ class CFP_Carpet_Order {
                 . "\nお届け先：" . self::pref($o['address']) . "\n\n仕上がりの確認用画像を添付します。元データと変換後データは、下のリンクからダウンロードできます。\n\n" . self::download_lines($o);
             $files = [self::path($o, 'preview_' . $o['choice'])];
         }
-        $ok = wp_mail($s['factory_email'], $subject, $body . "\n\n" . get_bloginfo('name'), self::headers(self::admin_email()), array_filter($files, 'is_readable'));
+        $ok = wp_mail($to, $subject, $body . "\n\n" . get_bloginfo('name'), self::headers(self::admin_email()), array_filter($files, 'is_readable'));
         self::log($o, '工場へ' . ($kind === 'inquiry' ? '納期確認' : '正式発注') . 'メール' . ($ok ? 'を送信' : 'の送信に失敗'));
         return $ok;
     }
@@ -1509,6 +1513,9 @@ class CFP_Carpet_Order {
                 <table class="form-table" role="presentation">
                     <tr><th><label for="co-admin">通知を受けるメール（管理者）</label></th><td><input type="email" id="co-admin" name="admin_email" class="regular-text" value="<?php echo esc_attr($s['admin_email']); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>"><p class="description">空のときはサイトの管理者メールアドレス。お客様への返信先にもなります。</p></td></tr>
                     <tr><th><label for="co-factory">工場のメール</label></th><td><input type="email" id="co-factory" name="factory_email" class="regular-text" value="<?php echo esc_attr($s['factory_email']); ?>"><p class="description">発注ボタンが押されたときに、納期確認のメール（元画像を添付）を送ります。</p></td></tr>
+                    <?php foreach ([2, 3] as $fn) : ?>
+                    <tr><th><label for="co-factory<?php echo (int) $fn; ?>">工場のメール（予備<?php echo (int) ($fn - 1); ?>）</label></th><td><input type="email" id="co-factory<?php echo (int) $fn; ?>" name="factory_email<?php echo (int) $fn; ?>" class="regular-text" value="<?php echo esc_attr($s['factory_email' . $fn] ?? ''); ?>"><p class="description">入れると、工場へのメール（納期のご確認・正式発注）を、このアドレスにも同じ内容で送ります。</p></td></tr>
+                    <?php endforeach; ?>
                     <tr><th><label for="co-factory-name">工場の宛名</label></th><td><input type="text" id="co-factory-name" name="factory_name" class="regular-text" value="<?php echo esc_attr($s['factory_name']); ?>"></td></tr>
                     <tr><th>シミュレーターのページ</th><td><label><input type="checkbox" name="simulator_public" value="1" <?php checked(!empty($s['simulator_public'])); ?>> 「壁紙・カーペットシミュレーション」（特許ページ）をどなたにも公開する</label><p class="description">外すと管理者だけに表示し、ほかの方には注文ページへの案内を出します。公開中は、色変換のプログラムもページを開いた方が読める状態になります。</p></td></tr>
                     <tr><th>決済完了時</th><td><label><input type="checkbox" name="factory_on_paid" value="1" <?php checked(!empty($s['factory_on_paid'])); ?>> 工場へ正式発注のメールも送る</label></td></tr>
@@ -1539,6 +1546,8 @@ class CFP_Carpet_Order {
         $s = self::settings();
         $s['admin_email'] = sanitize_email(wp_unslash($_POST['admin_email'] ?? ''));
         $s['factory_email'] = sanitize_email(wp_unslash($_POST['factory_email'] ?? ''));
+        $s['factory_email2'] = sanitize_email(wp_unslash($_POST['factory_email2'] ?? ''));
+        $s['factory_email3'] = sanitize_email(wp_unslash($_POST['factory_email3'] ?? ''));
         $s['factory_name'] = sanitize_text_field(wp_unslash($_POST['factory_name'] ?? ''));
         $s['factory_on_paid'] = empty($_POST['factory_on_paid']) ? 0 : 1;
         $s['simulator_public'] = empty($_POST['simulator_public']) ? 0 : 1;
