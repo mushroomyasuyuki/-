@@ -2573,6 +2573,27 @@
         out[v] = { label: VARIANTS[v].label, canvas: cv, colors: state.variantSets[v].map((i) => ALL_COLORS[i].name) };
       });
       return ok ? out : null;
+    },
+    // 3通りの自動変換の色（パレット番号）
+    autoSets: () => (state.variantSets ? { std: state.variantSets.std.slice(), op3: state.variantSets.op3.slice(), max: state.variantSets.max.slice() } : null),
+    // いまパレットで選んでいる色（パレット番号）と階調表現（0〜100）
+    current: () => ({
+      indices: Array.from(state.activePaletteIndices).sort((a, b) => a - b),
+      dither: Math.round(Math.min(100, Math.max(0, parseFloat(($('cc-dither') || {}).value) || 0)))
+    }),
+    // 指定した色・階調表現で変換した画像と、実際に使われた色の名前
+    render: (indices, ditherPct) => {
+      const original = $('cc-original');
+      if (!original || !original.width) return null;
+      const entries = indices.map((i) => ALL_COLORS[i]).filter(Boolean);
+      if (!entries.length) return null;
+      const factor = Math.min(1, Math.max(0, (Number(ditherPct) || 0) / 100));
+      const { imageData, usedEntries } = getReducedImageData(original, original.width, original.height, factor, entries, { lut: carpetLut(entries) });
+      const cv = document.createElement('canvas');
+      cv.width = original.width;
+      cv.height = original.height;
+      cv.getContext('2d').putImageData(imageData, 0, 0);
+      return { canvas: cv, used: usedEntries.map((c) => c.name), names: entries.map((c) => c.name) };
     }
   };
 

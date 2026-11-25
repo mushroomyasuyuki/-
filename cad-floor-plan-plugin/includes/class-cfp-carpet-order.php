@@ -28,6 +28,11 @@ class CFP_Carpet_Order {
     const PRICE_PER_COLOR = 35000;
     const FREE_OP = ['OP-03', 'OP-05']; // オプション色のうち無償の色
     // HPの初期（旧パレット）の色。特許ページの FREE_PALETTE・OP_PALETTE_RAW と同じ
+    /** The name of a preview case (A案／B案／C案…). A case whose colours were chosen by hand gets its own name. */
+    private static function vlabel($o, $k) {
+        return $o['previews'][$k]['label'] ?? (self::VARIANTS[$k] ?? $k);
+    }
+
     /** 納期の目安（プレビューを送るときに変えられる）. */
     const LEAD_DEFAULT = '約2週間';
 
@@ -571,7 +576,8 @@ class CFP_Carpet_Order {
     /** What the customer may see of an order. */
     private static function public_view($o) {
         $vars = [];
-        foreach (self::VARIANTS as $k => $label) {
+        foreach (array_keys(self::VARIANTS) as $k) {
+            $label = self::vlabel($o, $k);
             if (empty($o['previews'][$k])) {
                 continue;
             }
@@ -724,9 +730,9 @@ class CFP_Carpet_Order {
         $o['choice'] = $choice;
         $o['amount'] = $p['total'];
         $o['price'] = $p;
-        self::log($o, 'お客様：' . self::VARIANTS[$choice] . ' を選択（' . number_format($p['total']) . '円）');
+        self::log($o, 'お客様：' . self::vlabel($o, $choice) . ' を選択（' . number_format($p['total']) . '円）');
         self::save($o);
-        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】お客様が ' . self::VARIANTS[$choice] . ' を選びました（決済待ち）', 'お客様が ' . self::VARIANTS[$choice] . ' を選びました。金額：' . number_format($p['total']) . "円（税込）。決済が済むと、あらためてお知らせします。");
+        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】お客様が ' . self::vlabel($o, $choice) . ' を選びました（決済待ち）', 'お客様が ' . self::vlabel($o, $choice) . ' を選びました。金額：' . number_format($p['total']) . "円（税込）。決済が済むと、あらためてお知らせします。");
         wp_send_json_success(['order' => self::public_view($o)]);
     }
 
@@ -832,7 +838,8 @@ class CFP_Carpet_Order {
         self::log($o, '決済完了（' . number_format((int) $ch['amount']) . '円・' . $ch['id'] . '）');
         self::save($o);
         $p = $o['price'];
-        $lines = self::spec_lines($o) . "\n選んだ案：" . self::VARIANTS[$o['choice']] . "\n使う色：" . implode('、', $o['previews'][$o['choice']]['colors'])
+        $lines = self::spec_lines($o) . "\n選んだ案：" . self::vlabel($o, $o['choice']) . "\n使う色：" . implode('、', $o['previews'][$o['choice']]['colors'])
+            . "\n階調表現（誤差拡散）：" . (int) ($o['previews'][$o['choice']]['dither'] ?? ($o['dither'] ?? 0)) . '%'
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
         self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。", [self::path($o, 'preview_' . $o['choice'])]);
@@ -959,15 +966,31 @@ class CFP_Carpet_Order {
             if (!is_array($colors) || !$colors || count($colors) > 16) {
                 self::fail('使う色を読み取れませんでした。');
             }
-            $colors = array_values(array_map('sanitize_text_field', $colors));
+            // パレットにある色の名前だけを受け付ける（金額はこの名前で計算する）
+            $known = array_merge(array_column(self::PALETTE_FREE, 0), array_column(self::PALETTE_OPT, 0));
+            $colors = array_values(array_unique(array_intersect(array_map('sanitize_text_field', $colors), $known)));
+            if (!$colors) {
+                self::fail('使う色を読み取れませんでした。');
+            }
+            // 案の名前（手動で色を選んだ案は、色に合わせた名前）。先頭は A案／B案／C案 のまま
+            $label = mb_substr(self::text('label_' . $k), 0, 40);
+            $head = mb_substr(self::VARIANTS[$k], 0, 3);
+            if ($label === '' || mb_substr($label, 0, 3) !== $head) {
+                $label = self::VARIANTS[$k];
+            }
             file_put_contents($dir . '/preview_' . $k . '.png', $bin);
-            $previews[$k] = ['colors' => $colors];
+            $previews[$k] = [
+                'colors' => $colors,
+                'label'  => $label,
+                'dither' => max(0, min(100, (int) self::text('dither_' . $k))),
+                'manual' => self::text('manual_' . $k) === '1',
+            ];
         }
         $o['previews'] = $previews;
         $o['preview_message'] = self::text('message', true);
         $lead = mb_substr(self::text('lead'), 0, 60);
         $o['lead_time'] = $lead !== '' ? $lead : self::LEAD_DEFAULT;
-        $o['dither'] = max(0, min(100, (int) self::text('dither')));
+        $o['dither'] = $previews['std']['dither'];
         $o['status'] = 'previews_sent';
         $o['choice'] = '';
         $o['sent_count'] = (int) ($o['sent_count'] ?? 0) + 1;
@@ -975,7 +998,8 @@ class CFP_Carpet_Order {
         self::save($o);
         $lines = [];
         $files = [];
-        foreach (self::VARIANTS as $k => $label) {
+        foreach (array_keys(self::VARIANTS) as $k) {
+            $label = self::vlabel($o, $k);
             $p = self::price($o['material'], $o['width'], $o['height'], $o['region'], $previews[$k]['colors']);
             $lines[] = '■ ' . $label . '：' . count($previews[$k]['colors']) . '色'
                 . ($p['paid_count'] ? '（有償オプション色 ' . $p['paid_count'] . '色：' . implode('・', $p['paid_colors']) . ($p['free_applied'] ? '・うち' . $p['free_applied'] . '色は10㎡以上の特典で無料' : '') . '）' : '（すべて無償色）')
@@ -1129,7 +1153,7 @@ class CFP_Carpet_Order {
                         <td><?php echo esc_html((self::MATERIALS[$o['material']] ?? '') . ' ' . $o['width'] . '×' . $o['height'] . 'mm・' . (self::REGIONS[$o['region']][0] ?? '')); ?></td>
                         <td><?php echo esc_html(self::STATUSES[$o['status']] ?? $o['status']); ?>
                             <?php if (!empty($o['reject_comment']) && $o['status'] === 'rejected') : ?><br><small>コメント：<?php echo esc_html($o['reject_comment']); ?></small><?php endif; ?></td>
-                        <td><?php echo !empty($o['choice']) ? esc_html(self::VARIANTS[$o['choice']] . '・' . number_format((int) $o['amount']) . '円') : '—'; ?>
+                        <td><?php echo !empty($o['choice']) ? esc_html(self::vlabel($o, $o['choice']) . '・' . number_format((int) $o['amount']) . '円') : '—'; ?>
                             <?php if (!empty($o['charge_id'])) : ?><br><small><?php echo esc_html($o['charge_id']); ?></small><?php endif; ?></td>
                         <td>
                             <?php if (!in_array($o['status'], ['paid', 'cancelled'], true)) : ?><a class="button button-primary" href="<?php echo esc_url(self::admin_convert_url($o)); ?>" target="_blank" rel="noopener">特許ページで変換・送信</a><?php endif; ?>
