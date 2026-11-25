@@ -1292,7 +1292,8 @@ class CFP_Carpet_Order {
                     self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】工場から納期の回答', "工場から納期の回答がありました。\n\n"
                         . '製作に必要な日数（正式発注から出荷まで）：' . $days . "日\n"
                         . "コメント：\n" . ($comment !== '' ? $comment : '（なし）') . "\n\n"
-                        . "特許ページでプレビューを送るとき、納期の欄にこの回答が入ります：\n" . self::admin_convert_url($o));
+                        . "特許ページでプレビューを送るとき、納期の欄にこの回答が入ります：\n" . self::admin_convert_url($o)
+                        . "\n\n※このメールに返信すると、工場のメールあてに届きます（お客様には届きません）。", is_email(self::settings()['factory_email']) ? self::settings()['factory_email'] : '');
                     $msg = '<p class="ok">ご回答ありがとうございました。内容を変えるときは、もう一度お送りください。</p>';
                 }
             }
@@ -1354,8 +1355,9 @@ class CFP_Carpet_Order {
         return wp_mail($o['email'], $subject, $body . $sign, self::headers(self::admin_email()), array_filter($files, 'is_readable'));
     }
 
-    private static function mail_admin($o, $subject, $body) {
-        return wp_mail(self::admin_email(), $subject, $body . "\n\n注文の一覧：" . admin_url('admin.php?page=cfp-carpet-orders'), self::headers($o['email']));
+    /** 管理者へのメール。返信の宛先はふつうはお客様（$reply_to を渡すとそのアドレス）. */
+    private static function mail_admin($o, $subject, $body, $reply_to = null) {
+        return wp_mail(self::admin_email(), $subject, $body . "\n\n注文の一覧：" . admin_url('admin.php?page=cfp-carpet-orders'), self::headers($reply_to ?? $o['email']));
     }
 
     private static function mail_received($o) {
@@ -1394,7 +1396,7 @@ class CFP_Carpet_Order {
             }
             $subject = '【納期のご確認】カーペット ' . self::no($o) . '（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm）';
             $body = $who . "いつもお世話になっております。\n下記のカーペットの製作について、納期のご確認をお願いいたします（まだ正式な発注ではありません。色数は確定前です）。\n\n"
-                . self::spec_lines($o) . "\nお届け先：" . self::pref($o['address']) . "\n\nデザインの元画像を添付します（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）。\n\n▼ 納期のご回答は、こちらのページからお願いいたします（製作に必要な日数・出荷できる日）：\n" . self::factory_url($o) . "\n\nこのメールへのご返信でも承ります。";
+                . self::spec_lines($o) . "\nお届け先：" . self::pref($o['address']) . "\n\nデザインの元画像を添付します（" . $o['original_name'] . '・' . $o['image_px'][0] . '×' . $o['image_px'][1] . "px）。\n\n▼ 納期のご回答は、こちらのページからお願いいたします（製作に必要な日数）：\n" . self::factory_url($o) . "\n\nこのメールへのご返信でも承ります。";
             $files = [self::path($o, 'original')];
         } else {
             $subject = '【正式発注】カーペット ' . self::no($o) . '（' . (self::MATERIALS[$o['material']] ?? '') . '・' . $o['width'] . '×' . $o['height'] . 'mm）';
