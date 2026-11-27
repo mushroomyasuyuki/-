@@ -230,20 +230,81 @@
     $('co-submit').onclick = submit;
     initMotion();
     // 見出し：画面いっぱいの写真を数秒ごとに入れ替える（下の小さな写真を押すと、その写真に。動きを減らす設定のときは自動では替えない）
+    // パソコン（マウスで操作する広い画面）では、文字と写真をアニメーションで動かす
+    const hero = document.querySelector('#cfp-co .co-hero');
     const slides = $('co-slides'), thumbs = $('co-thumbs');
-    if (slides) {
+    if (hero && slides) {
+      const SLIDE_MS = 6000;
       const imgs = Array.from(slides.querySelectorAll('img'));
       const btns = thumbs ? Array.from(thumbs.querySelectorAll('button')) : [];
+      const mq = (q) => (window.matchMedia ? window.matchMedia(q).matches : false);
+      const still = mq('(prefers-reduced-motion: reduce)');
+      const desk = !still && mq('(min-width: 901px)') && mq('(hover: hover) and (pointer: fine)');
+      const tag = $('co-hero-tag');
       let cur = 0, timer = null;
-      const show = (i) => {
+      if (desk) {
+        hero.classList.add('is-anim', 'is-first');
+        hero.style.setProperty('--slide', SLIDE_MS + 'ms');
+        // 黄色の英字を1文字ずつに分ける
+        const eb = hero.querySelector('.co-hero-eyebrow');
+        if (eb) {
+          const txt = eb.textContent;
+          eb.setAttribute('aria-label', txt);
+          eb.textContent = '';
+          Array.from(txt).forEach((ch, i) => {
+            const s = document.createElement('span');
+            s.className = 'co-ch';
+            s.setAttribute('aria-hidden', 'true');
+            s.style.setProperty('--i', i);
+            s.textContent = ch === ' ' ? ' ' : ch;
+            eb.appendChild(s);
+          });
+        }
+        // マウスの動きに合わせて、写真と文字をわずかに逆向きに動かす（奥行き）
+        const content = hero.querySelector('.co-hero-content');
+        let raf = 0, mx = 0, my = 0, sy = 0;
+        const apply = () => {
+          raf = 0;
+          slides.style.transform = 'translate3d(' + (mx * -14) + 'px,' + (my * -10 + sy * 0.25) + 'px,0)';
+          if (content) {
+            content.style.transform = 'translate3d(' + (mx * 8) + 'px,' + (my * 6 - sy * 0.18) + 'px,0)';
+            content.style.opacity = String(Math.max(0, 1 - sy / 520));
+          }
+        };
+        const req = () => { if (!raf) raf = requestAnimationFrame(apply); };
+        hero.addEventListener('mousemove', (e) => {
+          const r = hero.getBoundingClientRect();
+          mx = (e.clientX - r.left) / r.width - 0.5;
+          my = (e.clientY - r.top) / r.height - 0.5;
+          req();
+        });
+        hero.addEventListener('mouseleave', () => { mx = 0; my = 0; req(); });
+        window.addEventListener('scroll', () => {
+          const r = hero.getBoundingClientRect();
+          sy = Math.min(Math.max(-r.top, 0), r.height);
+          req();
+        }, { passive: true });
+      }
+      const play = () => {
+        if (!desk) return;
+        hero.classList.remove('is-play');
+        void hero.offsetWidth; // 動きを最初からやり直す
+        hero.classList.add('is-play');
+      };
+      const show = (i, first) => {
         cur = (i + imgs.length) % imgs.length;
         imgs.forEach((im, k) => im.classList.toggle('is-on', k === cur));
         btns.forEach((b, k) => { b.classList.toggle('is-on', k === cur); b.setAttribute('aria-pressed', k === cur ? 'true' : 'false'); });
+        if (tag) {
+          tag.querySelector('b').textContent = imgs[cur].getAttribute('data-en') || '';
+          tag.querySelector('span').textContent = imgs[cur].getAttribute('data-ja') || '';
+        }
+        if (!first) hero.classList.remove('is-first');
+        play();
       };
-      const still = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
-      const start = () => { if (still) return; clearInterval(timer); timer = setInterval(() => { if (!document.hidden) show(cur + 1); }, 6000); };
+      const start = () => { if (still) return; clearInterval(timer); timer = setInterval(() => { if (!document.hidden) show(cur + 1); }, SLIDE_MS); };
       btns.forEach((b, k) => b.addEventListener('click', () => { show(k); start(); }));
-      show(0);
+      show(0, true);
       start();
     }
     // 「こんな場所に」：スマホでは写真を押すと寄った写真に切り替える
