@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0
+- 注文ページのデザインを作り直した（参考：画面いっぱいの写真＋大きな英語の見出し＋暗い地に差し色）。注文フォーム・決済の仕組みは変えていない。
+  - 見出し：ネイルサロン・ジム・アパレルの写真を画面いっぱいに、6秒ごとにゆっくり入れ替え（下の小さな写真を押すとその写真に）。黄色の「ORIGINAL PRINT TILE CARPET」、大きな英語「YOUR DESIGN, ON THE FLOOR.」、線、日本語の見出し・説明、「ご注文フォームへ」「使う場所を見る」のボタン。
+  - 暗い帯「WHY MUSH OFFICE」：数字（50cm角・16色・約2週間）、4つの特長、目次。
+  - 暗い帯「OUR WORKS」：店舗の写真のカードに白い説明（英語の小見出しつき）。
+  - 各セクションの見出しを、大きな英語（2語目は差し色）＋日本語＋短い線に（COMPARE OTHERS・ORDER FLOW・COLOR CHANGE・COLOR PALETTE・PRODUCT SPEC・PRICE LIST・OUR QUALITY・ORDER FORM・COMPANY INFO）。
+  - 英語の見出しは Montserrat（Google Fonts）。
+
 ## 2.99.7
 - 注文ページのアイキャッチ画像（LINE・SNS でリンクを送ったときの画像・1200×630）を作り直した：紺の地に見出し「お手持ちの絵柄を、50cm角のタイルカーペットに。」、特長（土足OK・防炎認定・1枚ずつ交換・プレビューを見てから支払い）、マッシュオフィス・mush-office.com、右にネイルサロン・ジム・アパレルの写真を重ねた。
   - 更新すると、このプラグインが前に入れたアイキャッチだけを新しい画像に差し替える（自分で設定した画像はそのまま）。画像は assets/img/og-carpet-order-photo.jpg（作り方は tools/make_og.py）。

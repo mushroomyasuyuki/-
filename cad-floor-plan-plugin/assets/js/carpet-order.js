@@ -229,19 +229,22 @@
     estimate();
     $('co-submit').onclick = submit;
     initMotion();
-    // 見出しの右の写真：数秒ごとに、いちばん前の写真を入れ替える（動きを減らす設定のときは止める）
-    const stack = $('co-stack');
-    const still = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
-    if (stack && !still) {
-      setInterval(() => {
-        if (document.hidden) return;
-        const imgs = Array.from(stack.querySelectorAll('img'));
-        imgs.forEach((im) => {
-          const n = Number((im.className.match(/is-(\d)/) || [0, 1])[1]);
-          im.classList.remove('is-' + n);
-          im.classList.add('is-' + (n === 1 ? 3 : n - 1));
-        });
-      }, 4500);
+    // 見出し：画面いっぱいの写真を数秒ごとに入れ替える（下の小さな写真を押すと、その写真に。動きを減らす設定のときは自動では替えない）
+    const slides = $('co-slides'), thumbs = $('co-thumbs');
+    if (slides) {
+      const imgs = Array.from(slides.querySelectorAll('img'));
+      const btns = thumbs ? Array.from(thumbs.querySelectorAll('button')) : [];
+      let cur = 0, timer = null;
+      const show = (i) => {
+        cur = (i + imgs.length) % imgs.length;
+        imgs.forEach((im, k) => im.classList.toggle('is-on', k === cur));
+        btns.forEach((b, k) => { b.classList.toggle('is-on', k === cur); b.setAttribute('aria-pressed', k === cur ? 'true' : 'false'); });
+      };
+      const still = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)').matches : false;
+      const start = () => { if (still) return; clearInterval(timer); timer = setInterval(() => { if (!document.hidden) show(cur + 1); }, 6000); };
+      btns.forEach((b, k) => b.addEventListener('click', () => { show(k); start(); }));
+      show(0);
+      start();
     }
     // 「こんな場所に」：スマホでは写真を押すと寄った写真に切り替える
     document.querySelectorAll('#cfp-co .co-uses figure').forEach((f) => {

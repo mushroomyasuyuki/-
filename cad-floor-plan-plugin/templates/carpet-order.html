@@ -1,6 +1,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Shippori+Mincho+B1:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 /* 公開の注文ページ（新ページ）。デザインの決まりは DESIGN.md。
    色はカーペットの実際の基本色から：基本-01 地・基本-15 紺・基本-08 黄・基本-10 青・基本-06 赤 */
@@ -35,46 +35,73 @@
 #cfp-co a.co-link{color:var(--blue)}
 
 /* ───── 見出し（紺の面に、絵柄がタイルになって打ち込まれる） ───── */
-#cfp-co .co-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:56px;align-items:center;padding:72px 64px 64px;margin-top:8px;background:var(--ink);color:#fff;border-radius:28px;isolation:isolate}
 /* 毛並みのような細い筋と、青いにじみ */
-#cfp-co .co-hero::before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(60% 80% at 85% 20%,rgba(0,94,173,.55),transparent 70%),repeating-linear-gradient(45deg,rgba(255,255,255,.025) 0 1px,transparent 1px 6px)}
-#cfp-co .co-eyebrow{font-size:12px;font-weight:700;letter-spacing:.24em;color:var(--yellow);margin-bottom:22px}
 #cfp-co .co-hero h1,#cfp-co .co-sel-head h1{word-break:keep-all;overflow-wrap:anywhere}
-#cfp-co .co-hero h1{font-weight:500;font-size:clamp(28px,3.9vw,50px);line-height:1.5;letter-spacing:.04em;color:#fff}
-#cfp-co .co-hero h1>span{display:inline-block}
-#cfp-co .co-hero h1 em{font-style:normal;background:linear-gradient(transparent 72%,rgba(250,190,0,.6) 72%,rgba(250,190,0,.6) 92%,transparent 92%)}
-#cfp-co .co-hero .co-lead{margin-top:22px;max-width:34em;color:rgba(255,255,255,.78);font-size:15px;line-height:2}
-#cfp-co .co-hero-cta{display:flex;flex-wrap:wrap;align-items:center;gap:14px 26px;margin-top:32px}
-#cfp-co .co-ghost{color:#fff;font-size:14.5px;font-weight:700;border-bottom:1px solid rgba(255,255,255,.5);padding-bottom:2px;transition:border-color .2s}
-#cfp-co .co-ghost:hover{border-color:var(--yellow)}
-#cfp-co .co-stats{display:grid;grid-template-columns:repeat(3,auto);justify-content:start;gap:0 40px;margin:44px 0 0;padding-top:22px;border-top:1px solid rgba(255,255,255,.18)}
-#cfp-co .co-stats dt{font-size:12px;color:rgba(255,255,255,.6);font-weight:500}
-#cfp-co .co-stats dd{margin:0;font-family:var(--serif);font-size:38px;line-height:1.2;font-variant-numeric:tabular-nums}
-#cfp-co .co-stats small{display:inline;margin-top:0;font-family:var(--sans);font-size:13px;margin-left:3px;color:rgba(255,255,255,.75)}
-#cfp-co .co-hero-art{position:relative}
-#cfp-co .co-carpet{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;padding:12px;background:#fff;border-radius:10px;box-shadow:0 40px 60px -30px rgba(0,0,0,.65);transform:rotate(-4deg);transition:transform .7s var(--ease)}
-#cfp-co .co-carpet span{position:relative;aspect-ratio:1;border-radius:2px;background:var(--c);overflow:hidden}
-#cfp-co .co-carpet span::after,#cfp-co .co-sw::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.08) 0 1px,transparent 1px 5px)}
+#cfp-co .co-sw::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.08) 0 1px,transparent 1px 5px)}
 
-#cfp-co .co-size-tag{position:absolute;right:-6px;top:-16px;background:var(--yellow);color:var(--ink);font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:999px;transform:rotate(-4deg);box-shadow:0 8px 16px -8px rgba(0,0,0,.5)}
-#cfp-co .co-carpet-note{margin-top:30px;font-size:12.5px;color:rgba(255,255,255,.65);text-align:center}
-@keyframes co-tuft{0%{opacity:0;transform:translateY(-16px) scale(.4)}70%{opacity:1;transform:translateY(2px) scale(1.06)}100%{opacity:1;transform:none}}
 @keyframes co-rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
-#cfp-co .co-hero-text>*{animation:co-rise .9s var(--ease) both}
-#cfp-co .co-hero-text>:nth-child(2){animation-delay:.1s}
-#cfp-co .co-hero-text>:nth-child(3){animation-delay:.2s}
-#cfp-co .co-hero-text>:nth-child(4){animation-delay:.3s}
-#cfp-co .co-hero-text>:nth-child(5){animation-delay:.4s}
-#cfp-co .co-carpet span{animation:co-tuft .55s cubic-bezier(.2,.8,.3,1.25) both;animation-delay:calc(.35s + var(--i) * 60ms)}
 
 /* 見出しの右：店舗の写真を重ねて、順に入れ替える */
-#cfp-co .co-stack{position:relative;aspect-ratio:4/3;margin:10px 4% 0}
-#cfp-co .co-stack img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;border:6px solid #fff;box-shadow:0 36px 60px -30px rgba(0,0,0,.7);transition:transform .9s var(--ease),opacity .9s var(--ease),filter .9s;animation:co-fadein .9s var(--ease) both}
 @keyframes co-fadein{from{opacity:0}to{opacity:1}}
-#cfp-co .co-stack .is-1{z-index:3;transform:rotate(-3deg);animation-delay:.5s}
-#cfp-co .co-stack .is-2{z-index:2;transform:translate(9%,-9%) rotate(5deg) scale(.9);filter:brightness(.8);animation-delay:.35s}
-#cfp-co .co-stack .is-3{z-index:1;transform:translate(-9%,-14%) rotate(-9deg) scale(.82);filter:brightness(.65);animation-delay:.2s}
-#cfp-co .co-hero-art:hover .co-stack .is-1{transform:rotate(0) scale(1.02)}
+
+/* ───── 見出し：画面いっぱいの写真（数秒ごとに入れ替え）＋大きな英語の見出し ───── */
+#cfp-co{--gut:20px;--accent:#C99A00}
+#cfp-co .co-hero{position:relative;overflow:hidden;margin:0 calc(var(--gut) * -1);min-height:min(88vh,760px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#fff;background:#0B1117;isolation:isolate;padding:120px 24px 130px}
+#cfp-co .co-slides img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.1);transition:opacity 1.6s ease,transform 8s linear;z-index:-2}
+#cfp-co .co-slides img.is-on{opacity:1;transform:scale(1)}
+#cfp-co .co-hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(8,12,17,.55) 0%,rgba(8,12,17,.62) 55%,rgba(8,12,17,.85) 100%)}
+#cfp-co .co-hero-eyebrow{font-family:Montserrat,var(--sans);font-weight:800;font-size:clamp(15px,2vw,26px);letter-spacing:.06em;color:var(--yellow);margin:0}
+#cfp-co .co-hero-en{font-family:Montserrat,var(--sans);font-weight:800;font-size:clamp(34px,6.4vw,84px);line-height:1.08;letter-spacing:.01em;margin:6px 0 0;text-transform:uppercase}
+#cfp-co .co-hero-rule{width:min(760px,90%);height:1px;background:rgba(255,255,255,.75);margin:22px auto 20px;border:0}
+#cfp-co .co-hero h1{font-family:var(--serif);font-weight:500;font-size:clamp(19px,2.3vw,28px);line-height:1.6;letter-spacing:.06em;color:#fff;margin:0;word-break:keep-all;overflow-wrap:anywhere}
+#cfp-co .co-hero h1 span{display:inline-block}
+#cfp-co .co-hero .co-lead{margin:12px auto 0;max-width:40em;color:rgba(255,255,255,.82);font-size:14.5px;line-height:1.95}
+#cfp-co .co-hero-cta{display:flex;flex-wrap:wrap;justify-content:center;gap:14px 18px;margin-top:30px}
+#cfp-co .co-btn-line{display:inline-flex;align-items:center;gap:10px;padding:12px 34px;border:1px solid #fff;color:#fff;font-size:15px;font-weight:700;letter-spacing:.06em;transition:background-color .25s,color .25s}
+#cfp-co .co-btn-line:hover{background:#fff;color:#0B1117}
+#cfp-co .co-btn-line.is-main{border-color:var(--yellow);background:var(--yellow);color:#0B1117}
+#cfp-co .co-btn-line.is-main:hover{background:#fff;border-color:#fff}
+#cfp-co .co-thumbs{position:absolute;left:0;right:0;bottom:28px;display:flex;justify-content:center;gap:12px}
+#cfp-co .co-thumbs button{width:58px;height:46px;padding:0;border:2px solid rgba(255,255,255,.35);background:none;cursor:pointer;opacity:.65;transition:opacity .3s,border-color .3s}
+#cfp-co .co-thumbs button img{display:block;width:100%;height:100%;object-fit:cover}
+#cfp-co .co-thumbs button.is-on{opacity:1;border-color:var(--yellow)}
+#cfp-co .co-hero-note{position:absolute;right:16px;bottom:10px;margin:0;font-size:11px;color:rgba(255,255,255,.55)}
+#cfp-co .co-hero>*:not(.co-slides):not(.co-thumbs):not(.co-hero-note){animation:co-rise .9s var(--ease) both}
+#cfp-co .co-hero>.co-hero-en{animation-delay:.12s}
+#cfp-co .co-hero>h1{animation-delay:.24s}
+#cfp-co .co-hero>.co-lead{animation-delay:.32s}
+#cfp-co .co-hero>.co-hero-cta{animation-delay:.4s}
+
+/* 暗い帯（特長・使う場所）：参考の「暗い地に写真のカード」 */
+#cfp-co .co-band{--ink:#EEF2F6;--ink-2:#A9B5C2;--paper:#17212B;--field:#1E2934;--line:#2B3947;--accent:var(--yellow);margin:0 calc(var(--gut) * -1);padding:72px clamp(18px,4vw,56px) 80px;background:#0F161D;color:var(--ink)}
+#cfp-co .co-band+.co-band{padding-top:8px;background:linear-gradient(#0F161D,#0F161D 62%,var(--ground) 62%)}
+#cfp-co .co-band .co-info{padding-top:0}
+#cfp-co .co-band .co-pt-ic{background:var(--yellow);color:#0F161D}
+#cfp-co .co-band .co-points li{border-top-color:var(--yellow)}
+#cfp-co .co-band .co-uses figure{background:#fff}
+#cfp-co .co-band .co-uses figcaption{color:#4A5F76;text-align:center}
+#cfp-co .co-band .co-uses figcaption b{color:#082A49}
+#cfp-co .co-band .co-uses figcaption b::after{content:attr(data-en);display:block;font-family:Montserrat,var(--sans);font-size:11px;font-weight:800;letter-spacing:.12em;color:#B08400;margin:2px 0 4px}
+#cfp-co .co-band .co-info-note{color:var(--ink-2)}
+#cfp-co .co-band+.co-band .co-info-note{color:#4A5F76}
+#cfp-co .co-stats{display:flex;flex-wrap:wrap;justify-content:center;gap:12px 56px;margin:0 0 40px;padding:0 0 34px;border-bottom:1px solid var(--line)}
+#cfp-co .co-stats div{text-align:center}
+#cfp-co .co-stats dt{font-size:12.5px;color:var(--ink-2);font-weight:500}
+#cfp-co .co-stats dd{margin:0;font-family:Montserrat,var(--sans);font-weight:800;font-size:44px;line-height:1.15;color:#fff;font-variant-numeric:tabular-nums}
+#cfp-co .co-stats small{display:inline;margin:0 0 0 4px;font-family:var(--sans);font-size:14px;font-weight:700;color:var(--yellow)}
+#cfp-co .co-band .co-index{margin-top:44px;border-top-color:var(--line)}
+#cfp-co .co-band .co-index a:hover{color:var(--yellow)}
+#cfp-co .co-band .co-index a.is-order{color:var(--yellow)}
+
+/* 見出し：大きな英語（2語目は差し色）＋日本語 */
+#cfp-co .co-kicker{font-family:Montserrat,var(--sans);font-weight:800;font-size:clamp(28px,3.6vw,42px);line-height:1.15;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-align:center;margin:0 0 6px}
+#cfp-co .co-kicker span{color:var(--accent)}
+#cfp-co .co-kicker+.co-info-h{text-align:center;font-family:var(--sans);font-weight:500;font-size:15px;color:var(--ink-2);letter-spacing:.08em;margin:0 0 34px}
+#cfp-co .co-kicker+.co-info-h::after{content:"";display:block;width:44px;height:3px;background:var(--accent);margin:14px auto 0}
+#cfp-co .co-info-lead{margin-left:auto;margin-right:auto}
+#cfp-co .co-sel-head .co-kicker,#cfp-co .co-order-head .co-kicker{text-align:left}
+#cfp-co .co-order-head .co-kicker+.co-info-h{text-align:left}
+#cfp-co .co-order-head .co-kicker+.co-info-h::after{margin-left:0}
 
 /* 基本16色が流れる帯 */
 #cfp-co .co-marquee{overflow:hidden;margin:20px 0 0;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
@@ -109,9 +136,6 @@
 
 /* ───── 説明のセクション ───── */
 #cfp-co .co-info{padding:96px 0 0}
-#cfp-co .co-kicker{display:flex;align-items:center;gap:14px;font-size:12px;font-weight:700;letter-spacing:.22em;color:var(--blue);margin-bottom:12px;text-transform:uppercase}
-#cfp-co .co-kicker b{font-family:var(--serif);font-size:15px;font-weight:600;letter-spacing:.08em;color:var(--ink)}
-#cfp-co .co-kicker::after{content:"";flex:0 0 48px;height:1px;background:var(--ink)}
 #cfp-co .co-info-h{font-family:var(--serif);font-weight:600;font-size:clamp(24px,3vw,36px);line-height:1.5;margin:0 0 20px}
 #cfp-co .co-info h3{font-size:18px;margin:0 0 8px}
 #cfp-co .co-info-h3{margin-top:40px!important}
@@ -355,8 +379,6 @@ html.cfp-co-modal-open{overflow:hidden}
   #cfp-co .co-layout{grid-template-columns:minmax(0,1fr) 330px;gap:32px}
 }
 @media (max-width:900px){
-  #cfp-co .co-hero{grid-template-columns:1fr;gap:44px;padding:52px 32px 48px}
-  #cfp-co .co-hero-art{max-width:440px}
   #cfp-co .co-two,#cfp-co .co-piles,#cfp-co .co-uses,#cfp-co .co-install-steps,#cfp-co .co-tiers{grid-template-columns:1fr}
   #cfp-co .co-tiers{gap:22px}
   #cfp-co .co-ref-row{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -370,12 +392,11 @@ html.cfp-co-modal-open{overflow:hidden}
   #cfp-co .co-vars{grid-template-columns:1fr}
 }
 @media (max-width:560px){
-  #cfp-co{padding:0 12px 40px;font-size:15.5px}
-  #cfp-co .co-hero{padding:40px 22px 40px;border-radius:20px}
-  #cfp-co .co-hero h1{font-size:24px;letter-spacing:.03em}
-  #cfp-co .co-stats{gap:0 20px}
-  #cfp-co .co-stats dd{font-size:28px;white-space:nowrap}
-  #cfp-co .co-stats small{font-size:12px}
+  #cfp-co{padding:0 12px 40px;font-size:15.5px;--gut:12px}
+  #cfp-co .co-hero{min-height:82vh;padding:90px 18px 110px}
+  #cfp-co .co-stats{gap:10px 28px}
+  #cfp-co .co-stats dd{font-size:34px}
+  #cfp-co .co-btn-line{padding:12px 24px}
   #cfp-co .co-index{grid-template-columns:repeat(2,minmax(0,1fr))}
   #cfp-co .co-points{grid-template-columns:1fr}
   #cfp-co .co-points li{display:grid;grid-template-columns:46px 1fr;gap:2px 14px;align-items:center}
@@ -403,14 +424,12 @@ html.cfp-co-modal-open{overflow:hidden}
   #cfp-co .co-step h2{line-height:36px;font-size:19px}
   #cfp-co .co-step-body{grid-column:1/-1}
   #cfp-co .co-agree-doc,#cfp-co .co-qs-status{margin-left:0}
-  #cfp-co .co-carpet{padding:8px;gap:2px}
   #cfp-co .co-company dl{padding:6px 18px}
   #cfp-co .co-fab{left:16px;right:16px;justify-content:center;bottom:14px}
 }
 @media (prefers-reduced-motion:reduce){
   #cfp-co *,#cfp-co *::before,#cfp-co *::after{animation:none!important;transition:none!important}
   #cfp-co .co-var.on,#cfp-co .co-var:hover{transform:none}
-  #cfp-co .co-carpet{transform:none}
   #cfp-co.js-reveal .co-reveal{opacity:1;transform:none}
 }
 </style>
@@ -419,42 +438,34 @@ html.cfp-co-modal-open{overflow:hidden}
 <!-- 注文フォーム（新ページ） -->
 <div id="co-order-view" hidden>
   <header class="co-hero">
-    <div class="co-hero-text">
-      <p class="co-eyebrow">ORIGINAL PRINT TILE CARPET</p>
-      <h1><span>お手持ちの絵柄を、</span><span>50cm角の</span><span><em>タイルカーペット</em>に。</span></h1>
-      <p class="co-lead">デザイン画像とサイズを送ってください。担当者がカーペットの糸の色に置き換えたプレビューをメールでお送りします。仕上がりを見て案を選び、カードでお支払いいただいた時点で正式なご注文になります。</p>
-      <p class="co-hero-cta"><a class="co-btn co-btn-inline" href="#co-form">ご注文フォームへ</a><a class="co-ghost" href="#co-uses">使う場所を見る</a></p>
-      <dl class="co-stats">
-        <div><dt>タイル1枚</dt><dd>50<small>cm角</small></dd></div>
-        <div><dt>無償の基本色</dt><dd>16<small>色</small></dd></div>
-        <div><dt>お支払い後の発送</dt><dd>約2<small>週間</small></dd></div>
-      </dl>
+    <div class="co-slides" id="co-slides" aria-hidden="true">
+      <img class="is-on" src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="" width="960" height="720" fetchpriority="high">
+      <img src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="" width="960" height="720">
+      <img src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="" width="960" height="720">
     </div>
-    <figure class="co-hero-art">
-      <div class="co-stack" id="co-stack">
-        <img class="is-1" src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="ネイルサロンの床に敷いた、花柄のタイルカーペット" width="960" height="720" fetchpriority="high">
-        <img class="is-2" src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="フィットネスジムの床に敷いた、動線と番号入りのタイルカーペット" width="960" height="720">
-        <img class="is-3" src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="アパレルショップの床に敷いた、ロゴと文字のタイルカーペット" width="960" height="720">
-      </div>
-      <figcaption class="co-carpet-note">お店の床を、お手持ちの絵柄で。（写真はイメージです）</figcaption>
-    </figure>
+    <p class="co-hero-eyebrow">ORIGINAL PRINT TILE CARPET</p>
+    <p class="co-hero-en" aria-hidden="true">Your design,<br>on the floor.</p>
+    <hr class="co-hero-rule">
+    <h1><span>お手持ちの絵柄を、</span><span>50cm角の</span><span>タイルカーペットに。</span></h1>
+    <p class="co-lead">デザイン画像とサイズを送ってください。担当者がカーペットの糸の色に置き換えたプレビューをメールでお送りします。仕上がりを見て案を選び、カードでお支払いいただいた時点で正式なご注文になります。</p>
+    <p class="co-hero-cta"><a class="co-btn-line is-main" href="#co-form">ご注文フォームへ</a><a class="co-btn-line" href="#co-uses">使う場所を見る</a></p>
+    <div class="co-thumbs" id="co-thumbs">
+      <button type="button" class="is-on" aria-label="ネイルサロンの写真"><img src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="" width="58" height="46"></button>
+      <button type="button" aria-label="フィットネスジムの写真"><img src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="" width="58" height="46"></button>
+      <button type="button" aria-label="アパレルショップの写真"><img src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="" width="58" height="46"></button>
+    </div>
+    <p class="co-hero-note">写真はイメージです</p>
   </header>
 
-  <div class="co-marquee" aria-hidden="true"><div class="co-marquee-track"><span><i style="background:#EFEFEF"></i>基本-01</span><span><i style="background:#E8AB82"></i>基本-02</span><span><i style="background:#DB9514"></i>基本-03</span><span><i style="background:#898989"></i>基本-04</span><span><i style="background:#95B7E1"></i>基本-05</span><span><i style="background:#C8161E"></i>基本-06</span><span><i style="background:#DC5310"></i>基本-07</span><span><i style="background:#FABE00"></i>基本-08</span><span><i style="background:#218F49"></i>基本-09</span><span><i style="background:#005EAD"></i>基本-10</span><span><i style="background:#5B1131"></i>基本-11</span><span><i style="background:#5D2B17"></i>基本-12</span><span><i style="background:#322B29"></i>基本-13</span><span><i style="background:#263F22"></i>基本-14</span><span><i style="background:#082A49"></i>基本-15</span><span><i style="background:#000000"></i>基本-16</span><span><i style="background:#EFEFEF"></i>基本-01</span><span><i style="background:#E8AB82"></i>基本-02</span><span><i style="background:#DB9514"></i>基本-03</span><span><i style="background:#898989"></i>基本-04</span><span><i style="background:#95B7E1"></i>基本-05</span><span><i style="background:#C8161E"></i>基本-06</span><span><i style="background:#DC5310"></i>基本-07</span><span><i style="background:#FABE00"></i>基本-08</span><span><i style="background:#218F49"></i>基本-09</span><span><i style="background:#005EAD"></i>基本-10</span><span><i style="background:#5B1131"></i>基本-11</span><span><i style="background:#5D2B17"></i>基本-12</span><span><i style="background:#322B29"></i>基本-13</span><span><i style="background:#263F22"></i>基本-14</span><span><i style="background:#082A49"></i>基本-15</span><span><i style="background:#000000"></i>基本-16</span></div></div>
-
-
+  <div class="co-band">
+    <p class="co-kicker">Why <span>Mush Office</span></p>
+    <h2 class="co-info-h">マッシュオフィスのタイルカーペット</h2>
+    <dl class="co-stats">
+      <div><dt>タイル1枚</dt><dd>50<small>cm角</small></dd></div>
+      <div><dt>無償の基本色</dt><dd>16<small>色</small></dd></div>
+      <div><dt>お支払い後の発送</dt><dd>約2<small>週間</small></dd></div>
+    </dl>
   <ul class="co-points co-reveal" aria-label="マッシュオフィスのタイルカーペットの特長"><li style="--d:0.00s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15c0-3 1-7 1-9h5l1 4c2 1 6 2 8 3 1 .5 1 2 1 3v2H4z"/><path d="M4 18h16"/></svg></span><b>土足OK・<wbr>ペットもOK</b><span class="co-pt-tx">耐久性があるので、土足でもOK。ペットのいるお部屋もOKです。滑りやすいフローリングと違い、ワンちゃんが滑りにくく、足腰を痛めにくくなります。</span></li><li style="--d:0.08s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z"/></svg></span><b>防炎物品の認定</b><span class="co-pt-tx">防炎・制電の加工つき。防炎物品が必要な店舗や展示会、オフィスにも使えます。</span></li><li style="--d:0.16s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="14.5" y="14.5" width="8" height="8" rx="1" transform="rotate(-8 18.5 18.5)"/></svg></span><b>1枚ずつ<wbr>洗える・<wbr>替えられる</b><span class="co-pt-tx">50cm角のタイルなので、汚れた1枚だけ外して水洗い。傷んだら、その1枚だけ交換できます。</span></li><li style="--d:0.24s"><span class="co-pt-ic"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></span><b>プレビューを<wbr>見てから支払い</b><span class="co-pt-tx">担当者が色を置き換えた案をメールでお送りします。選んでからお支払い。作り直しも頼めます。</span></li></ul>
-
-  <section class="co-info co-reveal" id="co-compare">
-    <p class="co-kicker">Compare</p>
-    <h2 class="co-info-h">他社のプリントカーペットとの違い</h2>
-    <p class="co-info-lead">家庭用のプリントカーペット（他社）と比べた、マッシュオフィスのタイルカーペットの特長です。</p>
-    <div class="co-cmp-wrap"><table class="co-cmp">
-      <thead><tr><th scope="col">比べること</th><th scope="col" class="is-us">マッシュオフィス</th><th scope="col">他社</th></tr></thead>
-      <tbody><tr><th scope="row">土足</th><td data-l="マッシュオフィス">使える。人の多い店舗・オフィスにも対応</td><td data-l="他社">土足は禁止（プリントが剥がれる原因になるため）</td></tr><tr><th scope="row">染め方</th><td data-l="マッシュオフィス">糸の根元まで染める。ナイロン100%で、こすれても色が残る</td><td data-l="他社">生地の表面にインクジェットで印刷（ポリエステル）</td></tr><tr><th scope="row">防炎・制電</th><td data-l="マッシュオフィス">防炎物品の認定あり。制電の加工もあり</td><td data-l="他社">表記なし</td></tr><tr><th scope="row">形</th><td data-l="マッシュオフィス">50cm角のタイル。汚れたら1枚だけ外して水洗い、傷んだら1枚だけ交換できる</td><td data-l="他社">1枚ものの敷物（最大3m）</td></tr><tr><th scope="row">厚さ・丈夫さ</th><td data-l="マッシュオフィス">全厚 約7〜9mm。裏地はガラス繊維＋塩ビで、反りやずれが起きにくい</td><td data-l="他社">厚さ2〜4mm。「角が反る」「印刷スジが入る」「濃い色は色移りする」との注意書きあり</td></tr><tr><th scope="row">広い場所</th><td data-l="マッシュオフィス">タイルを並べるので、何十㎡でも敷ける。10㎡以上は単価が下がる</td><td data-l="他社">最大3mまで</td></tr><tr><th scope="row">仕上がりの確認</th><td data-l="マッシュオフィス">担当者が色を置き換えたプレビューを3案送る。選んでから支払い。気に入らなければプレビューデータの作り直しを頼める</td><td data-l="他社">そのまま印刷できる「完全データ」で入稿。店側では直さない。画像は真ん中で自動的に切り取られる</td></tr><tr><th scope="row">キャンセル</th><td data-l="マッシュオフィス">発注から3日以内は無償</td><td data-l="他社">注文確定後はできない</td></tr><tr><th scope="row">法人向け</th><td data-l="マッシュオフィス">適格請求書発行事業者の登録番号を表示。決済後のメールに消費税額も記載</td><td data-l="他社">書類の同梱はなし（Webの領収書のみ）</td></tr></tbody></table></div>
-    <p class="co-info-note">他社の内容は、家庭用プリントカーペットの販売ページの記載をもとにした一例です（2026年11月時点）。</p>
-  </section>
-
   <nav class="co-index" aria-label="このページの内容">
     <a href="#co-uses"><b>01</b>使う場所</a>
     <a href="#co-colors"><b>02</b>色の置き換え</a>
@@ -465,28 +476,55 @@ html.cfp-co-modal-open{overflow:hidden}
     <a href="#co-form" class="is-order"><b>07</b>ご注文</a>
     <a href="#co-about"><b>08</b>会社情報</a>
   </nav>
+  </div>
 
-  <ol class="co-flow co-reveal">
+  <div class="co-band">
+  <section class="co-info co-reveal" id="co-uses">
+    <p class="co-kicker">Our <span>Works</span></p>
+    <h2 class="co-info-h">こんな場所に</h2>
+    <div class="co-uses">
+      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="ネイルサロンの床に敷いた、花柄のタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-nail-close.webp" alt="花柄と「Nail Salon」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b data-en="NAIL SALON">ネイルサロン</b>やさしい色の花柄と店名で、お店の雰囲気をそのまま床に。淡い色やグラデーションも表現できます。</figcaption></figure>
+      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="フィットネスジムの床に敷いた、動線と番号入りのタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-gym-close.webp" alt="「TRAINING ZONE」「01 WARM UP」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b data-en="FITNESS GYM">フィットネスジム</b>エリア名や順路を床に入れて案内に。土足や人の多い場所でも使える丈夫なつくりです。</figcaption></figure>
+      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="アパレルショップの床に敷いた、ロゴと文字のタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-apparel-close.webp" alt="「STREET CULTURE」「APPAREL」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b data-en="APPAREL SHOP">アパレルショップ</b>ブランドの世界観を床いっぱいに。ロゴや大きな文字で、店内を印象的な空間にします。</figcaption></figure>
+    </div>
+    <p class="co-info-note">写真はイメージです（デザインの一例）。</p>
+  </section>
+  </div>
+
+
+  <div class="co-marquee" aria-hidden="true"><div class="co-marquee-track"><span><i style="background:#EFEFEF"></i>基本-01</span><span><i style="background:#E8AB82"></i>基本-02</span><span><i style="background:#DB9514"></i>基本-03</span><span><i style="background:#898989"></i>基本-04</span><span><i style="background:#95B7E1"></i>基本-05</span><span><i style="background:#C8161E"></i>基本-06</span><span><i style="background:#DC5310"></i>基本-07</span><span><i style="background:#FABE00"></i>基本-08</span><span><i style="background:#218F49"></i>基本-09</span><span><i style="background:#005EAD"></i>基本-10</span><span><i style="background:#5B1131"></i>基本-11</span><span><i style="background:#5D2B17"></i>基本-12</span><span><i style="background:#322B29"></i>基本-13</span><span><i style="background:#263F22"></i>基本-14</span><span><i style="background:#082A49"></i>基本-15</span><span><i style="background:#000000"></i>基本-16</span><span><i style="background:#EFEFEF"></i>基本-01</span><span><i style="background:#E8AB82"></i>基本-02</span><span><i style="background:#DB9514"></i>基本-03</span><span><i style="background:#898989"></i>基本-04</span><span><i style="background:#95B7E1"></i>基本-05</span><span><i style="background:#C8161E"></i>基本-06</span><span><i style="background:#DC5310"></i>基本-07</span><span><i style="background:#FABE00"></i>基本-08</span><span><i style="background:#218F49"></i>基本-09</span><span><i style="background:#005EAD"></i>基本-10</span><span><i style="background:#5B1131"></i>基本-11</span><span><i style="background:#5D2B17"></i>基本-12</span><span><i style="background:#322B29"></i>基本-13</span><span><i style="background:#263F22"></i>基本-14</span><span><i style="background:#082A49"></i>基本-15</span><span><i style="background:#000000"></i>基本-16</span></div></div>
+
+
+
+
+  <section class="co-info co-reveal" id="co-compare">
+    <p class="co-kicker">Compare <span>Others</span></p>
+    <h2 class="co-info-h">他社のプリントカーペットとの違い</h2>
+    <p class="co-info-lead">家庭用のプリントカーペット（他社）と比べた、マッシュオフィスのタイルカーペットの特長です。</p>
+    <div class="co-cmp-wrap"><table class="co-cmp">
+      <thead><tr><th scope="col">比べること</th><th scope="col" class="is-us">マッシュオフィス</th><th scope="col">他社</th></tr></thead>
+      <tbody><tr><th scope="row">土足</th><td data-l="マッシュオフィス">使える。人の多い店舗・オフィスにも対応</td><td data-l="他社">土足は禁止（プリントが剥がれる原因になるため）</td></tr><tr><th scope="row">染め方</th><td data-l="マッシュオフィス">糸の根元まで染める。ナイロン100%で、こすれても色が残る</td><td data-l="他社">生地の表面にインクジェットで印刷（ポリエステル）</td></tr><tr><th scope="row">防炎・制電</th><td data-l="マッシュオフィス">防炎物品の認定あり。制電の加工もあり</td><td data-l="他社">表記なし</td></tr><tr><th scope="row">形</th><td data-l="マッシュオフィス">50cm角のタイル。汚れたら1枚だけ外して水洗い、傷んだら1枚だけ交換できる</td><td data-l="他社">1枚ものの敷物（最大3m）</td></tr><tr><th scope="row">厚さ・丈夫さ</th><td data-l="マッシュオフィス">全厚 約7〜9mm。裏地はガラス繊維＋塩ビで、反りやずれが起きにくい</td><td data-l="他社">厚さ2〜4mm。「角が反る」「印刷スジが入る」「濃い色は色移りする」との注意書きあり</td></tr><tr><th scope="row">広い場所</th><td data-l="マッシュオフィス">タイルを並べるので、何十㎡でも敷ける。10㎡以上は単価が下がる</td><td data-l="他社">最大3mまで</td></tr><tr><th scope="row">仕上がりの確認</th><td data-l="マッシュオフィス">担当者が色を置き換えたプレビューを3案送る。選んでから支払い。気に入らなければプレビューデータの作り直しを頼める</td><td data-l="他社">そのまま印刷できる「完全データ」で入稿。店側では直さない。画像は真ん中で自動的に切り取られる</td></tr><tr><th scope="row">キャンセル</th><td data-l="マッシュオフィス">発注から3日以内は無償</td><td data-l="他社">注文確定後はできない</td></tr><tr><th scope="row">法人向け</th><td data-l="マッシュオフィス">適格請求書発行事業者の登録番号を表示。決済後のメールに消費税額も記載</td><td data-l="他社">書類の同梱はなし（Webの領収書のみ）</td></tr></tbody></table></div>
+    <p class="co-info-note">他社の内容は、家庭用プリントカーペットの販売ページの記載をもとにした一例です（2026年11月時点）。</p>
+  </section>
+
+
+
+  <section class="co-info co-reveal" id="co-flowsec">
+    <p class="co-kicker">Order <span>Flow</span></p>
+    <h2 class="co-info-h">ご注文の流れ</h2>
+  <ol class="co-flow">
     <li><i>01</i><b>発注</b><span>画像・サイズ・ご連絡先を送る</span></li>
     <li><i>02</i><b>プレビュー</b><span>色の置き換え案をメールで受け取る</span></li>
     <li><i>03</i><b>案を選ぶ</b><span>作り直しの依頼もできます</span></li>
     <li><i>04</i><b>お支払い</b><span>カード決済で正式なご注文に</span></li>
     <li><i>05</i><b>製作・発送</b><span>お支払い後、約2週間で発送</span></li>
   </ol>
-
-  <section class="co-info co-reveal" id="co-uses">
-    <p class="co-kicker"><b>01</b>Uses</p>
-    <h2 class="co-info-h">こんな場所に</h2>
-    <div class="co-uses">
-      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="ネイルサロンの床に敷いた、花柄のタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-nail-close.webp" alt="花柄と「Nail Salon」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b>ネイルサロン</b>やさしい色の花柄と店名で、お店の雰囲気をそのまま床に。淡い色やグラデーションも表現できます。</figcaption></figure>
-      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="フィットネスジムの床に敷いた、動線と番号入りのタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-gym-close.webp" alt="「TRAINING ZONE」「01 WARM UP」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b>フィットネスジム</b>エリア名や順路を床に入れて案内に。土足や人の多い場所でも使える丈夫なつくりです。</figcaption></figure>
-      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="アパレルショップの床に敷いた、ロゴと文字のタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-apparel-close.webp" alt="「STREET CULTURE」「APPAREL」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b>アパレルショップ</b>ブランドの世界観を床いっぱいに。ロゴや大きな文字で、店内を印象的な空間にします。</figcaption></figure>
-    </div>
-    <p class="co-info-note">写真はイメージです（デザインの一例）。</p>
   </section>
 
+
+
   <section class="co-info co-reveal" id="co-colors">
-    <p class="co-kicker"><b>02</b>Color</p>
+    <p class="co-kicker">Color <span>Change</span></p>
     <h2 class="co-info-h">色の置き換えについて</h2>
     <p class="co-info-lead">カーペットのプリントは、紙への印刷と違い、糸（パイル）を直接染める工業的な方法です。きれいな仕上がりと耐久性のために、ご入稿の画像をカーペット専用の色（最大16色）に置き換えます。</p>
     <div class="co-two">
@@ -500,7 +538,7 @@ html.cfp-co-modal-open{overflow:hidden}
   </section>
 
   <section class="co-info co-reveal" id="co-palette">
-    <p class="co-kicker"><b>03</b>Palette</p>
+    <p class="co-kicker">Color <span>Palette</span></p>
     <h2 class="co-info-h">使える色（カラーパレット）</h2>
     <p class="co-info-lead">ご入稿の画像は、下の色（最大16色まで）に置き換えて染めます。標準色とOP-03・OP-05は無償、そのほかのオプションカラーは1色につき ¥35,000（税別・10㎡以上は3色まで無料）です。どの色を使うかは、プレビューの案でご確認いただけます。</p>
     <div class="co-pal-wrap">{{CFP_PALETTE}}</div>
@@ -508,7 +546,7 @@ html.cfp-co-modal-open{overflow:hidden}
   </section>
 
   <section class="co-info co-reveal" id="co-spec">
-    <p class="co-kicker"><b>04</b>Structure</p>
+    <p class="co-kicker">Product <span>Spec</span></p>
     <h2 class="co-info-h">製品の構造と仕様</h2>
     <div class="co-piles">
       <div class="co-pile">
@@ -543,7 +581,7 @@ html.cfp-co-modal-open{overflow:hidden}
   </section>
 
   <section class="co-info co-reveal" id="co-price">
-    <p class="co-kicker"><b>05</b>Price</p>
+    <p class="co-kicker">Price <span>List</span></p>
     <h2 class="co-info-h">価格</h2>
     <p class="co-info-lead">㎡あたりの単価は、ご注文の面積が広いほど下がります。1回のご注文は50㎡までです（それより広い場合はお問い合わせください）。金額は税別、下の小さな数字は税込です。</p>
     <div class="co-tiers">
@@ -566,7 +604,7 @@ html.cfp-co-modal-open{overflow:hidden}
   </section>
 
   <section class="co-info co-reveal" id="co-quality-info">
-    <p class="co-kicker"><b>06</b>Quality</p>
+    <p class="co-kicker">Our <span>Quality</span></p>
     <h2 class="co-info-h">品質</h2>
     <div class="co-two">
       <div class="co-card-b"><h3>品質基準（概要）</h3><dl>
@@ -606,7 +644,7 @@ html.cfp-co-modal-open{overflow:hidden}
 
   <section class="co-order" aria-labelledby="co-form">
   <header class="co-order-head">
-    <p class="co-kicker"><b>07</b>Order</p>
+    <p class="co-kicker">Order <span>Form</span></p>
     <h2 class="co-info-h" id="co-form">ご注文フォーム</h2>
     <p>4つの項目を入れて発注すると、プレビューがメールで届きます。この時点ではお支払いは発生しません。</p>
   </header>
@@ -700,7 +738,7 @@ html.cfp-co-modal-open{overflow:hidden}
 <!-- 案の選択とお支払い（メールのリンクから） -->
 <div id="co-select-view" hidden>
   <header class="co-sel-head">
-    <p class="co-kicker">Preview</p>
+    <p class="co-kicker">Your <span>Preview</span></p>
     <h1>仕上がりの案を<wbr>お選びください</h1>
     <p class="co-lead co-num" id="co-sel-lead"></p>
   </header>
@@ -736,7 +774,7 @@ html.cfp-co-modal-open{overflow:hidden}
 </div>
 
 <section class="co-info co-company" id="co-about">
-  <p class="co-kicker"><b>08</b>Company</p>
+  <p class="co-kicker">Company <span>Info</span></p>
   <h2 class="co-info-h">会社情報・特定商取引法に基づく表記</h2>
   {{CFP_COMPANY}}
 </section>
