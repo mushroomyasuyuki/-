@@ -260,7 +260,7 @@ class CFP_Carpet_Order {
         }
         update_option('cfp_co_page_id', $new_id);
         update_option('cfp_co_page_created', 1);
-        self::apply_share($new_id, CFP_PLUGIN_DIR . 'assets/img/og-carpet-order.jpg', self::SHARE_ORDER);
+        self::apply_share($new_id, CFP_PLUGIN_DIR . 'assets/img/og-carpet-order-photo.jpg', self::SHARE_ORDER);
         return (int) $new_id;
     }
 
@@ -269,10 +269,19 @@ class CFP_Carpet_Order {
      * Cocoon はアイキャッチを og:image に、メタディスクリプション（なければ抜粋）を og:description に使う。
      * アイキャッチはページには出さない（テンプレートの CSS で隠す）。
      */
-    public static function apply_share($page_id, $file, $desc) {
+    public static function apply_share($page_id, $file, $desc, $replace_prefix = '') {
         $page_id = (int) $page_id;
         if (!$page_id || get_post_type($page_id) !== 'page') {
             return;
+        }
+        // このプラグインが前に入れたアイキャッチ（ファイル名が $replace_prefix で始まる）なら、新しい画像に差し替える
+        $old = (int) get_post_thumbnail_id($page_id);
+        if ($old && $replace_prefix !== '') {
+            $oldf = basename((string) get_attached_file($old));
+            if (strpos($oldf, $replace_prefix) === 0 && strpos($oldf, pathinfo($file, PATHINFO_FILENAME)) !== 0) {
+                delete_post_thumbnail($page_id);
+                wp_delete_attachment($old, true);
+            }
         }
         if (!has_post_thumbnail($page_id) && is_readable($file)) {
             $up = wp_upload_bits(basename($file), null, file_get_contents($file));
@@ -304,7 +313,7 @@ class CFP_Carpet_Order {
     public static function apply_share_all() {
         $order = self::page_id();
         if ($order) {
-            self::apply_share($order, CFP_PLUGIN_DIR . 'assets/img/og-carpet-order.jpg', self::SHARE_ORDER);
+            self::apply_share($order, CFP_PLUGIN_DIR . 'assets/img/og-carpet-order-photo.jpg', self::SHARE_ORDER, 'og-carpet-order');
         }
         $sim = (int) get_option('cad_floor_plan_page_id');
         if ($sim) {

@@ -3,7 +3,7 @@
  * Plugin Name: 壁紙・カーペットシミュレーション（CAD対応）
  * Plugin URI: https://github.com/mushroomyasuyuki/-
  * Description: 壁紙・カーペットのデザイン減色・見積もり・お部屋パースのシミュレーションに、DXF / ベクターPDF / JSON / PNG・JPEG の間取り読み込み（CAD 3D表示）と、注文メール送信（Design Order Mailer 同梱）を組み合わせたプラグイン。有効化すると「壁紙・カーペットシミュレーション」固定ページを自動作成し、無効化すると削除します。
- * Version: 2.99.6
+ * Version: 2.99.7
  * Author: mushroomyasuyuki
  * License: MIT
  * Text Domain: cad-floor-plan
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CFP_VERSION', '2.99.6');
+define('CFP_VERSION', '2.99.7');
 define('CFP_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CFP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CFP_PAGE_TITLE', '壁紙・カーペットシミュレーション');
@@ -111,6 +111,10 @@ final class CAD_Floor_Plan_Plugin {
         }
         // 2.92.0: the pictures and descriptions shown when a link is sent on LINE / SNS
         if ($stored && version_compare($stored, '2.92.0', '<')) {
+            CFP_Carpet_Order::apply_share_all();
+        }
+        // 2.99.7: 注文ページのアイキャッチ（LINE・SNS の画像）を、カーペットの写真のデザインに差し替える
+        if ($stored && version_compare($stored, '2.99.7', '<')) {
             CFP_Carpet_Order::apply_share_all();
         }
         update_option('cad_floor_plan_version', CFP_VERSION);
