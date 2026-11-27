@@ -818,6 +818,12 @@ class CFP_Carpet_Order {
             return new WP_Error('cfp_payjp', 'PAY.JP の応答を読み取れませんでした。');
         }
         if (isset($j['error'])) {
+            $code = (int) wp_remote_retrieve_response_code($r);
+            $type = (string) ($j['error']['type'] ?? '');
+            if ($code === 401 || $type === 'auth_error') {
+                // 鍵の設定の誤り：お客様には中身を見せず、管理者向けの詳しい内容は別に持つ
+                return new WP_Error('cfp_payjp_key', '現在カード決済を受け付けられません。お手数ですが、このページの「会社情報」のメール・電話でお問い合わせください。', ['admin' => 'PAY.JP の秘密鍵が正しくありません（' . (string) ($j['error']['message'] ?? '') . '）。管理画面「カーペット注文」の設定で、' . (self::payjp_keys()[2] ? '本番' : 'テスト') . '用の秘密鍵を入れ直してください。']);
+            }
             return new WP_Error('cfp_payjp', 'カード決済できませんでした：' . (string) ($j['error']['message'] ?? ''));
         }
         return $j;
@@ -848,6 +854,14 @@ class CFP_Carpet_Order {
         ]);
         delete_transient($lock);
         if (is_wp_error($ch)) {
+            $d = $ch->get_error_data();
+            self::log($o, '決済できませんでした：' . (is_array($d) && !empty($d['admin']) ? $d['admin'] : $ch->get_error_message()));
+            if ($ch->get_error_code() === 'cfp_payjp_key' && !get_transient('cfp_co_keyerr_mail')) {
+                set_transient('cfp_co_keyerr_mail', 1, HOUR_IN_SECONDS);
+                self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】カード決済ができません（PAY.JP の鍵の設定）', 'お客様がお支払いしようとしましたが、PAY.JP に断られました。' . "\n\n" . $d['admin'] . "\n\n設定を直したら、お客様に「もう一度お支払いください」とご連絡ください（同じリンクからお支払いできます）。");
+            }
+            self::flush_mail_log($o);
+            self::save($o);
             self::fail($ch->get_error_message());
         }
         $o['charge_id'] = (string) $ch['id'];
@@ -1585,7 +1599,9 @@ class CFP_Carpet_Order {
         ?>
         <div class="wrap">
             <h1>カーペット注文</h1>
-            <?php if ($msg === 'saved') : ?><div class="notice notice-success"><p>保存しました。</p></div><?php endif; ?>
+            <?php if ($msg === 'saved') : ?><div class="notice notice-success"><p>保存しました。</p></div>
+            <?php $kc = (string) get_transient('cfp_co_keycheck'); delete_transient('cfp_co_keycheck'); if ($kc !== '') : ?><div class="notice <?php echo strpos($kc, 'ok:') === 0 ? 'notice-success' : 'notice-error'; ?>"><p><?php echo esc_html(substr($kc, strpos($kc, ':') + 1)); ?></p></div><?php endif; ?>
+            <?php endif; ?>
             <?php if ($msg === 'status') : ?><div class="notice notice-success"><p>状態を変えました。</p></div><?php endif; ?>
             <?php if ($msg === 'resent') : ?><div class="notice notice-success"><p>決済完了のメールを送り直しました。結果は、その注文の「詳細」の記録で確認できます。</p></div><?php endif; ?>
             <?php if ($msg === 'deleted') : ?><div class="notice notice-success"><p>注文を削除しました。</p></div><?php endif; ?>
@@ -1729,6 +1745,24 @@ class CFP_Carpet_Order {
             }
         }
         update_option(self::OPT, $s, false);
+        // 使う方の秘密鍵が PAY.JP で使えるかを確かめる（結果を保存後の画面に出す）
+        list($vpk, $vsk, $vlive) = self::payjp_keys();
+        $mode = $vlive ? '本番' : 'テスト';
+        $chk = '';
+        if ($vsk !== '') {
+            $want = $vlive ? 'sk_live_' : 'sk_test_';
+            if (strpos($vsk, $want) !== 0) {
+                $chk = 'err:' . $mode . '用の秘密鍵の欄に、' . $want . ' で始まらない鍵が入っています。PAY.JP の' . ($vlive ? '本番' : 'テスト環境') . 'の「API」の画面から、秘密鍵（' . $want . '…）を貼り付けてください。';
+            } else {
+                $acc = self::payjp('GET', 'accounts');
+                $chk = is_wp_error($acc) ? 'err:PAY.JP で' . $mode . '用の秘密鍵を確認できませんでした。' . ((is_array($acc->get_error_data()) && !empty($acc->get_error_data()['admin'])) ? $acc->get_error_data()['admin'] : $acc->get_error_message()) : 'ok:PAY.JP の' . $mode . '用の秘密鍵を確認できました。';
+            }
+            if ($vpk !== '' && strpos($vpk, $vlive ? 'pk_live_' : 'pk_test_') !== 0) {
+                $chk .= '（公開鍵も ' . ($vlive ? 'pk_live_' : 'pk_test_') . ' で始まる鍵か確認してください）';
+                $chk = (strpos($chk, 'ok:') === 0 ? 'err:' . substr($chk, 3) : $chk);
+            }
+        }
+        set_transient('cfp_co_keycheck', $chk, 120);
         wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=saved'));
         exit;
     }
