@@ -55,7 +55,7 @@
 #cfp-co .co-carpet{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;padding:12px;background:#fff;border-radius:10px;box-shadow:0 40px 60px -30px rgba(0,0,0,.65);transform:rotate(-4deg);transition:transform .7s var(--ease)}
 #cfp-co .co-carpet span{position:relative;aspect-ratio:1;border-radius:2px;background:var(--c);overflow:hidden}
 #cfp-co .co-carpet span::after,#cfp-co .co-sw::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.12) 0 1px,transparent 1px 4px),repeating-linear-gradient(-45deg,rgba(0,0,0,.08) 0 1px,transparent 1px 5px)}
-#cfp-co .co-hero-art:hover .co-carpet{transform:rotate(0) scale(1.02)}
+
 #cfp-co .co-size-tag{position:absolute;right:-6px;top:-16px;background:var(--yellow);color:var(--ink);font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:999px;transform:rotate(-4deg);box-shadow:0 8px 16px -8px rgba(0,0,0,.5)}
 #cfp-co .co-carpet-note{margin-top:30px;font-size:12.5px;color:rgba(255,255,255,.65);text-align:center}
 @keyframes co-tuft{0%{opacity:0;transform:translateY(-16px) scale(.4)}70%{opacity:1;transform:translateY(2px) scale(1.06)}100%{opacity:1;transform:none}}
@@ -66,6 +66,15 @@
 #cfp-co .co-hero-text>:nth-child(4){animation-delay:.3s}
 #cfp-co .co-hero-text>:nth-child(5){animation-delay:.4s}
 #cfp-co .co-carpet span{animation:co-tuft .55s cubic-bezier(.2,.8,.3,1.25) both;animation-delay:calc(.35s + var(--i) * 60ms)}
+
+/* 見出しの右：店舗の写真を重ねて、順に入れ替える */
+#cfp-co .co-stack{position:relative;aspect-ratio:4/3;margin:10px 4% 0}
+#cfp-co .co-stack img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:14px;border:6px solid #fff;box-shadow:0 36px 60px -30px rgba(0,0,0,.7);transition:transform .9s var(--ease),opacity .9s var(--ease),filter .9s;animation:co-fadein .9s var(--ease) both}
+@keyframes co-fadein{from{opacity:0}to{opacity:1}}
+#cfp-co .co-stack .is-1{z-index:3;transform:rotate(-3deg);animation-delay:.5s}
+#cfp-co .co-stack .is-2{z-index:2;transform:translate(9%,-9%) rotate(5deg) scale(.9);filter:brightness(.8);animation-delay:.35s}
+#cfp-co .co-stack .is-3{z-index:1;transform:translate(-9%,-14%) rotate(-9deg) scale(.82);filter:brightness(.65);animation-delay:.2s}
+#cfp-co .co-hero-art:hover .co-stack .is-1{transform:rotate(0) scale(1.02)}
 
 /* 基本16色が流れる帯 */
 #cfp-co .co-marquee{overflow:hidden;margin:20px 0 0;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
@@ -123,6 +132,13 @@
 #cfp-co .co-uses .co-ph{overflow:hidden;aspect-ratio:4/3}
 #cfp-co .co-uses img{display:block;width:100%;height:100%;object-fit:cover;transition:transform 1.2s var(--ease)}
 #cfp-co .co-uses figure:hover img{transform:scale(1.06)}
+#cfp-co .co-uses .co-ph{position:relative}
+#cfp-co .co-uses .co-ph-zoom{position:absolute;inset:0;opacity:0;transition:opacity .5s var(--ease),transform 1.2s var(--ease)}
+#cfp-co .co-uses figure:hover .co-ph-zoom,#cfp-co .co-uses figure:focus-within .co-ph-zoom,#cfp-co .co-uses figure.is-zoom .co-ph-zoom{opacity:1}
+#cfp-co .co-uses figure{outline:none}
+#cfp-co .co-uses figure:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+#cfp-co .co-ph-hint{position:absolute;right:10px;bottom:10px;background:rgba(8,42,73,.75);color:#fff;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px;pointer-events:none;transition:opacity .3s}
+#cfp-co .co-uses figure:hover .co-ph-hint,#cfp-co .co-uses figure.is-zoom .co-ph-hint{opacity:0}
 #cfp-co .co-uses figcaption{font-size:13.5px;line-height:1.85;color:var(--ink-2);padding:18px 20px 22px}
 #cfp-co .co-uses figcaption b{display:block;font-family:var(--serif);font-size:18px;font-weight:600;color:var(--ink);margin-bottom:4px}
 
@@ -393,7 +409,7 @@ html.cfp-co-modal-open{overflow:hidden}
 }
 @media (prefers-reduced-motion:reduce){
   #cfp-co *,#cfp-co *::before,#cfp-co *::after{animation:none!important;transition:none!important}
-  #cfp-co .co-var.on,#cfp-co .co-var:hover,#cfp-co .co-hero-art:hover .co-carpet{transform:none}
+  #cfp-co .co-var.on,#cfp-co .co-var:hover{transform:none}
   #cfp-co .co-carpet{transform:none}
   #cfp-co.js-reveal .co-reveal{opacity:1;transform:none}
 }
@@ -415,9 +431,12 @@ html.cfp-co-modal-open{overflow:hidden}
       </dl>
     </div>
     <figure class="co-hero-art">
-      <div class="co-carpet" aria-hidden="true"><span style="--c:#EFEFEF;--i:0"></span><span style="--c:#EFEFEF;--i:1"></span><span style="--c:#C8161E;--i:2"></span><span style="--c:#C8161E;--i:3"></span><span style="--c:#EFEFEF;--i:4"></span><span style="--c:#EFEFEF;--i:5"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#C8161E;--i:7"></span><span style="--c:#EFEFEF;--i:8"></span><span style="--c:#EFEFEF;--i:9"></span><span style="--c:#EFEFEF;--i:1"></span><span style="--c:#C8161E;--i:2"></span><span style="--c:#C8161E;--i:3"></span><span style="--c:#C8161E;--i:4"></span><span style="--c:#C8161E;--i:5"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#C8161E;--i:7"></span><span style="--c:#C8161E;--i:8"></span><span style="--c:#C8161E;--i:9"></span><span style="--c:#95B7E1;--i:10"></span><span style="--c:#EFEFEF;--i:2"></span><span style="--c:#C8161E;--i:3"></span><span style="--c:#E8AB82;--i:4"></span><span style="--c:#C8161E;--i:5"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#C8161E;--i:7"></span><span style="--c:#C8161E;--i:8"></span><span style="--c:#C8161E;--i:9"></span><span style="--c:#C8161E;--i:10"></span><span style="--c:#EFEFEF;--i:11"></span><span style="--c:#FABE00;--i:3"></span><span style="--c:#C8161E;--i:4"></span><span style="--c:#C8161E;--i:5"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#C8161E;--i:7"></span><span style="--c:#C8161E;--i:8"></span><span style="--c:#C8161E;--i:9"></span><span style="--c:#C8161E;--i:10"></span><span style="--c:#5B1131;--i:11"></span><span style="--c:#EFEFEF;--i:12"></span><span style="--c:#EFEFEF;--i:4"></span><span style="--c:#EFEFEF;--i:5"></span><span style="--c:#C8161E;--i:6"></span><span style="--c:#C8161E;--i:7"></span><span style="--c:#C8161E;--i:8"></span><span style="--c:#C8161E;--i:9"></span><span style="--c:#C8161E;--i:10"></span><span style="--c:#5B1131;--i:11"></span><span style="--c:#EFEFEF;--i:12"></span><span style="--c:#EFEFEF;--i:13"></span><span style="--c:#EFEFEF;--i:5"></span><span style="--c:#EFEFEF;--i:6"></span><span style="--c:#EFEFEF;--i:7"></span><span style="--c:#C8161E;--i:8"></span><span style="--c:#C8161E;--i:9"></span><span style="--c:#C8161E;--i:10"></span><span style="--c:#5B1131;--i:11"></span><span style="--c:#EFEFEF;--i:12"></span><span style="--c:#EFEFEF;--i:13"></span><span style="--c:#EFEFEF;--i:14"></span><span style="--c:#EFEFEF;--i:6"></span><span style="--c:#EFEFEF;--i:7"></span><span style="--c:#EFEFEF;--i:8"></span><span style="--c:#EFEFEF;--i:9"></span><span style="--c:#C8161E;--i:10"></span><span style="--c:#5B1131;--i:11"></span><span style="--c:#EFEFEF;--i:12"></span><span style="--c:#EFEFEF;--i:13"></span><span style="--c:#EFEFEF;--i:14"></span><span style="--c:#EFEFEF;--i:15"></span><span style="--c:#EFEFEF;--i:7"></span><span style="--c:#EFEFEF;--i:8"></span><span style="--c:#EFEFEF;--i:9"></span><span style="--c:#95B7E1;--i:10"></span><span style="--c:#EFEFEF;--i:11"></span><span style="--c:#EFEFEF;--i:12"></span><span style="--c:#EFEFEF;--i:13"></span><span style="--c:#EFEFEF;--i:14"></span><span style="--c:#EFEFEF;--i:15"></span><span style="--c:#EFEFEF;--i:16"></span></div>
-      <span class="co-size-tag" aria-hidden="true">1マス＝500×500mm</span>
-      <figcaption class="co-carpet-note">絵柄を、カーペットの糸の色に置き換えて1枚ずつ染めます。</figcaption>
+      <div class="co-stack" id="co-stack">
+        <img class="is-1" src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="ネイルサロンの床に敷いた、花柄のタイルカーペット" width="960" height="720" fetchpriority="high">
+        <img class="is-2" src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="フィットネスジムの床に敷いた、動線と番号入りのタイルカーペット" width="960" height="720">
+        <img class="is-3" src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="アパレルショップの床に敷いた、ロゴと文字のタイルカーペット" width="960" height="720">
+      </div>
+      <figcaption class="co-carpet-note">お店の床を、お手持ちの絵柄で。（写真はイメージです）</figcaption>
     </figure>
   </header>
 
@@ -459,10 +478,11 @@ html.cfp-co-modal-open{overflow:hidden}
     <p class="co-kicker"><b>01</b>Uses</p>
     <h2 class="co-info-h">こんな場所に</h2>
     <div class="co-uses">
-      <figure><div class="co-ph"><img src="https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&amp;fit=crop&amp;w=720&amp;q=80" alt="店舗のエントランス" loading="lazy"></div><figcaption><b>店舗のエントランス</b>ブランドロゴやオリジナルの絵柄でお客様をお迎えします。置くだけで印象的な空間になります。</figcaption></figure>
-      <figure><div class="co-ph"><img src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&amp;fit=crop&amp;w=720&amp;q=80" alt="オフィス・展示会" loading="lazy"></div><figcaption><b>オフィス・展示会</b>案内サインやイベントのPOPにも。摩耗に強く、人が多く行き交う場所でも安心です。</figcaption></figure>
-      <figure><div class="co-ph"><img src="https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&amp;fit=crop&amp;w=720&amp;q=80" alt="ご自宅のインテリア" loading="lazy"></div><figcaption><b>ご自宅・ペットマット</b>ペットの写真や自作のイラストも。1枚ずつ外して水洗いできるので清潔です。</figcaption></figure>
+      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-nail.webp" alt="ネイルサロンの床に敷いた、花柄のタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-nail-close.webp" alt="花柄と「Nail Salon」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b>ネイルサロン</b>やさしい色の花柄と店名で、お店の雰囲気をそのまま床に。淡い色やグラデーションも表現できます。</figcaption></figure>
+      <figure tabindex="0"><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-gym.webp" alt="フィットネスジムの床に敷いた、動線と番号入りのタイルカーペット" loading="lazy" width="960" height="720"><img class="co-ph-zoom" src="{{CFP_ASSET_URL}}img/use-gym-close.webp" alt="「TRAINING ZONE」「01 WARM UP」の文字を寄って見たところ" loading="lazy" width="960" height="720"><span class="co-ph-hint" aria-hidden="true">寄って見る</span></div><figcaption><b>フィットネスジム</b>エリア名や順路を床に入れて案内に。土足や人の多い場所でも使える丈夫なつくりです。</figcaption></figure>
+      <figure><div class="co-ph"><img src="{{CFP_ASSET_URL}}img/use-apparel.webp" alt="アパレルショップの床に敷いた、ロゴと文字のタイルカーペット" loading="lazy" width="960" height="720"></div><figcaption><b>アパレルショップ</b>ブランドの世界観を床いっぱいに。ロゴや大きな文字で、店内を印象的な空間にします。</figcaption></figure>
     </div>
+    <p class="co-info-note">写真はイメージです（デザインの一例）。</p>
   </section>
 
   <section class="co-info co-reveal" id="co-colors">
