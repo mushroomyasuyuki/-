@@ -128,6 +128,11 @@ class CFP_Carpet_Order {
 
     private function __construct() {
         add_action('init', [$this, 'register_post_type']);
+        add_action('wp_mail_failed', function ($e) {
+            if (is_wp_error($e)) {
+                self::$mail_error = $e->get_error_message();
+            }
+        });
         add_action('template_redirect', [$this, 'no_cache']);
         add_shortcode(self::SHORTCODE, [$this, 'render_page']);
         foreach (['submit', 'select', 'pay', 'pay_finish', 'file', 'factory'] as $a) {
@@ -142,6 +147,7 @@ class CFP_Carpet_Order {
         add_action('admin_post_cfp_co_status', [$this, 'handle_status']);
         add_action('admin_post_cfp_co_receipt', [$this, 'handle_receipt']);
         add_action('admin_post_cfp_co_delete', [$this, 'handle_delete']);
+        add_action('admin_post_cfp_co_resend_paid', [$this, 'handle_resend_paid']);
         add_action('admin_post_cfp_co_create_page', [$this, 'handle_create_page']);
     }
 
@@ -753,6 +759,7 @@ class CFP_Carpet_Order {
         self::mail_received($o);
         self::mail_admin_new($o);
         self::mail_factory($o, 'inquiry');
+        self::flush_mail_log($o);
         self::save($o);
         wp_send_json_success(['no' => self::no($o)]);
     }
@@ -910,6 +917,26 @@ class CFP_Carpet_Order {
             $o['card'] = ['brand' => sanitize_text_field((string) ($ch['card']['brand'] ?? '')), 'last4' => preg_replace('/\D/', '', (string) $ch['card']['last4'])];
         }
         self::log($o, '決済完了（' . number_format((int) $ch['amount']) . '円・' . $ch['id'] . '）');
+        $o['charge_id'] = (string) $ch['id'];
+        self::save($o);
+        // このあとの処理（領収書・メール）で止まってしまったら、その理由を注文の記録に残す
+        $oid = (int) $o['id'];
+        register_shutdown_function(function () use ($oid) {
+            $err = error_get_last();
+            if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+                $x = self::get($oid);
+                if ($x) {
+                    self::flush_mail_log($x);
+                    self::log($x, '決済完了のあとの処理が途中で止まりました：' . mb_substr($err['message'], 0, 300) . '（' . basename($err['file']) . ':' . $err['line'] . '）');
+                    self::save($x);
+                }
+            }
+        });
+        $this->send_paid_mails($o);
+    }
+
+    /** 決済完了のメール（お客様・管理者・工場）。領収書（PDF）も作る。管理画面から送り直すときも使う. */
+    private function send_paid_mails(&$o) {
         // 領収書（PDF）を作っておく。「領収書が必要」のお客様には、決済完了のメールに添付する
         $receipt = '';
         try {
@@ -924,11 +951,29 @@ class CFP_Carpet_Order {
             . "\nお支払い金額：" . number_format($p['total']) . "円（税込・うち消費税 " . number_format($p['tax']) . "円）"
             . (self::settings()['company_invoice'] !== '' ? "\n" . self::settings()['company_name'] . "（適格請求書発行事業者登録番号：" . self::settings()['company_invoice'] . "）" : '');
         self::mail_customer($o, '【ご注文 ' . self::no($o) . '】お支払いが完了しました（正式ご注文）', $o['name'] . " 様\n\nお支払いを確認しました。正式にご注文を承りました。製作に入り、発送の準備ができましたらご連絡いたします。" . (!empty($o['lead_time']) ? "\n納期（出荷日）：お支払い確定後、" . $o['lead_time'] . "で発送します。" : '') . "\n\n" . $lines . "\n\n※ご注文（発注）後3日以内は無償でキャンセルを承ります。それ以降のキャンセルはお受けできません。" . (!empty($o['receipt']) && $receipt !== '' ? "\n\n領収書（PDF）を添付いたします（領収書番号：" . $o['receipt_no'] . "）。" : ''), array_filter([self::path($o, 'preview_' . $o['choice']), !empty($o['receipt']) ? $receipt : '']));
-        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $ch['id'] . "\n\n" . self::download_lines($o) . "\n\n" . self::customer_lines($o));
+        self::mail_admin($o, '【カーペット注文 ' . self::no($o) . '】決済完了（正式発注）', "決済が完了しました。\n\n" . $lines . "\nPAY.JP 支払いID：" . $o['charge_id'] . "\n\n" . self::download_lines($o) . "\n\n" . self::customer_lines($o));
         if (!empty(self::settings()['factory_on_paid'])) {
             self::mail_factory($o, 'order');
-            self::save($o);
         }
+        self::flush_mail_log($o);
+        self::save($o);
+    }
+
+    /** 管理画面：決済完了のメール（お客様・管理者・工場）を送り直す. */
+    public function handle_resend_paid() {
+        if (!current_user_can('manage_options')) {
+            wp_die('権限がありません。');
+        }
+        $id = absint($_POST['id'] ?? 0);
+        check_admin_referer('cfp_co_resend_' . $id);
+        $o = self::get($id);
+        if (!$o || $o['status'] !== 'paid') {
+            wp_die('支払い済みの注文が見つかりません。');
+        }
+        self::log($o, '管理者が決済完了のメールを送り直し');
+        $this->send_paid_mails($o);
+        wp_safe_redirect(admin_url('admin.php?page=cfp-carpet-orders&cfp_co=resent'));
+        exit;
     }
 
     /** 画像：お客様は鍵でプレビューだけ、管理者は元画像も。 */
@@ -1423,14 +1468,39 @@ class CFP_Carpet_Order {
         return $h;
     }
 
+    /** 送ったメールの結果（注文の記録に残す）と、直前の送信エラー. */
+    private static $mail_results = [];
+    private static $mail_error = '';
+
+    /** wp_mail を送り、結果を覚えておく（失敗したときはエラーの内容も）. */
+    private static function send_mail($who, $to, $subject, $body, $headers, $files = []) {
+        self::$mail_error = '';
+        $ok = false;
+        try {
+            $ok = wp_mail($to, $subject, $body, $headers, $files);
+        } catch (\Throwable $e) {
+            self::$mail_error = $e->getMessage();
+        }
+        self::$mail_results[] = ($ok ? 'メール送信：' : 'メール送信に失敗：') . $who . '（' . (is_array($to) ? implode(',', $to) : $to) . '）' . $subject . ($ok || self::$mail_error === '' ? '' : '／' . self::$mail_error);
+        return $ok;
+    }
+
+    /** 覚えておいたメールの結果を、注文の記録に移す. */
+    private static function flush_mail_log(&$o) {
+        foreach (self::$mail_results as $r) {
+            self::log($o, $r);
+        }
+        self::$mail_results = [];
+    }
+
     private static function mail_customer($o, $subject, $body, $files = []) {
         $sign = "\n\n--------------------------------------------------\n" . get_bloginfo('name') . "\n" . home_url('/') . "\nこのメールにご返信いただくと、担当者に届きます。";
-        return wp_mail($o['email'], $subject, $body . $sign, self::headers(self::admin_email()), array_filter($files, 'is_readable'));
+        return self::send_mail('お客様', $o['email'], $subject, $body . $sign, self::headers(self::admin_email()), array_filter($files, 'is_readable'));
     }
 
     /** 管理者へのメール。返信の宛先はふつうはお客様（$reply_to を渡すとそのアドレス）. */
     private static function mail_admin($o, $subject, $body, $reply_to = null) {
-        return wp_mail(self::admin_email(), $subject, $body . "\n\n注文の一覧：" . admin_url('admin.php?page=cfp-carpet-orders'), self::headers($reply_to ?? $o['email']));
+        return self::send_mail('管理者', self::admin_email(), $subject, $body . "\n\n注文の一覧：" . admin_url('admin.php?page=cfp-carpet-orders'), self::headers($reply_to ?? $o['email']));
     }
 
     private static function mail_received($o) {
@@ -1483,7 +1553,7 @@ class CFP_Carpet_Order {
                 . "\n\n▼ 発送したら、こちらのページから送り状番号（出荷番号）を入れて「発送済み」にしてください（お客様へ発送のお知らせが届きます）：\n" . self::factory_url($o);
             $files = [self::path($o, 'preview_' . $o['choice'])];
         }
-        $ok = wp_mail($to, $subject, $body . "\n\n" . get_bloginfo('name'), self::headers(self::admin_email()), array_filter($files, 'is_readable'));
+        $ok = self::send_mail('工場', $to, $subject, $body . "\n\n" . get_bloginfo('name'), self::headers(self::admin_email()), array_filter($files, 'is_readable'));
         self::log($o, '工場へ' . ($kind === 'inquiry' ? '納期確認' : '正式発注') . 'メール' . ($ok ? 'を送信' : 'の送信に失敗'));
         return $ok;
     }
@@ -1517,6 +1587,7 @@ class CFP_Carpet_Order {
             <h1>カーペット注文</h1>
             <?php if ($msg === 'saved') : ?><div class="notice notice-success"><p>保存しました。</p></div><?php endif; ?>
             <?php if ($msg === 'status') : ?><div class="notice notice-success"><p>状態を変えました。</p></div><?php endif; ?>
+            <?php if ($msg === 'resent') : ?><div class="notice notice-success"><p>決済完了のメールを送り直しました。結果は、その注文の「詳細」の記録で確認できます。</p></div><?php endif; ?>
             <?php if ($msg === 'deleted') : ?><div class="notice notice-success"><p>注文を削除しました。</p></div><?php endif; ?>
             <?php if ($msg === 'delete_error') : ?><div class="notice notice-error"><p>注文が見つかりませんでした（すでに削除されている可能性があります）。</p></div><?php endif; ?>
             <?php if ($msg === 'receipt_sent') : ?><div class="notice notice-success"><p>領収書（PDF）をお客様へメールで送りました。</p></div><?php endif; ?>
@@ -1569,6 +1640,13 @@ class CFP_Carpet_Order {
                             <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=get&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>">領収書PDF</a>
                             <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=cfp_co_receipt&do=send&id=' . (int) $o['id']), 'cfp_co_receipt')); ?>" onclick="return confirm('お客様へ領収書（PDF）をメールで送りますか？');">領収書を送る</a>
                             <?php if (self::has_psd($o, $o['choice'])) : ?><a class="button" href="<?php echo esc_url(add_query_arg('dl', 1, self::file_url($o, 'psd_' . $o['choice'], false))); ?>">PSDを保存</a><?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($o['status'] === 'paid') : ?>
+                            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;margin:4px 0 0">
+                                <input type="hidden" name="action" value="cfp_co_resend_paid"><input type="hidden" name="id" value="<?php echo (int) $o['id']; ?>">
+                                <?php wp_nonce_field('cfp_co_resend_' . (int) $o['id']); ?>
+                                <button class="button" onclick="return confirm('決済完了のメール（お客様・管理者・工場）を、もう一度送りますか？');">決済完了メールを送り直す</button>
+                            </form>
                             <?php endif; ?>
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block;margin:4px 0 0">
                                 <input type="hidden" name="action" value="cfp_co_delete"><input type="hidden" name="id" value="<?php echo (int) $o['id']; ?>">
